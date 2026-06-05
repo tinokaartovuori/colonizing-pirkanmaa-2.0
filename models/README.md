@@ -23,8 +23,14 @@ models/
 - **id = `<arc>-<type>-<NNN>`** — e.g. `sd-az-001`, `sd-hardbot-001`.
   - **arc** = game-version code. Bump it whenever the GAME's rules change so models
     from different game versions never get compared as if equivalent. Current arc:
-    **`sd`** = the Strange-Device game version (see `/STRANGE-DEVICE-DESIGN.md`).
-    The pre-Strange-Device models are archived, not in this registry.
+    **`sd2`** = the Strange-Device game version WITH the Outpost rebalance (2026-06-05;
+    Outpost cost 650/300w/300s/300m → 500/200w/200s/100m so the army is reachable, and
+    the NN outpost tile-gate 12→8 to match HARD; see CLAUDE.md "Outpost rebalance").
+    The **next registered model MUST use `--arc sd2`.** Existing `sd-az-001/002` models
+    were trained under the un-rebalanced Outpost and are NOT comparable across the arc
+    boundary — do not benchmark `sd` vs `sd2` as equivalent, and do not rename them.
+    `sd` = the original Strange-Device version (pre-outpost-rebalance). The
+    pre-Strange-Device models are archived, not in this registry.
   - **type** = `az` (AlphaZero net) · `hardbot` (heuristic `AiParams` set) · `ga`
     (neuroevolution genome).
   - **NNN** = zero-padded incremental, per `(arc, type)`. Assigned by `manage.ts`.

@@ -35,10 +35,12 @@ Steps 0 and 1 are done; **Step 2 RAN and FAILED — and the failure revealed the
 
 ---
 
-## ★ START HERE NEXT SESSION — A DECISION IS NEEDED BEFORE ANY MORE TRAINING ★
+## ★ START HERE NEXT SESSION ★
 
-**ASK THE USER THIS FIRST (do not just start a run).** A deep diagnosis (2026-06-05, evidence-backed
-from replays + intent histograms + the gate code) found why the AI never builds an army:
+**Option B (rebalance the Outpost cost) was chosen, implemented (parity 8/8), and validated — it is
+the confirmed-correct direction but only a PARTIAL fix. Read the result + NEXT STEP at the bottom of
+this block; do NOT re-ask the A/B/C fork (B is done).** The diagnosis that motivated B, still the
+core context:
 
 > **The army is GATE-BLOCKED (the BuildOutpost action is almost never legal/affordable), NOT a
 > reward/learning failure.** The Outpost costs **650 money + 300 wood + 300 stone + 300 METAL at
@@ -54,24 +56,37 @@ from replays + intent histograms + the gate code) found why the AI never builds 
 > spent Steps 1 & 2 rewarding (`--w-army`, cap-potential) and pressuring (army-rusher) toward an army
 > that is unreachable. **Do NOT invest further in larger `--w-army` or more army-rusher.**
 
-**The fork (the user must choose the direction — B is a game-balance call they own):**
-- **A — parity-free:** scaffold a forced early Mine in self-play (the `ensure_military` scaffold
-  exists in `champ_probe.rs`) so the net experiences states where 300 metal IS on hand → Outpost
-  becomes legal → it learns the value; OR redirect the reward to the upstream bottleneck (metal
-  stock / mine count) the net CAN act on. Keeps game balance untouched.
-- **B — parity + arc bump (likely the right root fix):** rebalance the Outpost cost (300 metal →
-  lower, or shift to money/stone) so the army is a REACHABLE real choice — directly analogous to the
-  deliberate Mine/Hydro/Nuclear industry rebalance (see CLAUDE.md); the Outpost likely fell into the
-  same "always-worse" trap. Parity-affecting → edit BOTH `candidates.rs`/`resources.rs` ⇄ TS mirrors,
-  re-export goldens, parity 8/8, bump the model `arc`, update AI income models.
-- **C — cheap, do first:** instrument `champ_probe` to count BuildOutpost offered-vs-chosen + which
-  sub-gate (tiles<12 / metal-income / raw-300-metal / cash-floor) rejects per turn → hard data on
-  which fix unlocks it.
-- **Also (low-risk, parity-locked pair):** lower the NN's 12-tile outpost gate to HARD's 8.
+**WHAT WE DID — Option B (DONE, committed, parity 8/8):** rebalanced the Outpost cost
+`650 / 300 wood / 300 stone / 300 metal` → **`500 / 200 / 200 / 100`** (metal **300→100** was the
+binding fix; ~5 mine-rounds instead of ~15) + lowered the NN outpost gate **12→8** (matches HARD).
+Mirrored on BOTH sides (`cp-sim/resources.rs` ⇄ `src/core/resources.ts`, `cp-ai/candidates.rs` ⇄
+`src/ai/nn/candidates.ts`), goldens re-exported, **parity 8/8**, tsc + cargo green, AI income-model
+comment synced, model `arc` bumped `sd → sd2` (registration-time metadata — the NEXT registered model
+must use `--arc sd2`; don't benchmark `sd` vs `sd2`).
 
-Claude's recommendation: **C → B** (confirm which sub-gate binds, then rebalance the Outpost to a
-reachable cost + lower the 12-tile gate to 8). Full detail in memory `army-gate-blocked.md` (local to
-the dev machine) — but everything needed is in this block + `TRAINING-APPROACH.md`.
+**VALIDATION (`checkpoints-cnn-b1`, small net, gen 0–49) — PARTIAL SUCCESS, confirms the diagnosis:**
+For the FIRST time in the whole effort the army metrics moved UP — BuildOutpost intent rose to 4–7
+(vs the chronic 0–4), `outpostsPerGame` ~0.20 (2× the old ~0.10), `maxSoldiersPerGame` climbed
+0.73→**0.92** (gen 30), `trueWinVsHard` ~**0.42–0.45** (best yet), Pass% ~31 (lowest). So making the
+Outpost reachable DID start the army chain — **the gate WAS the binding constraint.** BUT: (a) the
+army never reached the gate (maxSold peaked 0.92, target **>3** — it builds the Outpost but barely
+fills the +3 cap with soldiers); and (b) the gains **REGRESSED** over the last ~10 gens (gen 45–49:
+outposts→0.07, maxSold→0.57, trueWin→0.35, back toward baseline) — the net found the army strategy
+mid-training then DRIFTED back to the conquest/economy equilibrium.
+
+**NEXT STEP (resume here):** B opened the gate (necessary, done) but isn't sufficient alone. Two new
+bottlenecks, now ACTIONABLE because the gate is open (the `--w-army`/`--cap-potential` rewards can
+finally bite — they couldn't before, gate-blocked):
+1. **Fill the soldier cap.** Even with outposts (cap → 4), maxSold stays ~1. Investigate the metal
+   economy for SOLDIERS (50 metal each) and whether HireSoldier is prioritized after an Outpost.
+   Retune `--w-army` UP (e.g. 0.6–0.8) and ensure metal supports Outpost + multiple soldiers.
+2. **Stop the regression.** The army strategy isn't a stable attractor yet (peaks ~gen 30, drifts
+   back). Needs stronger/sustained army + curriculum pressure (army-rusher weight, `--w-army`, PFSP)
+   so the net consolidates instead of reverting to conquest/economy.
+   Suggested next run: fresh small net, retuned `--w-army` (higher) + `--cap-potential` + army-rusher
+   emphasis; success = `maxSoldiersPerGame` sustains a climb past ~1.5 WITHOUT regressing, and
+   `trueWinVsHard` rises. Full diagnosis detail in memory `army-gate-blocked.md` (dev machine only;
+   essentials are in this block + `TRAINING-APPROACH.md`).
 
 ---
 

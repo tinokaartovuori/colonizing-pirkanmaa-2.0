@@ -45,6 +45,18 @@ correctness contract, which the tests lock down:
   three buildings, `reference/` is **no longer** the source of truth. The AI income models
   (`ai.ts` `netMoneyPerRound`, nn `metrics.ts`) and the plant build-gates mirror these
   numbers — keep them in sync if you retune.
+- **Deliberate balance divergence (Outpost rebalance, 2026-06-05 — arc bump `sd` → `sd2`):**
+  the Outpost cost in `src/core/resources.ts` (`OUTPOST_BUILD_COST`) / `resources.rs`
+  (`outpost_build_cost`) was rebalanced **650 money / 300 wood / 300 stone / 300 metal →
+  500 / 200 / 200 / 100**. The original 300-metal cost made the Outpost (and thus the
+  soldier-cap → army chain; Outpost = +3 soldiers) effectively UNREACHABLE on a normal
+  ~1-mine economy (300 metal ≈ 15 mine-rounds of pure hoarding), so the AI never fielded an
+  army — the same "always-worse, never-chosen" trap the industry tier above was rebalanced
+  out of. For the Outpost, `reference/` is **no longer** the source of truth. Parity-locked
+  pair: the NN outpost tile-gate was also lowered **12 → 8** (`candidates.rs` /
+  `src/ai/nn/candidates.ts`) to match the HARD bot (`hard_ai.rs`, already 8). The soldier-cap
+  formula (Outpost +3) and map-gen RNG are unchanged. This is parity-affecting: any retune
+  must edit BOTH the Rust and TS mirror, re-export goldens, keep parity 8/8, and bump the arc.
 
 ## Architecture
 

@@ -493,7 +493,10 @@ fn build_outpost(g: &Game, p: PlayerId, cfg: &TierConfig) -> Option<Candidate> {
     if !cfg.military {
         return None;
     }
-    if g.get_tile_count_for_player(p) < 12 {
+    // Tile gate lowered 12→8 to match the HARD bot (hard_ai.rs) — the old ≥12 was an
+    // asymmetric handicap that delayed the NN's army past HARD's. Parity-locked with
+    // buildOutpost in src/ai/nn/candidates.ts.
+    if g.get_tile_count_for_player(p) < 8 {
         return None;
     }
     if m::net_money_per_round(g, p) < 0.0 {

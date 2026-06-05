@@ -538,7 +538,7 @@ export class AiController {
   /**
    * Put one Expert on each staffed mine. An expert DOUBLES that mine's money + metal +
    * stone output, so it is the single most efficient industrial upgrade: the extra metal
-   * is what pays for Outposts (300 metal each) and the soldier army, and the extra money
+   * is what pays for Outposts (100 metal each) and the soldier army, and the extra money
    * funds power plants. Gated on a free unit slot and the cash reserve, so it never
    * over-extends. As Villages raise the unit cap, idle slots flow here first.
    */

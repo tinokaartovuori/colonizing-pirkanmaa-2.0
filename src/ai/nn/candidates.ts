@@ -337,7 +337,10 @@ function buildVillage(ctx: AiCtx): Candidate | null {
 function buildOutpost(ctx: AiCtx): Candidate | null {
   const { player: p, om, cfg } = ctx;
   if (!cfg.military) return null;
-  if (om.getTileCountForPlayer(p) < 12) return null;
+  // Tile gate lowered 12→8 to match the HARD bot — the old ≥12 was an asymmetric handicap
+  // that delayed the NN's army past HARD's. Parity-locked with build_outpost in
+  // rust-trainer/crates/cp-ai/src/candidates.rs.
+  if (om.getTileCountForPlayer(p) < 8) return null;
   if (M.netMoneyPerRound(p) < 0) return null;
   const outposts = M.buildingCounts(p).Outpost;
   if (M.metalIncomePerRound(p) - (outposts + 1) * 15 < 0) return null;

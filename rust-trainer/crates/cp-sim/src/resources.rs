@@ -235,9 +235,18 @@ pub fn nuclearpp_production() -> ResourceMap {
     rmap(&[(Money, 160)])
 }
 
-// Building - Outpost
+// Building - Outpost (REBALANCED — diverges from C++; TS is source of truth)
+// The C++/original cost (650 money + 300 wood + 300 stone + 300 METAL) made the Outpost —
+// and therefore the entire soldier-cap → army chain — UNREACHABLE on a normal economy: 300
+// metal at once requires ~15 mine-rounds of pure hoarding (a mine yields 20 metal/round),
+// and a normal game runs ~1 mine, so the candidate was never enumerated and the soldier cap
+// stayed hard-locked at 1 (HQ +1). Same "always-worse, never-chosen" trap the Mine/Hydro/
+// Nuclear tier was rebalanced out of (see CLAUDE.md). New cost: metal 300→100 (≈5 mine-rounds,
+// ~3 with an expert mine), money 650→500, wood/stone 300→200 — the army stays a deliberate
+// multi-resource commitment (you must commit a mine + forgo farms) but is now a REACHABLE
+// real choice mid-game. Stays in lockstep with OUTPOST_BUILD_COST in src/core/resources.ts.
 pub fn outpost_build_cost() -> ResourceMap {
-    rmap(&[(Money, -650), (Wood, -300), (Stone, -300), (Metal, -300)])
+    rmap(&[(Money, -500), (Wood, -200), (Stone, -200), (Metal, -100)])
 }
 pub fn outpost_production() -> ResourceMap {
     rmap(&[(Money, -50), (Metal, -15)])
