@@ -6225,14 +6225,23 @@ mod tests {
             "cut exposure lowers Φ via w-cut: cut={phi_cut} plain={phi_plain}"
         );
 
-        // Now disconnect the tail entirely (un-own the chokepoint) → MORE tiles are
-        // un-connected → exposure rises → Φ drops further.
+        // Now actually CUT the chokepoint (un-own chain[1]) → the tail is already
+        // disconnected from the HQ, so exposure stays POSITIVE (the `already_lost`
+        // branch fires). NOTE: exposure is a FRACTION of CURRENTLY-owned tiles; cutting
+        // the chokepoint also shrinks the owned set, so the fraction need not increase —
+        // we only assert it remains a genuine (positive) defensive penalty.
         let choke = chain[1];
         g.set_tile_owner(choke, None);
         let exp_severed = hq_cut_exposure(&g, me);
         assert!(
-            exp_severed >= exp_connected,
-            "severing the chokepoint does not reduce exposure: severed={exp_severed} connected={exp_connected}"
+            exp_severed > 0.0,
+            "after the chokepoint is cut the tail is disconnected → exposure stays positive: severed={exp_severed}"
+        );
+        let phi_severed = potential_step1(&g, me, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, w);
+        let phi_severed_plain = potential_step1(&g, me, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        assert!(
+            phi_severed < phi_severed_plain,
+            "a disconnected tail still penalises Φ via w-cut: severed={phi_severed} plain={phi_severed_plain}"
         );
     }
 

@@ -1912,7 +1912,7 @@ function render() {
       tip: 'Self-play-pelien keskimääräinen pituus (kierroksia) per iteraatio. Lyhyemmät pelit = ratkaisevampi peli. Vanhat lokirivit ilman kenttää jätetään tyhjäksi.' }));
 
     // STEP-2 curriculum gate — per-scripted-strategy learner win-rate (vsArmyRush /
-    // vsDeviceRush). Only present once `--script-opponents --script-frac` is on; older
+    // vsDeviceRush). Only present once \`--script-opponents --script-frac\` is on; older
     // rows map to null (gap). The §1.4–1.5 gate wants vsArmyRush climbing off ~0.2.
     root.appendChild(chart('Curriculum win-rate (vs scripted)', data, [
       { label: 'vsArmyRush', color: getColor('--loss'), values: scol(data, 'spVsArmyRush'), thick: true },

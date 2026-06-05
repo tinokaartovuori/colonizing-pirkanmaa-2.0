@@ -80,11 +80,17 @@ and `rust-trainer/crates/cp-ai/src/` (net: `spatial_net.rs`, `cnn.rs`, `planes.r
   eval-phase saturation (`rayon::join` bench+replay into one pool, merged the 2 sequential replay
   batches), `--replay-games` default 5 (10 replay games), `--threads N` (default cores−4).
 
-- **Step 2 — NOT YET implemented (this is the next coding task).** Spec in `TRAINING-APPROACH.md`
-  Step 2 + §1.3–1.5 + §2.2: add **`w_army`** (filled-soldier emphasis), a small **`w_cut`** defense/
-  HQ-connectivity term, ensure the **army-rusher** pressures the learner (in the PFSP pool), and
-  implement the deferred **`tiles-lost-to-rusher`** metric. Gate: max-soldier routinely > 3, honest
-  conquest wins appear, tiles-lost-to-rusher trends down, `vsArmyRush` climbs off ~0.2.
+- **Step 2 — combat curriculum: IMPLEMENTED + test-verified, NOW RUNNING (not yet judged).**
+  `--w-army` (FIELDED-soldier emphasis, `clamp(used_soldier/7)`, pays past one Outpost so the
+  Outpost→fill chain pays end-to-end) + `--w-cut` (small defense term, `−w·hq_cut_exposure` =
+  losing/severing tiles lowers Φ) in `potential_step1`; the **army-rusher** is in the scripted-opponent
+  pool (`--script-opponents --script-frac --script-grade`, keep `--record-opp-value`); the
+  **`tilesLostToRusher`** metric is in the training log + dashboard. All flag-gated, defaults
+  bit-identical no-op, parity 8/8, 35 cp-train + 58 cp-ai tests pass. Coordination (no double-count):
+  `--cap-potential` = HAVE cap (/7), `--soldier-cap-potential` = FILLED (/6), `--w-army` continues
+  filling past /6 to /7, `--idle-flow-penalty` keys on unused FLOW not empty slots.
+  **NEXT: judge the Step-2 gate** (~30–40 iters, aggregated): max-soldier routinely > 3, honest
+  conquest wins appear, `tilesLostToRusher` trends down, `vsArmyRush` climbs off ~0.2. Then Step 3.
 
 ---
 
@@ -136,9 +142,21 @@ Throughput on the dev box was ~40–60 s/iter for the small net (16 threads). Ad
 the MacBook's core count (leave ~4 free).
 
 ### The immediate next task
-Implement **Step 2** (`TRAINING-APPROACH.md`), add `--w-army` / `--w-cut`, then launch the Step-1
-command + those flags and judge the Step-2 gate. Then Step 3 (device reaction + strategic arc),
-Step 4 (re-test capacity only after the net plays actively).
+**Step 2 is implemented** — RUN it and judge the gate. Launch command (Step-1 flags + `--w-army 0.4
+--w-cut 0.15`):
+```bash
+./rust-trainer/target/release/cnn_train --train --out rust-trainer/checkpoints-s2 \
+  --net-size small --threads 16 --turn-search \
+  --income-lead-potential 0.5 --tile-potential 0.4 --cap-potential 0.3 --idle-flow-penalty 0.3 \
+  --w-army 0.4 --w-cut 0.15 \
+  --record-opp-value --device-potential 0.2 --device-credit 0.15 \
+  --pfsp --vs-hard-frac 0.4 --script-opponents --script-frac 0.5 --script-grade \
+  --tie-penalty 0.4 --stall-rounds 80 --build-prior-floor 0.03 --shape-gamma 0.99 --shape-weight 0.3 \
+  --sims 48 --cap 150 --games 24 --bench-games 60 --iters 50
+```
+Judge the gate (max-soldier > 3, honest conquest wins, `tilesLostToRusher` ↓, `vsArmyRush` ↑) over
+~30–40 iters aggregated. Then Step 3 (device reaction + strategic arc), Step 4 (re-test capacity
+only after the net plays actively).
 
 ---
 
