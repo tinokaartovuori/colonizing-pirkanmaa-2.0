@@ -30,7 +30,50 @@ MIRAGE** — ~30% of its "wins" are free enemy-self-bankruptcy. True skill ≈ 0
 We pivoted to a disciplined, staged plan with an **HONEST metric**. Design doc:
 **`rust-trainer/TRAINING-APPROACH.md`** (read it — Steps 0–4 with concrete behavioral gates).
 
-**Steps 0 and 1 are DONE + verified (committed, compiles, parity 8/8). Step 2 is NEXT.**
+Steps 0 and 1 are done; **Step 2 RAN and FAILED — and the failure revealed the real root cause
+(see the DECISION block below).**
+
+---
+
+## ★ START HERE NEXT SESSION — A DECISION IS NEEDED BEFORE ANY MORE TRAINING ★
+
+**ASK THE USER THIS FIRST (do not just start a run).** A deep diagnosis (2026-06-05, evidence-backed
+from replays + intent histograms + the gate code) found why the AI never builds an army:
+
+> **The army is GATE-BLOCKED (the BuildOutpost action is almost never legal/affordable), NOT a
+> reward/learning failure.** The Outpost costs **650 money + 300 wood + 300 stone + 300 METAL at
+> once** (`cp-sim/src/resources.rs:239`). Metal comes ONLY from Mines (20/worker/round); the net
+> builds ~1 mine, so **300 metal never stockpiles** → BuildOutpost is never enumerated → soldier cap
+> is hard-locked at 1 (HQ +1, Outpost +3; `managers.rs:611`) → **no army is mechanically possible.**
+> Secondary: the NN's outpost gate needs **tile_count ≥ 12** (`cp-ai/src/candidates.rs:496`) while
+> HARD builds at **≥ 8** (`hard_ai.rs:1117`) — an asymmetric handicap. Evidence: BuildOutpost chosen
+> 0–4× / 60 games in BOTH Step-1 (s1) and Step-2 (s2); `outpostsPerGame` ≈ 0.10 FLAT over 30 gens
+> (the curve never moves → the action surface, not the reward, is the limiter); even in 28–63-tile
+> games the net builds 0 outposts (isolates the 300-metal cost). The learner works fine where actions
+> ARE legal (Villages/Mines/Farms/HireSoldier all fire). **This explains every prior failure** — we
+> spent Steps 1 & 2 rewarding (`--w-army`, cap-potential) and pressuring (army-rusher) toward an army
+> that is unreachable. **Do NOT invest further in larger `--w-army` or more army-rusher.**
+
+**The fork (the user must choose the direction — B is a game-balance call they own):**
+- **A — parity-free:** scaffold a forced early Mine in self-play (the `ensure_military` scaffold
+  exists in `champ_probe.rs`) so the net experiences states where 300 metal IS on hand → Outpost
+  becomes legal → it learns the value; OR redirect the reward to the upstream bottleneck (metal
+  stock / mine count) the net CAN act on. Keeps game balance untouched.
+- **B — parity + arc bump (likely the right root fix):** rebalance the Outpost cost (300 metal →
+  lower, or shift to money/stone) so the army is a REACHABLE real choice — directly analogous to the
+  deliberate Mine/Hydro/Nuclear industry rebalance (see CLAUDE.md); the Outpost likely fell into the
+  same "always-worse" trap. Parity-affecting → edit BOTH `candidates.rs`/`resources.rs` ⇄ TS mirrors,
+  re-export goldens, parity 8/8, bump the model `arc`, update AI income models.
+- **C — cheap, do first:** instrument `champ_probe` to count BuildOutpost offered-vs-chosen + which
+  sub-gate (tiles<12 / metal-income / raw-300-metal / cash-floor) rejects per turn → hard data on
+  which fix unlocks it.
+- **Also (low-risk, parity-locked pair):** lower the NN's 12-tile outpost gate to HARD's 8.
+
+Claude's recommendation: **C → B** (confirm which sub-gate binds, then rebalance the Outpost to a
+reachable cost + lower the 12-tile gate to 8). Full detail in memory `army-gate-blocked.md` (local to
+the dev machine) — but everything needed is in this block + `TRAINING-APPROACH.md`.
+
+---
 
 ---
 
@@ -89,8 +132,10 @@ and `rust-trainer/crates/cp-ai/src/` (net: `spatial_net.rs`, `cnn.rs`, `planes.r
   bit-identical no-op, parity 8/8, 35 cp-train + 58 cp-ai tests pass. Coordination (no double-count):
   `--cap-potential` = HAVE cap (/7), `--soldier-cap-potential` = FILLED (/6), `--w-army` continues
   filling past /6 to /7, `--idle-flow-penalty` keys on unused FLOW not empty slots.
-  **NEXT: judge the Step-2 gate** (~30–40 iters, aggregated): max-soldier routinely > 3, honest
-  conquest wins appear, `tilesLostToRusher` trends down, `vsArmyRush` climbs off ~0.2. Then Step 3.
+  **Step-2 RAN (cnn-s2, small net, gen 0–30) and FAILED the gate:** max-soldier stayed ~0.6 (≈0,
+  needed >3), Outposts ~0.10 flat, `vsArmyRush` ~0.1 (not climbing). The failure triggered the
+  diagnosis in the ★ DECISION block above — the army is GATE-BLOCKED, not unrewarded. **Next move
+  depends on the user's A/B/C choice — do NOT auto-run more Step-2-style reward tuning.**
 
 ---
 
