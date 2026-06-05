@@ -1,0 +1,109 @@
+\hypertarget{class_student_1_1_menu_object_manager}{\section{Student\-:\-:Menu\-Object\-Manager Class Reference}
+\label{class_student_1_1_menu_object_manager}\index{Student\-::\-Menu\-Object\-Manager@{Student\-::\-Menu\-Object\-Manager}}
+}
+
+
+The \hyperlink{class_student_1_1_menu_object_manager}{Menu\-Object\-Manager} class is an interface which the Course-\/side code uses to interact with the \hyperlink{class_student_1_1_menu_object_manager}{Menu\-Object\-Manager} implemented by the students.  
+
+
+
+
+{\ttfamily \#include $<$menuobjectmanager.\-h$>$}
+
+
+
+Inheritance diagram for Student\-:\-:Menu\-Object\-Manager\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[width=248pt]{class_student_1_1_menu_object_manager__inherit__graph}
+\end{center}
+\end{figure}
+
+
+Collaboration diagram for Student\-:\-:Menu\-Object\-Manager\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[width=248pt]{class_student_1_1_menu_object_manager__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_student_1_1_menu_object_manager_a8af232aab21026bed8cafe819160e7b8}{\hyperlink{class_student_1_1_menu_object_manager_a8af232aab21026bed8cafe819160e7b8}{$\sim$\-Menu\-Object\-Manager} () override}\label{class_student_1_1_menu_object_manager_a8af232aab21026bed8cafe819160e7b8}
+
+\begin{DoxyCompactList}\small\item\em Default destructor. \end{DoxyCompactList}\item 
+\hypertarget{class_student_1_1_menu_object_manager_a26607811cdc8efc940aa11c5fc9a0ef7}{void {\bfseries set\-Game\-Scene} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1_game_scene}{Game\-Scene} $>$ gs) override}\label{class_student_1_1_menu_object_manager_a26607811cdc8efc940aa11c5fc9a0ef7}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_manager_a9798e1932a6cefe7fad8cd1543446604}{void {\bfseries add\-D\-A\-L\-S} (const std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler} $>$ gameeventhandler, const std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1_object_manager}{Student\-::\-Object\-Manager} $>$ objectmanager, const std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1_player_manager}{Player\-Manager} $>$ playermanager, const std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1_game_settings_manager}{Student\-::\-Game\-Settings\-Manager} $>$ gamesettingsmanager) override}\label{class_student_1_1_menu_object_manager_a9798e1932a6cefe7fad8cd1543446604}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_manager_abd78726a30ad87cb5e20b9534c04a72c}{void {\bfseries set\-Tile\-Inspection\-Menu\-View} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ tile, int index\-\_\-for\-\_\-buildings=0) override}\label{class_student_1_1_menu_object_manager_abd78726a30ad87cb5e20b9534c04a72c}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_manager_a981da78d00f5a27127fd1e219b7da77b}{void {\bfseries set\-Default\-Menu\-View} () override}\label{class_student_1_1_menu_object_manager_a981da78d00f5a27127fd1e219b7da77b}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_manager_a8014cba2e47efc8d53ac08f74db8a017}{void {\bfseries set\-Stat\-Menu\-View} () override}\label{class_student_1_1_menu_object_manager_a8014cba2e47efc8d53ac08f74db8a017}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_manager_a7ca89c96dc737675494a35dc196d484f}{void {\bfseries select\-First\-Tile\-Menu\-View} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Course\-::\-Player\-Base} $>$ player) override}\label{class_student_1_1_menu_object_manager_a7ca89c96dc737675494a35dc196d484f}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_manager_a52a7c380ffc5590ff21d160b9bea8857}{void {\bfseries reset\-Menu\-View} () override}\label{class_student_1_1_menu_object_manager_a52a7c380ffc5590ff21d160b9bea8857}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_manager_acd75b14e7df410c3951110a43b7345c2}{void {\bfseries set\-Player\-Lost\-Menu} (std\-::vector$<$ std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Course\-::\-Player\-Base} $>$ $>$ players, std\-::vector$<$ std\-::string $>$ reasons) override}\label{class_student_1_1_menu_object_manager_acd75b14e7df410c3951110a43b7345c2}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_manager_a05ef309c94a5074efc7a180068c353d2}{void {\bfseries set\-Tie\-Menu} (std\-::vector$<$ std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Course\-::\-Player\-Base} $>$ $>$ players, std\-::vector$<$ std\-::string $>$ reasons) override}\label{class_student_1_1_menu_object_manager_a05ef309c94a5074efc7a180068c353d2}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_manager_a592527eb6d53addcaa8718865f526917}{void {\bfseries set\-Win\-Menu} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Course\-::\-Player\-Base} $>$ player) override}\label{class_student_1_1_menu_object_manager_a592527eb6d53addcaa8718865f526917}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_manager_a17d8c6f070ec204b7d9c842eff78d37f}{void {\bfseries add\-Player\-Title} () override}\label{class_student_1_1_menu_object_manager_a17d8c6f070ec204b7d9c842eff78d37f}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_manager_ae8347dca587be960c557aa66fada1ea8}{void {\bfseries set\-Unit\-Shop\-Menu\-View} () override}\label{class_student_1_1_menu_object_manager_ae8347dca587be960c557aa66fada1ea8}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_manager_a5679ccf375ca620ce923a50ed22deff4}{void {\bfseries add\-Resource\-Menu} (int x, int y) override}\label{class_student_1_1_menu_object_manager_a5679ccf375ca620ce923a50ed22deff4}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_manager_ab57240c9624c859f44e9ac26fc840e80}{void {\bfseries add\-Net\-Menu} (int x, int y) override}\label{class_student_1_1_menu_object_manager_ab57240c9624c859f44e9ac26fc840e80}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_manager_a84200941f70167e2ef288253835e8439}{void {\bfseries add\-Unit\-Menu} (int x, int y) override}\label{class_student_1_1_menu_object_manager_a84200941f70167e2ef288253835e8439}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_manager_aa1fbe2e11b3288a49f3a302895e5da2d}{void {\bfseries add\-Close\-Button} () override}\label{class_student_1_1_menu_object_manager_aa1fbe2e11b3288a49f3a302895e5da2d}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_manager_a9a4761e16ac5fecf3bde7c333820277c}{void {\bfseries add\-O\-K\-Button} (int x, int y) override}\label{class_student_1_1_menu_object_manager_a9a4761e16ac5fecf3bde7c333820277c}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_manager_a848281436bedffd732ae306911ad07d3}{void {\bfseries add\-Tile\-Percents} (int x, int y) override}\label{class_student_1_1_menu_object_manager_a848281436bedffd732ae306911ad07d3}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_manager_aebd7e45513e4f04b278e3729c6b5ac3c}{void {\bfseries add\-Rounds\-Played} (int x, int y) override}\label{class_student_1_1_menu_object_manager_aebd7e45513e4f04b278e3729c6b5ac3c}
+
+\end{DoxyCompactItemize}
+
+
+\subsection{Detailed Description}
+The \hyperlink{class_student_1_1_menu_object_manager}{Menu\-Object\-Manager} class is an interface which the Course-\/side code uses to interact with the \hyperlink{class_student_1_1_menu_object_manager}{Menu\-Object\-Manager} implemented by the students. 
+
+\begin{DoxyNote}{Note}
+The interface declares only functions required by the Course-\/side code. The actual implementation can (and should!) contain more stuff. 
+\end{DoxyNote}
+
+
+The documentation for this class was generated from the following files\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-D\-A\-L/menuobjectmanager.\-h\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-D\-A\-L/menuobjectmanager.\-cpp\end{DoxyCompactItemize}

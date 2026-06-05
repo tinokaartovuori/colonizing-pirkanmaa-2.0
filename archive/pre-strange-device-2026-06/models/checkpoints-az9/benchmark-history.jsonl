@@ -1,0 +1,13 @@
+{"gen":0,"winRate":0.2250,"lossRate":0.5500,"timeoutRate":0.2000,"tileFrac":0.1699,"ts":"2026-06-02T21:45:57Z"}
+{"gen":5,"winRate":0.3500,"lossRate":0.2500,"timeoutRate":0.4000,"tileFrac":0.2884,"ts":"2026-06-02T21:48:13Z"}
+{"gen":10,"winRate":0.1250,"lossRate":0.4000,"timeoutRate":0.4750,"tileFrac":0.1612,"ts":"2026-06-02T21:50:25Z"}
+{"gen":15,"winRate":0.3500,"lossRate":0.4000,"timeoutRate":0.2500,"tileFrac":0.2174,"ts":"2026-06-02T21:52:38Z"}
+{"gen":20,"winRate":0.3000,"lossRate":0.4250,"timeoutRate":0.2750,"tileFrac":0.2083,"ts":"2026-06-02T21:54:39Z"}
+{"gen":25,"winRate":0.1250,"lossRate":0.4000,"timeoutRate":0.4750,"tileFrac":0.1423,"ts":"2026-06-02T21:56:31Z"}
+{"gen":30,"winRate":0.2250,"lossRate":0.3250,"timeoutRate":0.4500,"tileFrac":0.2141,"ts":"2026-06-02T21:58:30Z"}
+{"gen":35,"winRate":0.2500,"lossRate":0.2750,"timeoutRate":0.4750,"tileFrac":0.1859,"ts":"2026-06-02T22:00:20Z"}
+{"gen":40,"winRate":0.3000,"lossRate":0.3000,"timeoutRate":0.4000,"tileFrac":0.2052,"ts":"2026-06-02T22:02:13Z"}
+{"gen":45,"winRate":0.2500,"lossRate":0.3000,"timeoutRate":0.4500,"tileFrac":0.2088,"ts":"2026-06-02T22:04:06Z"}
+{"gen":50,"winRate":0.1750,"lossRate":0.3500,"timeoutRate":0.4750,"tileFrac":0.1607,"ts":"2026-06-02T22:05:56Z"}
+{"gen":55,"winRate":0.1750,"lossRate":0.3000,"timeoutRate":0.5250,"tileFrac":0.1670,"ts":"2026-06-02T22:07:45Z"}
+{"gen":60,"winRate":0.1750,"lossRate":0.2750,"timeoutRate":0.5500,"tileFrac":0.1592,"ts":"2026-06-02T22:09:34Z"}

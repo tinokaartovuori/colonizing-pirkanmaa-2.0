@@ -1,0 +1,128 @@
+\hypertarget{class_student_1_1_menu_object}{\section{Student\-:\-:Menu\-Object Class Reference}
+\label{class_student_1_1_menu_object}\index{Student\-::\-Menu\-Object@{Student\-::\-Menu\-Object}}
+}
+
+
+The \hyperlink{class_student_1_1_menu_object}{Menu\-Object} class is base-\/class that contain's general information on different Objects in game.  
+
+
+
+
+{\ttfamily \#include $<$menuobject.\-h$>$}
+
+
+
+Inheritance diagram for Student\-:\-:Menu\-Object\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[width=350pt]{class_student_1_1_menu_object__inherit__graph}
+\end{center}
+\end{figure}
+
+
+Collaboration diagram for Student\-:\-:Menu\-Object\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[width=240pt]{class_student_1_1_menu_object__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_student_1_1_menu_object_afb2675e0b9c03d88fbc669225e42b201}{{\bfseries Menu\-Object} (const \hyperlink{class_course_1_1_coordinate}{Course\-::\-Coordinate} \&coordinate, int width, int height, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{Course\-::i\-Object\-Manager} $>$ \&objectmanager)}\label{class_student_1_1_menu_object_afb2675e0b9c03d88fbc669225e42b201}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_a6815a6f2fd3d11b396681c2341f99e3b}{{\bfseries Menu\-Object} (const \hyperlink{class_course_1_1_coordinate}{Course\-::\-Coordinate} \&coordinate, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{Course\-::i\-Object\-Manager} $>$ \&objectmanager)}\label{class_student_1_1_menu_object_a6815a6f2fd3d11b396681c2341f99e3b}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_aa0be876f52a06553324f950fa537722e}{virtual \hyperlink{class_student_1_1_menu_object_aa0be876f52a06553324f950fa537722e}{$\sim$\-Menu\-Object} ()=default}\label{class_student_1_1_menu_object_aa0be876f52a06553324f950fa537722e}
+
+\begin{DoxyCompactList}\small\item\em $\sim$\-Menu\-Object Default destructor. \end{DoxyCompactList}\item 
+virtual std\-::string \hyperlink{class_student_1_1_menu_object_ad014a4bd1e775c1be6689ffe018fed6b}{get\-Type} () const override
+\begin{DoxyCompactList}\small\item\em get\-Type Returns a string describing objects type. \end{DoxyCompactList}\item 
+\hypertarget{class_student_1_1_menu_object_a477f6cc25dab07a9e2fac876ac62f4f4}{void {\bfseries add\-To\-Absolute\-Coordinate} (Q\-Point coord)}\label{class_student_1_1_menu_object_a477f6cc25dab07a9e2fac876ac62f4f4}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_a4fd9afac37622835c16051872170f28f}{Q\-Point {\bfseries get\-Absolute\-Coordinates} ()}\label{class_student_1_1_menu_object_a4fd9afac37622835c16051872170f28f}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_a2004d4e6aad0390f604e95321a3a1bee}{void {\bfseries multi\-Pix\-Map} (bool onoff)}\label{class_student_1_1_menu_object_a2004d4e6aad0390f604e95321a3a1bee}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_add43b727d38b5f75830c796598f76c01}{bool {\bfseries is\-Multi\-Pix\-Map} ()}\label{class_student_1_1_menu_object_add43b727d38b5f75830c796598f76c01}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_a22daa54582c31efdf70766ebc3e25b20}{void {\bfseries inverse\-Multi\-Pix\-Map} (bool onoff)}\label{class_student_1_1_menu_object_a22daa54582c31efdf70766ebc3e25b20}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_a4f6cdc3b505a898d07a3e713aa8cf7d1}{bool {\bfseries is\-Inverse\-Multi\-Pix\-Map} ()}\label{class_student_1_1_menu_object_a4f6cdc3b505a898d07a3e713aa8cf7d1}
+
+\end{DoxyCompactItemize}
+\subsection*{Protected Attributes}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_student_1_1_menu_object_a023ca29bf38a143071daa2972a865877}{Q\-Point {\bfseries absolute\-Coordinate}}\label{class_student_1_1_menu_object_a023ca29bf38a143071daa2972a865877}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_a215dcc249c14a2eb7bc74b7909221ddc}{bool {\bfseries is\-Multi\-Pix\-Map\-\_\-}}\label{class_student_1_1_menu_object_a215dcc249c14a2eb7bc74b7909221ddc}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_ad8b206a5994510e917f5c16c9eac4eb6}{bool {\bfseries is\-Inverse\-Multi\-Pix\-Map\-\_\-}}\label{class_student_1_1_menu_object_ad8b206a5994510e917f5c16c9eac4eb6}
+
+\end{DoxyCompactItemize}
+\subsection*{Additional Inherited Members}
+
+
+\subsection{Detailed Description}
+The \hyperlink{class_student_1_1_menu_object}{Menu\-Object} class is base-\/class that contain's general information on different Objects in game. 
+
+
+\begin{DoxyItemize}
+\item I\-D
+\item Possible owner
+\item Possible location coordinate
+\item Metadata in a string-\/$>$string map
+\item Pointers to \hyperlink{class_student_1_1_game_event_handler}{Game\-Event\-Handler} and \hyperlink{class_student_1_1_object_manager}{Object\-Manager}
+\end{DoxyItemize}
+
+\begin{DoxyNote}{Note}
+The functions consist mainly of get and set -\/functions that are used to access and store the information specified above. 
+\end{DoxyNote}
+
+
+\subsection{Member Function Documentation}
+\hypertarget{class_student_1_1_menu_object_ad014a4bd1e775c1be6689ffe018fed6b}{\index{Student\-::\-Menu\-Object@{Student\-::\-Menu\-Object}!get\-Type@{get\-Type}}
+\index{get\-Type@{get\-Type}!Student::MenuObject@{Student\-::\-Menu\-Object}}
+\subsubsection[{get\-Type}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Student\-::\-Menu\-Object\-::get\-Type (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_menu_object_ad014a4bd1e775c1be6689ffe018fed6b}
+
+
+get\-Type Returns a string describing objects type. 
+
+\begin{DoxyReturn}{Returns}
+std\-::string that represents Object's type. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+Reimplemented from \hyperlink{class_course_1_1_base_object_ae66880c372a67483fc4205a55839443a}{Course\-::\-Base\-Object}.
+
+
+
+Reimplemented in \hyperlink{class_student_1_1_button_a2c69f5dcee1036b11154e799d6621acb}{Student\-::\-Button}, \hyperlink{class_student_1_1_menu_view_a6c9f9c66b86d2772115e0bbb50a977bc}{Student\-::\-Menu\-View}, \hyperlink{class_student_1_1_label_a35e4181d3b859ce8008029b056b79b79}{Student\-::\-Label}, and \hyperlink{class_student_1_1_menu_object_container_aca16734d7c1a5d4445dd8984e5e75463}{Student\-::\-Menu\-Object\-Container}.
+
+
+
+The documentation for this class was generated from the following files\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Core/menuobject.\-h\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Core/menuobject.\-cpp\end{DoxyCompactItemize}

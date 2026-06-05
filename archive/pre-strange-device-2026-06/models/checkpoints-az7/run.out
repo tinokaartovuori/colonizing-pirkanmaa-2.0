@@ -1,0 +1,30 @@
+alphazero: 16 worker threads (20 cores detected, leaving headroom)
+alphazero: warm-start policy from checkpoints-az6/champion.json (arch [63, 24, 16, 1])
+alphazero: warm-start SPATIAL value net from checkpoints-az6/value.json (arch [41, 32, 16, 1])
+alphazero: out=checkpoints-az7 iters=120 games/iter=32 sims=96 bench every 5 (40 games)
+iter 0: vs-hard win 25.0% (loss 37.5%, timeout 32.5%) | ploss 0.7783 vloss 0.3125 | buf 7622 | 21s
+iter 5: vs-hard win 32.5% (loss 20.0%, timeout 42.5%) | ploss 0.7274 vloss 0.3271 | buf 30000 | 130s
+iter 10: vs-hard win 20.0% (loss 25.0%, timeout 50.0%) | ploss 0.7559 vloss 0.3420 | buf 30000 | 251s
+iter 15: vs-hard win 30.0% (loss 22.5%, timeout 42.5%) | ploss 0.7692 vloss 0.3115 | buf 30000 | 371s
+iter 20: vs-hard win 30.0% (loss 27.5%, timeout 37.5%) | ploss 0.7551 vloss 0.3253 | buf 30000 | 479s
+iter 25: vs-hard win 25.0% (loss 37.5%, timeout 32.5%) | ploss 0.6872 vloss 0.3746 | buf 30000 | 587s
+iter 30: vs-hard win 30.0% (loss 27.5%, timeout 37.5%) | ploss 0.7324 vloss 0.3581 | buf 30000 | 697s
+iter 35: vs-hard win 27.5% (loss 22.5%, timeout 45.0%) | ploss 0.7226 vloss 0.3669 | buf 30000 | 788s
+iter 40: vs-hard win 25.0% (loss 22.5%, timeout 47.5%) | ploss 0.6956 vloss 0.3332 | buf 30000 | 881s
+iter 45: vs-hard win 15.0% (loss 22.5%, timeout 57.5%) | ploss 0.7414 vloss 0.3433 | buf 30000 | 980s
+iter 50: vs-hard win 22.5% (loss 40.0%, timeout 32.5%) | ploss 0.6765 vloss 0.3048 | buf 30000 | 1068s
+iter 55: vs-hard win 25.0% (loss 32.5%, timeout 37.5%) | ploss 0.7100 vloss 0.3139 | buf 30000 | 1165s
+iter 60: vs-hard win 25.0% (loss 27.5%, timeout 42.5%) | ploss 0.6872 vloss 0.2800 | buf 30000 | 1271s
+iter 65: vs-hard win 20.0% (loss 27.5%, timeout 47.5%) | ploss 0.6560 vloss 0.3175 | buf 30000 | 1365s
+iter 70: vs-hard win 22.5% (loss 32.5%, timeout 40.0%) | ploss 0.6548 vloss 0.2835 | buf 30000 | 1463s
+iter 75: vs-hard win 15.0% (loss 35.0%, timeout 45.0%) | ploss 0.6253 vloss 0.2796 | buf 30000 | 1556s
+iter 80: vs-hard win 22.5% (loss 25.0%, timeout 47.5%) | ploss 0.6207 vloss 0.2750 | buf 30000 | 1642s
+iter 85: vs-hard win 30.0% (loss 42.5%, timeout 22.5%) | ploss 0.6599 vloss 0.2931 | buf 30000 | 1736s
+iter 90: vs-hard win 22.5% (loss 55.0%, timeout 17.5%) | ploss 0.6923 vloss 0.3215 | buf 30000 | 1829s
+iter 95: vs-hard win 22.5% (loss 45.0%, timeout 27.5%) | ploss 0.6762 vloss 0.3107 | buf 30000 | 1927s
+iter 100: vs-hard win 20.0% (loss 37.5%, timeout 37.5%) | ploss 0.6872 vloss 0.3163 | buf 30000 | 2016s
+iter 105: vs-hard win 20.0% (loss 32.5%, timeout 42.5%) | ploss 0.6168 vloss 0.2195 | buf 30000 | 2094s
+iter 110: vs-hard win 17.5% (loss 32.5%, timeout 42.5%) | ploss 0.5945 vloss 0.2291 | buf 30000 | 2179s
+iter 115: vs-hard win 25.0% (loss 20.0%, timeout 50.0%) | ploss 0.5892 vloss 0.2200 | buf 30000 | 2262s
+iter 119: vs-hard win 17.5% (loss 17.5%, timeout 60.0%) | ploss 0.5745 vloss 0.2114 | buf 30000 | 2326s
+alphazero: done in 2331s → checkpoints-az7

@@ -1,0 +1,102 @@
+\hypertarget{class_student_1_1_menu_object_container}{\section{Student\-:\-:Menu\-Object\-Container Class Reference}
+\label{class_student_1_1_menu_object_container}\index{Student\-::\-Menu\-Object\-Container@{Student\-::\-Menu\-Object\-Container}}
+}
+
+
+The \hyperlink{class_student_1_1_menu_object_container}{Menu\-Object\-Container} class is a base-\/class for different Tile-\/objects in the game. \par
+.  
+
+
+
+
+{\ttfamily \#include $<$menuobjectcontainer.\-h$>$}
+
+
+
+Inheritance diagram for Student\-:\-:Menu\-Object\-Container\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_student_1_1_menu_object_container__inherit__graph}
+\end{center}
+\end{figure}
+
+
+Collaboration diagram for Student\-:\-:Menu\-Object\-Container\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_student_1_1_menu_object_container__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_student_1_1_menu_object_container_ab8bbe6686158f4f2d1cedae2ee0c6b89}{\hyperlink{class_student_1_1_menu_object_container_ab8bbe6686158f4f2d1cedae2ee0c6b89}{Menu\-Object\-Container} ()=delete}\label{class_student_1_1_menu_object_container_ab8bbe6686158f4f2d1cedae2ee0c6b89}
+
+\begin{DoxyCompactList}\small\item\em Disabled parameterless constructor. \end{DoxyCompactList}\item 
+\hypertarget{class_student_1_1_menu_object_container_a37e14a6145169dc257f8098c38bde0d8}{\hyperlink{class_student_1_1_menu_object_container_a37e14a6145169dc257f8098c38bde0d8}{Menu\-Object\-Container} (const \hyperlink{class_course_1_1_coordinate}{Course\-::\-Coordinate} \&coordinate, int width, int height, int grid\-Size, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{Course\-::i\-Object\-Manager} $>$ \&objectmanager)}\label{class_student_1_1_menu_object_container_a37e14a6145169dc257f8098c38bde0d8}
+
+\begin{DoxyCompactList}\small\item\em Constructor for the class. \end{DoxyCompactList}\item 
+\hypertarget{class_student_1_1_menu_object_container_a81e1e14f0220c089cdc4397260579367}{{\bfseries Menu\-Object\-Container} (const \hyperlink{class_course_1_1_coordinate}{Course\-::\-Coordinate} \&coordinate, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{Course\-::i\-Object\-Manager} $>$ \&objectmanager)}\label{class_student_1_1_menu_object_container_a81e1e14f0220c089cdc4397260579367}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_container_a796ce03c62dd79c1e6424cbf335a44c0}{virtual \hyperlink{class_student_1_1_menu_object_container_a796ce03c62dd79c1e6424cbf335a44c0}{$\sim$\-Menu\-Object\-Container} ()=default}\label{class_student_1_1_menu_object_container_a796ce03c62dd79c1e6424cbf335a44c0}
+
+\begin{DoxyCompactList}\small\item\em Default destructor. \end{DoxyCompactList}\item 
+virtual std\-::string \hyperlink{class_student_1_1_menu_object_container_aca16734d7c1a5d4445dd8984e5e75463}{get\-Type} () const override
+\begin{DoxyCompactList}\small\item\em get\-Type Returns a string describing objects type. \end{DoxyCompactList}\item 
+\hypertarget{class_student_1_1_menu_object_container_a1ffc0d949a81eff45d51cd1a5d37f738}{void {\bfseries add\-Menu\-Object} (const std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1_menu_object}{Menu\-Object} $>$ \&obj) override}\label{class_student_1_1_menu_object_container_a1ffc0d949a81eff45d51cd1a5d37f738}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_container_af9c513de5b3cb1e67dc27914cbd6f8e2}{std\-::vector$<$ std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_student_1_1_menu_object}{Menu\-Object} $>$ $>$ {\bfseries get\-Menu\-Objects} () const override}\label{class_student_1_1_menu_object_container_af9c513de5b3cb1e67dc27914cbd6f8e2}
+
+\item 
+\hypertarget{class_student_1_1_menu_object_container_a3235d0025143ad600b429ea43826ba4d}{int {\bfseries get\-Grid\-Size} () const }\label{class_student_1_1_menu_object_container_a3235d0025143ad600b429ea43826ba4d}
+
+\end{DoxyCompactItemize}
+\subsection*{Additional Inherited Members}
+
+
+\subsection{Detailed Description}
+The \hyperlink{class_student_1_1_menu_object_container}{Menu\-Object\-Container} class is a base-\/class for different Tile-\/objects in the game. \par
+. 
+
+Tile is responsible for\-:
+\begin{DoxyItemize}
+\item Generating resources.
+\item Checking Tile-\/specific object placement rules. \par
+ Each Tile has some Base-\/production which is multiplied by worker's efficiency, when generating resources. Resource generation can also gain flat bonuses from buildings. Tiles also know how many Buildings or Workers can be placed on them. 
+\end{DoxyItemize}
+
+\subsection{Member Function Documentation}
+\hypertarget{class_student_1_1_menu_object_container_aca16734d7c1a5d4445dd8984e5e75463}{\index{Student\-::\-Menu\-Object\-Container@{Student\-::\-Menu\-Object\-Container}!get\-Type@{get\-Type}}
+\index{get\-Type@{get\-Type}!Student::MenuObjectContainer@{Student\-::\-Menu\-Object\-Container}}
+\subsubsection[{get\-Type}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Student\-::\-Menu\-Object\-Container\-::get\-Type (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_menu_object_container_aca16734d7c1a5d4445dd8984e5e75463}
+
+
+get\-Type Returns a string describing objects type. 
+
+\begin{DoxyReturn}{Returns}
+std\-::string that represents Object's type. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+Reimplemented from \hyperlink{class_student_1_1_menu_object_ad014a4bd1e775c1be6689ffe018fed6b}{Student\-::\-Menu\-Object}.
+
+
+
+The documentation for this class was generated from the following files\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Menus/menuobjectcontainer.\-h\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Menus/menuobjectcontainer.\-cpp\end{DoxyCompactItemize}

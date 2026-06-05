@@ -1,0 +1,31 @@
+{
+  "bankrupt_pen": -1.0,
+  "loss_pen": -1.0,
+  "survive_credit": 0.15,
+  "win_base": 1.0,
+  "win_speed": 0.5,
+  "timeout_base": 0.0,
+
+  "dense_floor": 0.0,
+  "dense_anneal_frac": 0.6,
+  "w_dom": 0.0,
+  "w_econ": 0.0,
+  "w_prod": 0.0,
+  "w_solv": 0.0,
+
+  "w_tile_lead": 0.0,
+  "w_wealth_lead": 0.0,
+  "w_income_lead": 0.0,
+  "w_mil_lead": 0.0,
+
+  "tactical_floor": 0.0,
+  "w_hq": 0.0,
+  "w_cut": 0.0,
+  "w_building": 0.0,
+  "w_conquer": 0.0,
+  "w_kill": 0.0,
+  "kill_scale": 10.0,
+
+  "w_rank": 0.3,
+  "w_tile_loss": 0.0
+}

@@ -1,0 +1,254 @@
+\hypertarget{class_course_1_1_building_base}{\section{Course\-:\-:Building\-Base Class Reference}
+\label{class_course_1_1_building_base}\index{Course\-::\-Building\-Base@{Course\-::\-Building\-Base}}
+}
+
+
+The \hyperlink{class_course_1_1_building_base}{Building\-Base} class is a base-\/class for different buildings in the game.  
+
+
+
+
+{\ttfamily \#include $<$buildingbase.\-h$>$}
+
+
+
+Inheritance diagram for Course\-:\-:Building\-Base\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[width=350pt]{class_course_1_1_building_base__inherit__graph}
+\end{center}
+\end{figure}
+
+
+Collaboration diagram for Course\-:\-:Building\-Base\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_course_1_1_building_base__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_course_1_1_building_base_a899534ce249e7bd1c55883b7c0f4db93}{\hyperlink{class_course_1_1_building_base_a899534ce249e7bd1c55883b7c0f4db93}{Building\-Base} ()=delete}\label{class_course_1_1_building_base_a899534ce249e7bd1c55883b7c0f4db93}
+
+\begin{DoxyCompactList}\small\item\em Disabled parameterless constructor. \end{DoxyCompactList}\item 
+\hyperlink{class_course_1_1_building_base_a23b962cc4a1181055974897623260a9c}{Building\-Base} (const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{i\-Object\-Manager} $>$ \&objectmanager, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Player\-Base} $>$ \&owner, const Resource\-Map \&buildcost=\{\}, const Resource\-Map \&production=\{\}, const std\-::string \&basic\-\_\-description=\char`\"{}\char`\"{})
+\begin{DoxyCompactList}\small\item\em Constructor for the class. \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1_building_base_aa1787cfb58ab07902c29fe02941dced6}{virtual \hyperlink{class_course_1_1_building_base_aa1787cfb58ab07902c29fe02941dced6}{$\sim$\-Building\-Base} ()=default}\label{class_course_1_1_building_base_aa1787cfb58ab07902c29fe02941dced6}
+
+\begin{DoxyCompactList}\small\item\em Default destructor. \end{DoxyCompactList}\item 
+virtual std\-::string \hyperlink{class_course_1_1_building_base_ac2cc44e08dc73d05b1617bf71295baaf}{get\-Type} () const override
+\begin{DoxyCompactList}\small\item\em Returns the building's type in string. In this case it's \char`\"{}\-Building\-Base\char`\"{}. \end{DoxyCompactList}\item 
+Resource\-Map \hyperlink{class_course_1_1_building_base_ad53ecc1dea91e3ca51c31759fe1680cb}{get\-Production} ()
+\begin{DoxyCompactList}\small\item\em Returns a resource map of the buildings production. \end{DoxyCompactList}\item 
+virtual Resource\-Map \hyperlink{class_course_1_1_building_base_a7af046114519803867ed3a445c265991}{get\-Cost} () override
+\begin{DoxyCompactList}\small\item\em Returns a resource map of the buildings building cost. \end{DoxyCompactList}\item 
+void \hyperlink{class_course_1_1_building_base_a2f4c7eab18e5c1b9b3c6f04d5c00a743}{add\-Basic\-Description} (std\-::string desc)
+\begin{DoxyCompactList}\small\item\em Sets description for the building object. \end{DoxyCompactList}\item 
+std\-::string \hyperlink{class_course_1_1_building_base_a80c4b2f5b6b3c5e41e17297d28bf0c4c}{get\-Basic\-Description} ()
+\begin{DoxyCompactList}\small\item\em Gets description of the building object. \end{DoxyCompactList}\item 
+void \hyperlink{class_course_1_1_building_base_a335ff3d5e278f9f1f0c6735bd5e4c703}{set\-Parent\-Tile} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Tile\-Base} $>$ parent\-Tile)
+\begin{DoxyCompactList}\small\item\em Sets parent tile for the building. This is called every time a building is added on a tile. \end{DoxyCompactList}\end{DoxyCompactItemize}
+\subsection*{Public Attributes}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_course_1_1_building_base_ab63e067ebb226173d7b281c70b6e58bf}{const Resource\-Map {\bfseries B\-U\-I\-L\-D\-\_\-\-C\-O\-S\-T}}\label{class_course_1_1_building_base_ab63e067ebb226173d7b281c70b6e58bf}
+
+\item 
+\hypertarget{class_course_1_1_building_base_a69fc58a02c5299f408f35ef02a604633}{const Resource\-Map {\bfseries P\-R\-O\-D\-U\-C\-T\-I\-O\-N\-\_\-\-E\-F\-F\-E\-C\-T}}\label{class_course_1_1_building_base_a69fc58a02c5299f408f35ef02a604633}
+
+\end{DoxyCompactItemize}
+\subsection*{Protected Attributes}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_course_1_1_building_base_ac508861ea41128f6eddbf2f1ff90ee20}{std\-::string {\bfseries basic\-Description\-\_\-}}\label{class_course_1_1_building_base_ac508861ea41128f6eddbf2f1ff90ee20}
+
+\item 
+\hypertarget{class_course_1_1_building_base_a31efce98798682e7b333fd4e46e742c3}{std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Tile\-Base} $>$ {\bfseries parent\-Tile\-\_\-}}\label{class_course_1_1_building_base_a31efce98798682e7b333fd4e46e742c3}
+
+\end{DoxyCompactItemize}
+\subsection*{Additional Inherited Members}
+
+
+\subsection{Detailed Description}
+The \hyperlink{class_course_1_1_building_base}{Building\-Base} class is a base-\/class for different buildings in the game. 
+
+
+\begin{DoxyItemize}
+\item Can increase base-\/production for a Tile.
+\item Can call functions from Game\-Event\-Handler.
+\end{DoxyItemize}
+
+Buildings can have hold-\/markers that prevent normal operation. 
+
+\subsection{Constructor \& Destructor Documentation}
+\hypertarget{class_course_1_1_building_base_a23b962cc4a1181055974897623260a9c}{\index{Course\-::\-Building\-Base@{Course\-::\-Building\-Base}!Building\-Base@{Building\-Base}}
+\index{Building\-Base@{Building\-Base}!Course::BuildingBase@{Course\-::\-Building\-Base}}
+\subsubsection[{Building\-Base}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Building\-Base\-::\-Building\-Base (
+\begin{DoxyParamCaption}
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Game\-Event\-Handler} $>$ \&}]{eventhandler, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Object\-Manager} $>$ \&}]{objectmanager, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Player\-Base} $>$ \&}]{owner, }
+\item[{const Resource\-Map \&}]{buildcost = {\ttfamily \{\}}, }
+\item[{const Resource\-Map \&}]{production = {\ttfamily \{\}}, }
+\item[{const std\-::string \&}]{basic\-\_\-description = {\ttfamily \char`\"{}\char`\"{}}}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [explicit]}}}\label{class_course_1_1_building_base_a23b962cc4a1181055974897623260a9c}
+
+
+Constructor for the class. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em eventhandler} & points to the Game\-Event\-Handler. \\
+\hline
+{\em objectmanager} & points to the Object\-Manager. \\
+\hline
+{\em owner} & points to the owning player. \\
+\hline
+{\em buildcost} & is a Resource\-Map of the building cost of the building \\
+\hline
+{\em production} & is a Resource\-Map of the production of the building \\
+\hline
+{\em basic\-\_\-description} & is a string of the buildings description\\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: No guarantee. 
+\end{DoxyPostcond}
+
+\begin{DoxyExceptions}{Exceptions}
+{\em \hyperlink{class_course_1_1_owner_conflict}{Owner\-Conflict}} & -\/ if the building conflicts with tile's ownership. \\
+\hline
+\end{DoxyExceptions}
+
+
+\subsection{Member Function Documentation}
+\hypertarget{class_course_1_1_building_base_a2f4c7eab18e5c1b9b3c6f04d5c00a743}{\index{Course\-::\-Building\-Base@{Course\-::\-Building\-Base}!add\-Basic\-Description@{add\-Basic\-Description}}
+\index{add\-Basic\-Description@{add\-Basic\-Description}!Course::BuildingBase@{Course\-::\-Building\-Base}}
+\subsubsection[{add\-Basic\-Description}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Building\-Base\-::add\-Basic\-Description (
+\begin{DoxyParamCaption}
+\item[{std\-::string}]{desc}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_building_base_a2f4c7eab18e5c1b9b3c6f04d5c00a743}
+
+
+Sets description for the building object. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em String} & of the description to be set \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_building_base_a80c4b2f5b6b3c5e41e17297d28bf0c4c}{\index{Course\-::\-Building\-Base@{Course\-::\-Building\-Base}!get\-Basic\-Description@{get\-Basic\-Description}}
+\index{get\-Basic\-Description@{get\-Basic\-Description}!Course::BuildingBase@{Course\-::\-Building\-Base}}
+\subsubsection[{get\-Basic\-Description}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Course\-::\-Building\-Base\-::get\-Basic\-Description (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_building_base_a80c4b2f5b6b3c5e41e17297d28bf0c4c}
+
+
+Gets description of the building object. 
+
+\begin{DoxyReturn}{Returns}
+String of the description to be set 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_building_base_a7af046114519803867ed3a445c265991}{\index{Course\-::\-Building\-Base@{Course\-::\-Building\-Base}!get\-Cost@{get\-Cost}}
+\index{get\-Cost@{get\-Cost}!Course::BuildingBase@{Course\-::\-Building\-Base}}
+\subsubsection[{get\-Cost}]{\setlength{\rightskip}{0pt plus 5cm}Resource\-Map Course\-::\-Building\-Base\-::get\-Cost (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_course_1_1_building_base_a7af046114519803867ed3a445c265991}
+
+
+Returns a resource map of the buildings building cost. 
+
+\begin{DoxyReturn}{Returns}
+Resource map of the buildings building cost 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+Reimplemented from \hyperlink{class_course_1_1_placeable_game_object}{Course\-::\-Placeable\-Game\-Object}.
+
+\hypertarget{class_course_1_1_building_base_ad53ecc1dea91e3ca51c31759fe1680cb}{\index{Course\-::\-Building\-Base@{Course\-::\-Building\-Base}!get\-Production@{get\-Production}}
+\index{get\-Production@{get\-Production}!Course::BuildingBase@{Course\-::\-Building\-Base}}
+\subsubsection[{get\-Production}]{\setlength{\rightskip}{0pt plus 5cm}Resource\-Map Course\-::\-Building\-Base\-::get\-Production (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_building_base_ad53ecc1dea91e3ca51c31759fe1680cb}
+
+
+Returns a resource map of the buildings production. 
+
+\begin{DoxyReturn}{Returns}
+Resource map of the buildings production 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_building_base_ac2cc44e08dc73d05b1617bf71295baaf}{\index{Course\-::\-Building\-Base@{Course\-::\-Building\-Base}!get\-Type@{get\-Type}}
+\index{get\-Type@{get\-Type}!Course::BuildingBase@{Course\-::\-Building\-Base}}
+\subsubsection[{get\-Type}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Course\-::\-Building\-Base\-::get\-Type (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_course_1_1_building_base_ac2cc44e08dc73d05b1617bf71295baaf}
+
+
+Returns the building's type in string. In this case it's \char`\"{}\-Building\-Base\char`\"{}. 
+
+\begin{DoxyReturn}{Returns}
+Building's type in string. In this case it's \char`\"{}\-Building\-Base\char`\"{} 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+Reimplemented from \hyperlink{class_course_1_1_placeable_game_object_adcd0c91b52ccedd434092380644f210e}{Course\-::\-Placeable\-Game\-Object}.
+
+
+
+Reimplemented in \hyperlink{class_student_1_1_nuclear_plant_a2dfb7f93c216ca4c76507a3d4a1fa530}{Student\-::\-Nuclear\-Plant}, \hyperlink{class_student_1_1_village_a02b27bc84f9d250795ec2f9ff72fbe1b}{Student\-::\-Village}, \hyperlink{class_student_1_1_hydro_power_a3d1a591139fdd4f2c014a88fc3dcde59}{Student\-::\-Hydro\-Power}, \hyperlink{class_student_1_1_mikontalo_a71ab64374c57380dd45efea5a5304104}{Student\-::\-Mikontalo}, \hyperlink{class_student_1_1_mine_aa317adabe862ce41077d712d5b4cdf98}{Student\-::\-Mine}, \hyperlink{class_course_1_1_outpost_a8c89c67187451e0a49ecd57d4fc80602}{Course\-::\-Outpost}, \hyperlink{class_course_1_1_farm_a54ade72809a36d31e0e426eb79d6251a}{Course\-::\-Farm}, \hyperlink{class_student_1_1_bridge_a4c3d72252a2d1992e210accadecf5125}{Student\-::\-Bridge}, and \hyperlink{class_course_1_1_head_quarters_a1d9a996a6a87ca31aeb63dff2d41d242}{Course\-::\-Head\-Quarters}.
+
+\hypertarget{class_course_1_1_building_base_a335ff3d5e278f9f1f0c6735bd5e4c703}{\index{Course\-::\-Building\-Base@{Course\-::\-Building\-Base}!set\-Parent\-Tile@{set\-Parent\-Tile}}
+\index{set\-Parent\-Tile@{set\-Parent\-Tile}!Course::BuildingBase@{Course\-::\-Building\-Base}}
+\subsubsection[{set\-Parent\-Tile}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Building\-Base\-::set\-Parent\-Tile (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Tile\-Base} $>$}]{parent\-Tile}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_building_base_a335ff3d5e278f9f1f0c6735bd5e4c703}
+
+
+Sets parent tile for the building. This is called every time a building is added on a tile. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Shared} & pointer to the parent tile \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+The documentation for this class was generated from the following files\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Buildings/buildingbase.\-h\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Buildings/buildingbase.\-cpp\end{DoxyCompactItemize}

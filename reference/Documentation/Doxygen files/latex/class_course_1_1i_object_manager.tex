@@ -1,0 +1,195 @@
+\hypertarget{class_course_1_1i_object_manager}{\section{Course\-:\-:i\-Object\-Manager Class Reference}
+\label{class_course_1_1i_object_manager}\index{Course\-::i\-Object\-Manager@{Course\-::i\-Object\-Manager}}
+}
+
+
+The \hyperlink{class_course_1_1i_object_manager}{i\-Object\-Manager} class is an interface which the Course-\/side code uses to interact with the Object\-Manager implemented by the students.  
+
+
+
+
+{\ttfamily \#include $<$iobjectmanager.\-h$>$}
+
+
+
+Inheritance diagram for Course\-:\-:i\-Object\-Manager\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_course_1_1i_object_manager__inherit__graph}
+\end{center}
+\end{figure}
+
+
+Collaboration diagram for Course\-:\-:i\-Object\-Manager\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[width=240pt]{class_course_1_1i_object_manager__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_course_1_1i_object_manager_afe7f4ca78e8bcb3d94f92cbcb3e36a6f}{virtual \hyperlink{class_course_1_1i_object_manager_afe7f4ca78e8bcb3d94f92cbcb3e36a6f}{$\sim$i\-Object\-Manager} ()=default}\label{class_course_1_1i_object_manager_afe7f4ca78e8bcb3d94f92cbcb3e36a6f}
+
+\begin{DoxyCompactList}\small\item\em Default destructor. \end{DoxyCompactList}\item 
+virtual void \hyperlink{class_course_1_1i_object_manager_a826fa55229bdc23c49f847245fbdda95}{add\-Tiles} (const std\-::vector$<$ std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Tile\-Base} $>$$>$ \&tiles)=0
+\begin{DoxyCompactList}\small\item\em Adds new tiles to the Object\-Manager. \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1i_object_manager_a26dd3a6b433b23fa9ca65545115ff661}{virtual void {\bfseries replace\-Tile} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ old\-Tile, std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ new\-Tile)=0}\label{class_course_1_1i_object_manager_a26dd3a6b433b23fa9ca65545115ff661}
+
+\item 
+virtual std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Tile\-Base} $>$ \hyperlink{class_course_1_1i_object_manager_afd7ab74d8a4cfedd50340c1e9096672d}{get\-Tile} (const \hyperlink{class_course_1_1_coordinate}{Coordinate} \&coordinate)=0
+\begin{DoxyCompactList}\small\item\em Returns a shared pointer to a Tile that has specified coordinate. \end{DoxyCompactList}\item 
+virtual std\-::vector\\*
+$<$ std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Tile\-Base} $>$ $>$ \hyperlink{class_course_1_1i_object_manager_adbc182a5aeaa8989eb1c91244edbd043}{get\-Tiles} ()=0
+\begin{DoxyCompactList}\small\item\em Returns a vector of shared pointers to Tiles specified by a vector of Coordinates. \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1i_object_manager_a8e5f1879b9a3916b2ede8c6e641b3c8b}{virtual void {\bfseries set\-Hover\-Border} (const std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1_mouse_hover_border}{Student\-::\-Mouse\-Hover\-Border} $>$ border)=0}\label{class_course_1_1i_object_manager_a8e5f1879b9a3916b2ede8c6e641b3c8b}
+
+\item 
+\hypertarget{class_course_1_1i_object_manager_a172c5b32495ed4d90a8750f8a2902247}{virtual void {\bfseries set\-Clicked\-Tile\-Border} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ tile)=0}\label{class_course_1_1i_object_manager_a172c5b32495ed4d90a8750f8a2902247}
+
+\item 
+\hypertarget{class_course_1_1i_object_manager_aac6397ee67cf552678d029ad19c7362e}{virtual std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_student_1_1_clicked_tile_border}{Student\-::\-Clicked\-Tile\-Border} $>$ {\bfseries get\-Clicked\-Tile\-Border} ()=0}\label{class_course_1_1i_object_manager_aac6397ee67cf552678d029ad19c7362e}
+
+\item 
+\hypertarget{class_course_1_1i_object_manager_aa41734de21bab8cd99b6142d8faa3a8b}{virtual void {\bfseries remove\-Clicked\-Tile\-Border} ()=0}\label{class_course_1_1i_object_manager_aa41734de21bab8cd99b6142d8faa3a8b}
+
+\item 
+\hypertarget{class_course_1_1i_object_manager_ae05c8b287fce2f9e5f07cdbb8caa6101}{virtual std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_student_1_1_mouse_hover_border}{Student\-::\-Mouse\-Hover\-Border} $>$ {\bfseries get\-Border\-Tile} ()=0}\label{class_course_1_1i_object_manager_ae05c8b287fce2f9e5f07cdbb8caa6101}
+
+\item 
+\hypertarget{class_course_1_1i_object_manager_a05b87f5611e355a016e9f58b5b10996a}{virtual void {\bfseries add\-D\-A\-L\-S} (const std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler} $>$ gameeventhandler, const std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1i_menu_object_manager}{Student\-::i\-Menu\-Object\-Manager} $>$ menuobjectmanager, const std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1_game_settings_manager}{Student\-::\-Game\-Settings\-Manager} $>$ gamesettingsmanager)=0}\label{class_course_1_1i_object_manager_a05b87f5611e355a016e9f58b5b10996a}
+
+\item 
+\hypertarget{class_course_1_1i_object_manager_a3a776c88c5368dd7c1bda0c8f32deba8}{virtual void {\bfseries set\-Game\-Scene} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1_game_scene}{Student\-::\-Game\-Scene} $>$ gs)=0}\label{class_course_1_1i_object_manager_a3a776c88c5368dd7c1bda0c8f32deba8}
+
+\item 
+\hypertarget{class_course_1_1i_object_manager_aca0de6143427becba38de0147a172519}{virtual std\-::vector\\*
+$<$ std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ $>$ {\bfseries get\-Hq\-Connected\-Tiles} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Course\-::\-Player\-Base} $>$ player)=0}\label{class_course_1_1i_object_manager_aca0de6143427becba38de0147a172519}
+
+\item 
+\hypertarget{class_course_1_1i_object_manager_af5a8fe59e6d1151ccae54db791c7263c}{virtual std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ {\bfseries get\-Hq\-Tile} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Course\-::\-Player\-Base} $>$ player)=0}\label{class_course_1_1i_object_manager_af5a8fe59e6d1151ccae54db791c7263c}
+
+\item 
+\hypertarget{class_course_1_1i_object_manager_ac04e7acf5275e295fb9ed3c99e1e0b9a}{virtual std\-::vector\\*
+$<$ std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ $>$ {\bfseries get\-Available\-Tiles} ()=0}\label{class_course_1_1i_object_manager_ac04e7acf5275e295fb9ed3c99e1e0b9a}
+
+\item 
+\hypertarget{class_course_1_1i_object_manager_a71208cd63551bb2d59bc19cd91fdfae9}{virtual void {\bfseries add\-Block\-Tile\-Overlays} ()=0}\label{class_course_1_1i_object_manager_a71208cd63551bb2d59bc19cd91fdfae9}
+
+\item 
+\hypertarget{class_course_1_1i_object_manager_a8e2ee49acca436aba208a2f9a1d8f6a2}{virtual void {\bfseries remove\-Block\-Tile\-Overlays} ()=0}\label{class_course_1_1i_object_manager_a8e2ee49acca436aba208a2f9a1d8f6a2}
+
+\item 
+\hypertarget{class_course_1_1i_object_manager_a42111a8d3471ccf5b63efaf76f4e036c}{virtual std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_student_1_1_game_scene}{Student\-::\-Game\-Scene} $>$ {\bfseries get\-Game\-Scene} ()=0}\label{class_course_1_1i_object_manager_a42111a8d3471ccf5b63efaf76f4e036c}
+
+\item 
+\hypertarget{class_course_1_1i_object_manager_a63eb6fc708d8ae9fa38d864de8384a1c}{virtual int {\bfseries get\-Tile\-Count} ()=0}\label{class_course_1_1i_object_manager_a63eb6fc708d8ae9fa38d864de8384a1c}
+
+\item 
+\hypertarget{class_course_1_1i_object_manager_a5930f7b30afc1c2ddc0fc71ab1ff8011}{virtual int {\bfseries get\-Tile\-Count\-For\-Player} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Course\-::\-Player\-Base} $>$ player)=0}\label{class_course_1_1i_object_manager_a5930f7b30afc1c2ddc0fc71ab1ff8011}
+
+\item 
+\hypertarget{class_course_1_1i_object_manager_ada6dfee58be49584e541f43b5ce7abbe}{virtual int {\bfseries get\-Neutral\-Tiles} ()=0}\label{class_course_1_1i_object_manager_ada6dfee58be49584e541f43b5ce7abbe}
+
+\end{DoxyCompactItemize}
+
+
+\subsection{Detailed Description}
+The \hyperlink{class_course_1_1i_object_manager}{i\-Object\-Manager} class is an interface which the Course-\/side code uses to interact with the Object\-Manager implemented by the students. 
+
+\begin{DoxyNote}{Note}
+The interface declares only functions required by the Course-\/side code. The actual implementation can (and should!) contain more stuff. 
+\end{DoxyNote}
+
+
+\subsection{Member Function Documentation}
+\hypertarget{class_course_1_1i_object_manager_a826fa55229bdc23c49f847245fbdda95}{\index{Course\-::i\-Object\-Manager@{Course\-::i\-Object\-Manager}!add\-Tiles@{add\-Tiles}}
+\index{add\-Tiles@{add\-Tiles}!Course::iObjectManager@{Course\-::i\-Object\-Manager}}
+\subsubsection[{add\-Tiles}]{\setlength{\rightskip}{0pt plus 5cm}virtual void Course\-::i\-Object\-Manager\-::add\-Tiles (
+\begin{DoxyParamCaption}
+\item[{const std\-::vector$<$ std\-::shared\-\_\-ptr$<$ {\bf Tile\-Base} $>$$>$ \&}]{tiles}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [pure virtual]}}}\label{class_course_1_1i_object_manager_a826fa55229bdc23c49f847245fbdda95}
+
+
+Adds new tiles to the Object\-Manager. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em tiles} & a vector that contains the Tiles to be added. \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+The tile-\/pointers in the vector are stored in the Object\-Manager. Exception Guarantee\-: Basic 
+\end{DoxyPostcond}
+
+
+Implemented in \hyperlink{class_student_1_1_object_manager_ae8dec4f7c5cb058f4451a95c18dfdf7a}{Student\-::\-Object\-Manager}.
+
+\hypertarget{class_course_1_1i_object_manager_afd7ab74d8a4cfedd50340c1e9096672d}{\index{Course\-::i\-Object\-Manager@{Course\-::i\-Object\-Manager}!get\-Tile@{get\-Tile}}
+\index{get\-Tile@{get\-Tile}!Course::iObjectManager@{Course\-::i\-Object\-Manager}}
+\subsubsection[{get\-Tile}]{\setlength{\rightskip}{0pt plus 5cm}virtual std\-::shared\-\_\-ptr$<${\bf Tile\-Base}$>$ Course\-::i\-Object\-Manager\-::get\-Tile (
+\begin{DoxyParamCaption}
+\item[{const {\bf Coordinate} \&}]{coordinate}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [pure virtual]}}}\label{class_course_1_1i_object_manager_afd7ab74d8a4cfedd50340c1e9096672d}
+
+
+Returns a shared pointer to a Tile that has specified coordinate. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em coordinate} & Requested Tile's \hyperlink{class_course_1_1_coordinate}{Coordinate} \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+a pointer to a Tile that has the given coordinate. If no for the coordinate exists, return empty pointer. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: Basic 
+\end{DoxyPostcond}
+
+
+Implemented in \hyperlink{class_student_1_1_object_manager_a0e6cbf9d399876c203a68fc85ac58603}{Student\-::\-Object\-Manager}.
+
+\hypertarget{class_course_1_1i_object_manager_adbc182a5aeaa8989eb1c91244edbd043}{\index{Course\-::i\-Object\-Manager@{Course\-::i\-Object\-Manager}!get\-Tiles@{get\-Tiles}}
+\index{get\-Tiles@{get\-Tiles}!Course::iObjectManager@{Course\-::i\-Object\-Manager}}
+\subsubsection[{get\-Tiles}]{\setlength{\rightskip}{0pt plus 5cm}virtual std\-::vector$<$std\-::shared\-\_\-ptr$<${\bf Tile\-Base}$>$ $>$ Course\-::i\-Object\-Manager\-::get\-Tiles (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [pure virtual]}}}\label{class_course_1_1i_object_manager_adbc182a5aeaa8989eb1c91244edbd043}
+
+
+Returns a vector of shared pointers to Tiles specified by a vector of Coordinates. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em coordinates} & a vector of Coordinates for the requested Tiles \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+Vector of that contains pointers to Tile's that match the coordinates. The vector is empty if no matches were made. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: Basic\-O\-W\-N I\-M\-P\-L\-E\-M\-E\-N\-T\-A\-T\-I\-O\-N\-S 
+\end{DoxyPostcond}
+
+
+Implemented in \hyperlink{class_student_1_1_object_manager_a0d6d943efd3d5ffb4504e7ca09faaca4}{Student\-::\-Object\-Manager}.
+
+
+
+The documentation for this class was generated from the following file\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Interfaces/iobjectmanager.\-h\end{DoxyCompactItemize}

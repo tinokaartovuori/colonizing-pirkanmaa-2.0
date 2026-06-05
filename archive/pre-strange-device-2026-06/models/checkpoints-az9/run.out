@@ -1,0 +1,18 @@
+alphazero: 16 worker threads (20 cores detected, leaving headroom)
+alphazero: warm-start policy from checkpoints-az/champion.json (arch [63, 24, 16, 1])
+alphazero: warm-start SPATIAL value net from checkpoints-az4/value.json (arch [41, 32, 16, 1])
+alphazero: out=checkpoints-az9 iters=120 games/iter=32 sims=96 bench every 5 (40 games)
+alphazero: vs-hard-frac 0.50 → 16/32 games/iter vs the HARD bot (main exploiter)
+iter 0: vs-hard win 22.5% (loss 55.0%, timeout 20.0%) | ploss 0.6889 vloss 0.4071 | buf 6298 | 20s
+iter 5: vs-hard win 35.0% (loss 25.0%, timeout 40.0%) | ploss 0.7000 vloss 0.3676 | buf 30000 | 161s
+iter 10: vs-hard win 12.5% (loss 40.0%, timeout 47.5%) | ploss 0.7264 vloss 0.4375 | buf 30000 | 289s
+iter 15: vs-hard win 35.0% (loss 40.0%, timeout 25.0%) | ploss 0.7114 vloss 0.3651 | buf 30000 | 423s
+iter 20: vs-hard win 30.0% (loss 42.5%, timeout 27.5%) | ploss 0.6971 vloss 0.4438 | buf 30000 | 548s
+iter 25: vs-hard win 12.5% (loss 40.0%, timeout 47.5%) | ploss 0.6499 vloss 0.2920 | buf 30000 | 661s
+iter 30: vs-hard win 22.5% (loss 32.5%, timeout 45.0%) | ploss 0.6445 vloss 0.2695 | buf 30000 | 774s
+iter 35: vs-hard win 25.0% (loss 27.5%, timeout 47.5%) | ploss 0.6538 vloss 0.3871 | buf 30000 | 894s
+iter 40: vs-hard win 30.0% (loss 30.0%, timeout 40.0%) | ploss 0.6246 vloss 0.3041 | buf 30000 | 997s
+iter 45: vs-hard win 25.0% (loss 30.0%, timeout 45.0%) | ploss 0.6391 vloss 0.2849 | buf 30000 | 1118s
+iter 50: vs-hard win 17.5% (loss 35.0%, timeout 47.5%) | ploss 0.6250 vloss 0.2748 | buf 30000 | 1228s
+iter 55: vs-hard win 17.5% (loss 30.0%, timeout 52.5%) | ploss 0.6411 vloss 0.3196 | buf 30000 | 1340s
+iter 60: vs-hard win 17.5% (loss 27.5%, timeout 55.0%) | ploss 0.6480 vloss 0.2451 | buf 30000 | 1449s

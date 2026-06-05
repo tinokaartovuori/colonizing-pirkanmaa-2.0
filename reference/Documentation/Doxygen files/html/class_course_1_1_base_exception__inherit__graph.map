@@ -1,0 +1,7 @@
+<map id="Course::BaseException" name="Course::BaseException">
+<area shape="rect" id="node3" href="$class_course_1_1_illegal_action.html" title="The IllegalAction exception is usually used in cases, where an illegal game action was attempted..." alt="" coords="119,286,275,378"/>
+<area shape="rect" id="node6" href="$class_course_1_1_invalid_pointer.html" title="The InvalidPointer exception is usually used in cases, where data can&#39;t be accessed through a pointer..." alt="" coords="300,286,465,378"/>
+<area shape="rect" id="node7" href="$class_course_1_1_key_error.html" title="The KeyError class is an Exception&#45;class for cases where the used key is invalid. ..." alt="" coords="489,286,620,378"/>
+<area shape="rect" id="node4" href="$class_course_1_1_not_enough_space.html" title="The NotEnoughSpace class is an Exception&#45;class for errors where GameObjects are being placed onto Til..." alt="" coords="5,427,189,519"/>
+<area shape="rect" id="node5" href="$class_course_1_1_owner_conflict.html" title="The OwnerConflict class is an Exception&#45;class for errors where an operation is conflicting with a Gam..." alt="" coords="214,427,380,519"/>
+</map>

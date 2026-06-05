@@ -1,0 +1,19 @@
+{
+  "champion": "/mnt/x/Github/colonizing-pirkanmaa-2.0/rust-trainer/checkpoints/champion.json",
+  "games": 80,
+  "wins": 9,
+  "losses": 32,
+  "timeouts": 38,
+  "ties": 1,
+  "bankrupts": 0,
+  "crashes": 0,
+  "winRate": 0.1125,
+  "lossRate": 0.4,
+  "timeoutRate": 0.475,
+  "tieRate": 0.0125,
+  "bankruptRate": 0,
+  "crashRate": 0,
+  "avgGameLen": 71.075,
+  "avgFinalTileFrac": 0.18645089285714292,
+  "timestamp": "2026-06-02T10:36:41.707Z"
+}

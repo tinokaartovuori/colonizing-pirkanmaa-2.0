@@ -1,0 +1,9 @@
+{"gen":0,"winRate":0.3250,"lossRate":0.4000,"timeoutRate":0.2750,"tileFrac":0.2155,"ts":"2026-06-03T08:29:44Z"}
+{"gen":5,"winRate":0.2500,"lossRate":0.4750,"timeoutRate":0.2750,"tileFrac":0.1899,"ts":"2026-06-03T08:32:06Z"}
+{"gen":10,"winRate":0.1750,"lossRate":0.4750,"timeoutRate":0.3500,"tileFrac":0.1679,"ts":"2026-06-03T08:34:22Z"}
+{"gen":15,"winRate":0.2000,"lossRate":0.4500,"timeoutRate":0.3500,"tileFrac":0.1674,"ts":"2026-06-03T08:36:56Z"}
+{"gen":20,"winRate":0.1500,"lossRate":0.4750,"timeoutRate":0.3750,"tileFrac":0.1545,"ts":"2026-06-03T08:39:00Z"}
+{"gen":25,"winRate":0.2000,"lossRate":0.4750,"timeoutRate":0.3250,"tileFrac":0.1353,"ts":"2026-06-03T08:40:58Z"}
+{"gen":30,"winRate":0.2750,"lossRate":0.3250,"timeoutRate":0.4000,"tileFrac":0.1799,"ts":"2026-06-03T08:43:15Z"}
+{"gen":35,"winRate":0.1500,"lossRate":0.4000,"timeoutRate":0.4500,"tileFrac":0.1527,"ts":"2026-06-03T08:45:17Z"}
+{"gen":40,"winRate":0.2250,"lossRate":0.2750,"timeoutRate":0.5000,"tileFrac":0.1757,"ts":"2026-06-03T08:47:01Z"}

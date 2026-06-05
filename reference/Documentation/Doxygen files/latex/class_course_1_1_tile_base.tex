@@ -1,0 +1,770 @@
+\hypertarget{class_course_1_1_tile_base}{\section{Course\-:\-:Tile\-Base Class Reference}
+\label{class_course_1_1_tile_base}\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}}
+}
+
+
+The \hyperlink{class_course_1_1_tile_base}{Tile\-Base} class is a base-\/class for different Tile-\/objects in the game.  
+
+
+
+
+{\ttfamily \#include $<$tilebase.\-h$>$}
+
+
+
+Inheritance diagram for Course\-:\-:Tile\-Base\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[width=350pt]{class_course_1_1_tile_base__inherit__graph}
+\end{center}
+\end{figure}
+
+
+Collaboration diagram for Course\-:\-:Tile\-Base\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_course_1_1_tile_base__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_course_1_1_tile_base_a6386bf6bc05528b4337dee65f6286e06}{\hyperlink{class_course_1_1_tile_base_a6386bf6bc05528b4337dee65f6286e06}{Tile\-Base} ()=delete}\label{class_course_1_1_tile_base_a6386bf6bc05528b4337dee65f6286e06}
+
+\begin{DoxyCompactList}\small\item\em Disabled parameterless constructor. \end{DoxyCompactList}\item 
+\hyperlink{class_course_1_1_tile_base_ac75e01d24e5649900430bf31d5a6dbd0}{Tile\-Base} (const \hyperlink{class_course_1_1_coordinate}{Coordinate} \&location, int size\-\_\-x, int size\-\_\-y, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{i\-Object\-Manager} $>$ \&objectmanager, const unsigned int \&max\-\_\-units, const Resource\-Map \&production, const std\-::string basic\-\_\-description)
+\begin{DoxyCompactList}\small\item\em Constructor for the class. \end{DoxyCompactList}\item 
+\hyperlink{class_course_1_1_tile_base_af9440c382cd3685bfea4a11898bc55f3}{Tile\-Base} (const \hyperlink{class_course_1_1_coordinate}{Coordinate} \&location, int size\-\_\-x, int size\-\_\-y, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{i\-Object\-Manager} $>$ \&objectmanager, const unsigned int \&max\-\_\-units, const Resource\-Map \&production)
+\begin{DoxyCompactList}\small\item\em Constructor for the class. \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1_tile_base_a821db6b529d987eac53a958084fe2d5c}{virtual \hyperlink{class_course_1_1_tile_base_a821db6b529d987eac53a958084fe2d5c}{$\sim$\-Tile\-Base} ()=default}\label{class_course_1_1_tile_base_a821db6b529d987eac53a958084fe2d5c}
+
+\begin{DoxyCompactList}\small\item\em Default destructor. \end{DoxyCompactList}\item 
+virtual std\-::string \hyperlink{class_course_1_1_tile_base_af1a8aaa3407ad3ade7ffe8f2fb421288}{get\-Type} () const override
+\begin{DoxyCompactList}\small\item\em Returns the tile's type in string. In this case it's \char`\"{}\-Tile\-Base\char`\"{}. \end{DoxyCompactList}\item 
+virtual void \hyperlink{class_course_1_1_tile_base_a652b310be1d952f4fb103836143fb4af}{add\-Unit} (const std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_unit_base}{Unit\-Base} $>$ \&unit)
+\begin{DoxyCompactList}\small\item\em Adds an unit into the \hyperlink{class_course_1_1_tile_base}{Tile\-Base} object. If the unit is in the player's own area it is added into units\-\_\- vector. Otherwise it is added into conquering\-Units\-\_\-. \end{DoxyCompactList}\item 
+virtual void \hyperlink{class_course_1_1_tile_base_a1692e8dc8309f5ee3b88924313e22053}{remove\-Unit} (const std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_unit_base}{Unit\-Base} $>$ \&unit)
+\begin{DoxyCompactList}\small\item\em Removes an unit from the \hyperlink{class_course_1_1_tile_base}{Tile\-Base} object and from the corresponding vector it is in (either units\-\_\- or conquering\-Units\-\_\-) \end{DoxyCompactList}\item 
+void \hyperlink{class_course_1_1_tile_base_add69a1e9ec009dedb28ce54c8535370b}{add\-Building} (const std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_building_base}{Building\-Base} $>$ \&building)
+\begin{DoxyCompactList}\small\item\em Adds a building on the \hyperlink{class_course_1_1_tile_base}{Tile\-Base} object by storing it in the building\-\_\- shared pointer. \end{DoxyCompactList}\item 
+virtual std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_course_1_1_building_base}{Building\-Base} $>$ \hyperlink{class_course_1_1_tile_base_ab6174bf534d4307c22945c08b621c02b}{get\-Building} () const 
+\begin{DoxyCompactList}\small\item\em Returns the shared pointer to the building the tile possibly has. \end{DoxyCompactList}\item 
+void \hyperlink{class_course_1_1_tile_base_ad3b7900a215415e0c5e95340cab1cf30}{conquer\-Tile} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Player\-Base} $>$ current\-Player)
+\begin{DoxyCompactList}\small\item\em Handles a conquer situation. If a tile has an unit but no one owns the tile the conquering player will get the tile. If the tile is owned by another player the tile will be conquered if the conquerer has more soldiers on the tile than the current owner (defender). \end{DoxyCompactList}\item 
+virtual bool \hyperlink{class_course_1_1_tile_base_aec0f556239d935b4a97a700a3bb70ac5}{has\-Opponent\-Headquarters} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Player\-Base} $>$ player)
+\begin{DoxyCompactList}\small\item\em Checks if the tile has opponent's headquarters, The actual function is in Tiles/grassland.\-cpp. \end{DoxyCompactList}\item 
+virtual int \hyperlink{class_course_1_1_tile_base_a23ed20f49cac43141776dc45d8ceb9c0}{get\-Max\-Units\-Increase} ()
+\begin{DoxyCompactList}\small\item\em Returns the increase of how many basic workers or experts the player can have according to the building the tile has. \end{DoxyCompactList}\item 
+virtual int \hyperlink{class_course_1_1_tile_base_ae93137daa766a5984f783cadf0dbf516}{get\-Max\-Soldiers\-Increase} ()
+\begin{DoxyCompactList}\small\item\em Returns the increase of how many soldiers the player can have according to the building the tile has. \end{DoxyCompactList}\item 
+virtual unsigned int \hyperlink{class_course_1_1_tile_base_a4ebe5a95c14f423f696e43ac0cf3f09a}{get\-Unit\-Count} () const 
+\begin{DoxyCompactList}\small\item\em Returns the number of normal units on the tile. \end{DoxyCompactList}\item 
+virtual unsigned int \hyperlink{class_course_1_1_tile_base_a9798c1cf99f7dcc4927d1561ec41079e}{get\-Conquering\-Unit\-Count} () const 
+\begin{DoxyCompactList}\small\item\em Returns the number of conquering units on the tile. \end{DoxyCompactList}\item 
+virtual unsigned int \hyperlink{class_course_1_1_tile_base_af8a063cc31be281fdfa98c4d9725dd2b}{get\-Soldier\-Count} () const 
+\begin{DoxyCompactList}\small\item\em Returns the number of own soldiers on the tile. \end{DoxyCompactList}\item 
+virtual unsigned int \hyperlink{class_course_1_1_tile_base_a2b8a9cbb638de74dad63967c77876d85}{get\-Opponent\-Soldier\-Count} () const 
+\begin{DoxyCompactList}\small\item\em Returns the number of opponent's soldiers on the tile. \end{DoxyCompactList}\item 
+virtual std\-::vector\\*
+$<$ std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_unit_base}{Unit\-Base} $>$ $>$ \hyperlink{class_course_1_1_tile_base_a25cd5fb6e407e637ff5ade01f78ec374}{get\-Units} () const 
+\begin{DoxyCompactList}\small\item\em Returns a vector of shared pointers to the non-\/conquering units that are in the tile. \end{DoxyCompactList}\item 
+virtual std\-::vector\\*
+$<$ std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_unit_base}{Unit\-Base} $>$ $>$ \hyperlink{class_course_1_1_tile_base_ad55f272baa2b7f8c813bba65003fee9c}{get\-Conquering\-Units} () const 
+\begin{DoxyCompactList}\small\item\em Returns a vector of shared pointers to the conquering units that are in the tile. \end{DoxyCompactList}\item 
+virtual void \hyperlink{class_course_1_1_tile_base_a3889af6b1fc5f16656f46f030aed34d9}{update\-Animation} ()
+\begin{DoxyCompactList}\small\item\em Updates the animation of an object that might be in \hyperlink{class_course_1_1_grassland}{Grassland} or River tile. \end{DoxyCompactList}\item 
+Resource\-Map \hyperlink{class_course_1_1_tile_base_ac3c14047883c67ee39c9f04cb403e8f3}{get\-Current\-Expenses} ()
+\begin{DoxyCompactList}\small\item\em Returns a resource map of the expenses the tile will reduce from the player when the turn ends. \end{DoxyCompactList}\item 
+Resource\-Map \hyperlink{class_course_1_1_tile_base_aee1269b23b676b08a7ea21344ac514c7}{get\-Current\-Net} ()
+\begin{DoxyCompactList}\small\item\em Returns a resource map of the net expenses/revenues the tile will add/reduce from the player when the turn ends. \end{DoxyCompactList}\item 
+virtual void \hyperlink{class_course_1_1_tile_base_a161cb46028a65ca20ece683314a8fa46}{update\-Unit\-Coordinates} ()
+\begin{DoxyCompactList}\small\item\em Updates the tile relative coordinates of the units. The tile has a 3x2 grid where the units can be placed. \end{DoxyCompactList}\item 
+std\-::vector$<$ std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ $>$ \hyperlink{class_course_1_1_tile_base_a09aece148011f9fab23a5af25bf10a1c}{get\-Neighbour\-Four\-Tiles} ()
+\begin{DoxyCompactList}\small\item\em Returns the four neighbouring tiles of the tile. \end{DoxyCompactList}\item 
+std\-::vector$<$ std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_course_1_1_tile_base}{Tile\-Base} $>$ $>$ \hyperlink{class_course_1_1_tile_base_afee4e55a484bcbbdb3544fca480bed2f}{get\-Neighbour\-Tiles} ()
+\begin{DoxyCompactList}\small\item\em Returns the all neighbouring tiles of the tile. \end{DoxyCompactList}\item 
+virtual bool \hyperlink{class_course_1_1_tile_base_a1033414247cce3b6c6894b787bdf2b64}{has\-Space\-For\-Units} () const final
+\begin{DoxyCompactList}\small\item\em Checks if the tile has space for non-\/conquering units. \end{DoxyCompactList}\item 
+virtual bool \hyperlink{class_course_1_1_tile_base_ae1dac55890d7c0b0e7e3e131857698db}{has\-Space\-For\-Conquering\-Units} () const final
+\begin{DoxyCompactList}\small\item\em Checks if the tile has space for conquering units. \end{DoxyCompactList}\item 
+void \hyperlink{class_course_1_1_tile_base_afad742bfab32427ebc0283c145ef3740}{set\-Game\-Settings} (const std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1_game_settings_manager}{Student\-::\-Game\-Settings\-Manager} $>$ manager)
+\begin{DoxyCompactList}\small\item\em Sets game\-Settings\-Manager\-\_\- to the object. \end{DoxyCompactList}\item 
+virtual void \hyperlink{class_course_1_1_tile_base_aff1fe4193e6d4af1a6dcb43829098a1d}{click\-Action} () override
+\begin{DoxyCompactList}\small\item\em Is called when the tile is clicked and calls event\-Handler\-\_\- to continue the action there. \end{DoxyCompactList}\item 
+virtual std\-::vector$<$ Q\-Pixmap $>$ \hyperlink{class_course_1_1_tile_base_a199fcbfb54f1bb1559ae59adb064d2ad}{get\-Owner\-Border\-Pixmap} ()
+\begin{DoxyCompactList}\small\item\em Finds out if the tile is neighbouring a tile that has a different owner or no owner at all. The function then forms a vector that has pixmaps of the colored borders that need to be drawn on top of the tile. \end{DoxyCompactList}\item 
+virtual void \hyperlink{class_course_1_1_tile_base_a5569d1215930ccd529bb511b139f04ff}{add\-Basic\-Description} (std\-::string desc)
+\begin{DoxyCompactList}\small\item\em Sets basic\-Description\-\_\- for the tile object. \end{DoxyCompactList}\item 
+std\-::string \hyperlink{class_course_1_1_tile_base_a945d17320cac2d8aa6a60705e3a4b930}{get\-Basic\-Description} ()
+\begin{DoxyCompactList}\small\item\em Gets basic\-Description\-\_\- for the tile object. \end{DoxyCompactList}\item 
+virtual std\-::string \hyperlink{class_course_1_1_tile_base_a602eabff37145bdbac5ed66f8909bcd1}{get\-Net\-Description} ()
+\begin{DoxyCompactList}\small\item\em This function is used by the menu to get information about the net production the tile has. The information is showed to the player as a text. \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1_tile_base_a07b6e0ed40f3a99bc7997fbba0435bbd}{virtual Resource\-Map \hyperlink{class_course_1_1_tile_base_a07b6e0ed40f3a99bc7997fbba0435bbd}{get\-Current\-Revenue} ()=0}\label{class_course_1_1_tile_base_a07b6e0ed40f3a99bc7997fbba0435bbd}
+
+\begin{DoxyCompactList}\small\item\em Found in all classes inherited from \hyperlink{class_course_1_1_tile_base}{Tile\-Base}. All of them have their own description of their functionality. \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1_tile_base_afbf2d7533a9da7492f360b53a11d1432}{virtual std\-::string \hyperlink{class_course_1_1_tile_base_afbf2d7533a9da7492f360b53a11d1432}{get\-Extra\-Description} ()=0}\label{class_course_1_1_tile_base_afbf2d7533a9da7492f360b53a11d1432}
+
+\begin{DoxyCompactList}\small\item\em Found in all classes inherited from \hyperlink{class_course_1_1_tile_base}{Tile\-Base}. All of them have their own description of their functionality. \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1_tile_base_aa268376209fba52b45b4aa7c8a7baf06}{virtual std\-::vector$<$ std\-::string $>$ \hyperlink{class_course_1_1_tile_base_aa268376209fba52b45b4aa7c8a7baf06}{get\-Buildable\-Buildings} ()=0}\label{class_course_1_1_tile_base_aa268376209fba52b45b4aa7c8a7baf06}
+
+\begin{DoxyCompactList}\small\item\em Found in all classes inherited from \hyperlink{class_course_1_1_tile_base}{Tile\-Base}. All of them have their own description of their functionality. \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1_tile_base_a811c64342542fededc8e0dde4680410f}{virtual void \hyperlink{class_course_1_1_tile_base_a811c64342542fededc8e0dde4680410f}{generate\-Resources} ()=0}\label{class_course_1_1_tile_base_a811c64342542fededc8e0dde4680410f}
+
+\begin{DoxyCompactList}\small\item\em Found in all classes inherited from \hyperlink{class_course_1_1_tile_base}{Tile\-Base}. All of them have their own description of their functionality. \end{DoxyCompactList}\end{DoxyCompactItemize}
+\subsection*{Public Attributes}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_course_1_1_tile_base_affd265454d72fcedea5a04b45ac3c7b0}{const unsigned int {\bfseries M\-A\-X\-\_\-\-U\-N\-I\-T\-S}}\label{class_course_1_1_tile_base_affd265454d72fcedea5a04b45ac3c7b0}
+
+\item 
+\hypertarget{class_course_1_1_tile_base_a62cd84d3705c6cca9afd0cb992dd4f02}{const Resource\-Map {\bfseries B\-A\-S\-E\-\_\-\-P\-R\-O\-D\-U\-C\-T\-I\-O\-N}}\label{class_course_1_1_tile_base_a62cd84d3705c6cca9afd0cb992dd4f02}
+
+\end{DoxyCompactItemize}
+\subsection*{Protected Attributes}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_course_1_1_tile_base_a3e5fda0cad76e6f64ac8bbb68891a5cd}{std\-::vector$<$ std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_course_1_1_unit_base}{Unit\-Base} $>$ $>$ {\bfseries units\-\_\-}}\label{class_course_1_1_tile_base_a3e5fda0cad76e6f64ac8bbb68891a5cd}
+
+\item 
+\hypertarget{class_course_1_1_tile_base_a55461fa75fbd09b7fd0596ba3f61d915}{std\-::vector$<$ std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_course_1_1_unit_base}{Unit\-Base} $>$ $>$ {\bfseries conquering\-Units\-\_\-}}\label{class_course_1_1_tile_base_a55461fa75fbd09b7fd0596ba3f61d915}
+
+\end{DoxyCompactItemize}
+\subsection*{Additional Inherited Members}
+
+
+\subsection{Detailed Description}
+The \hyperlink{class_course_1_1_tile_base}{Tile\-Base} class is a base-\/class for different Tile-\/objects in the game. 
+
+Buildings can be placed on the tile depending on the tile. Six units can be placed on any tile (conquering plus non-\/conquering) 
+
+\subsection{Constructor \& Destructor Documentation}
+\hypertarget{class_course_1_1_tile_base_ac75e01d24e5649900430bf31d5a6dbd0}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!Tile\-Base@{Tile\-Base}}
+\index{Tile\-Base@{Tile\-Base}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{Tile\-Base}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Tile\-Base\-::\-Tile\-Base (
+\begin{DoxyParamCaption}
+\item[{const {\bf Coordinate} \&}]{location, }
+\item[{int}]{size\-\_\-x, }
+\item[{int}]{size\-\_\-y, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Game\-Event\-Handler} $>$ \&}]{eventhandler, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Object\-Manager} $>$ \&}]{objectmanager, }
+\item[{const unsigned int \&}]{max\-\_\-units, }
+\item[{const Resource\-Map \&}]{production, }
+\item[{const std\-::string}]{basic\-\_\-description}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_tile_base_ac75e01d24e5649900430bf31d5a6dbd0}
+
+
+Constructor for the class. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em location} & is the \hyperlink{class_course_1_1_coordinate}{Coordinate} where the Tile is located in the game. \\
+\hline
+{\em size\-\_\-x} & is how many maps grids wide the tile is (1) \\
+\hline
+{\em size\-\_\-y} & is how many maps grids tall the tile is (1) \\
+\hline
+{\em eventhandler} & points to the Game\-Event\-Handler. \\
+\hline
+{\em objectmanager} & points to the Object\-Manager. \\
+\hline
+{\em max\-\_\-unit} & tells how many units the tile can have as conquering or non-\/conquering. \\
+\hline
+{\em production} & is the production of the tile (nothing) \\
+\hline
+{\em basic\-\_\-description} & is the description of the tile \\
+\hline
+\end{DoxyParams}
+\hypertarget{class_course_1_1_tile_base_af9440c382cd3685bfea4a11898bc55f3}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!Tile\-Base@{Tile\-Base}}
+\index{Tile\-Base@{Tile\-Base}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{Tile\-Base}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Tile\-Base\-::\-Tile\-Base (
+\begin{DoxyParamCaption}
+\item[{const {\bf Coordinate} \&}]{location, }
+\item[{int}]{size\-\_\-x, }
+\item[{int}]{size\-\_\-y, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Game\-Event\-Handler} $>$ \&}]{eventhandler, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Object\-Manager} $>$ \&}]{objectmanager, }
+\item[{const unsigned int \&}]{max\-\_\-units, }
+\item[{const Resource\-Map \&}]{production}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_tile_base_af9440c382cd3685bfea4a11898bc55f3}
+
+
+Constructor for the class. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em location} & is the \hyperlink{class_course_1_1_coordinate}{Coordinate} where the Tile is located in the game. \\
+\hline
+{\em size\-\_\-x} & is how many maps grids wide the tile is (1) \\
+\hline
+{\em size\-\_\-y} & is how many maps grids tall the tile is (1) \\
+\hline
+{\em eventhandler} & points to the Game\-Event\-Handler. \\
+\hline
+{\em objectmanager} & points to the Object\-Manager. \\
+\hline
+{\em max\-\_\-unit} & tells how many units the tile can have as conquering or non-\/conquering. \\
+\hline
+{\em production} & is the production of the tile (nothing) \\
+\hline
+\end{DoxyParams}
+
+
+\subsection{Member Function Documentation}
+\hypertarget{class_course_1_1_tile_base_a5569d1215930ccd529bb511b139f04ff}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!add\-Basic\-Description@{add\-Basic\-Description}}
+\index{add\-Basic\-Description@{add\-Basic\-Description}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{add\-Basic\-Description}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Tile\-Base\-::add\-Basic\-Description (
+\begin{DoxyParamCaption}
+\item[{std\-::string}]{desc}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [virtual]}}}\label{class_course_1_1_tile_base_a5569d1215930ccd529bb511b139f04ff}
+
+
+Sets basic\-Description\-\_\- for the tile object. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em String} & of the description that want to be set \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_tile_base_add69a1e9ec009dedb28ce54c8535370b}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!add\-Building@{add\-Building}}
+\index{add\-Building@{add\-Building}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{add\-Building}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Tile\-Base\-::add\-Building (
+\begin{DoxyParamCaption}
+\item[{const std\-::shared\-\_\-ptr$<$ {\bf Building\-Base} $>$ \&}]{building}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_tile_base_add69a1e9ec009dedb28ce54c8535370b}
+
+
+Adds a building on the \hyperlink{class_course_1_1_tile_base}{Tile\-Base} object by storing it in the building\-\_\- shared pointer. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Shared} & pointer of the building to be added \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ?????????????? 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_tile_base_a652b310be1d952f4fb103836143fb4af}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!add\-Unit@{add\-Unit}}
+\index{add\-Unit@{add\-Unit}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{add\-Unit}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Tile\-Base\-::add\-Unit (
+\begin{DoxyParamCaption}
+\item[{const std\-::shared\-\_\-ptr$<$ {\bf Unit\-Base} $>$ \&}]{unit}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [virtual]}}}\label{class_course_1_1_tile_base_a652b310be1d952f4fb103836143fb4af}
+
+
+Adds an unit into the \hyperlink{class_course_1_1_tile_base}{Tile\-Base} object. If the unit is in the player's own area it is added into units\-\_\- vector. Otherwise it is added into conquering\-Units\-\_\-. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Shared} & pointer of the unit to be added \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ?????????????? 
+\end{DoxyPostcond}
+
+
+Reimplemented in \hyperlink{class_student_1_1_river_a93fc1bbc79e0f918d8f8b2e9455709d3}{Student\-::\-River}.
+
+\hypertarget{class_course_1_1_tile_base_aff1fe4193e6d4af1a6dcb43829098a1d}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!click\-Action@{click\-Action}}
+\index{click\-Action@{click\-Action}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{click\-Action}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Tile\-Base\-::click\-Action (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_course_1_1_tile_base_aff1fe4193e6d4af1a6dcb43829098a1d}
+
+
+Is called when the tile is clicked and calls event\-Handler\-\_\- to continue the action there. 
+
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ???????????????????????? 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_student_1_1i_pressable_object}{Student\-::i\-Pressable\-Object}.
+
+\hypertarget{class_course_1_1_tile_base_ad3b7900a215415e0c5e95340cab1cf30}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!conquer\-Tile@{conquer\-Tile}}
+\index{conquer\-Tile@{conquer\-Tile}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{conquer\-Tile}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Tile\-Base\-::conquer\-Tile (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Player\-Base} $>$}]{current\-Player}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_tile_base_ad3b7900a215415e0c5e95340cab1cf30}
+
+
+Handles a conquer situation. If a tile has an unit but no one owns the tile the conquering player will get the tile. If the tile is owned by another player the tile will be conquered if the conquerer has more soldiers on the tile than the current owner (defender). 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Shared} & pointer of the player who is conquering the tile \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ?????????????? 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_tile_base_a945d17320cac2d8aa6a60705e3a4b930}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!get\-Basic\-Description@{get\-Basic\-Description}}
+\index{get\-Basic\-Description@{get\-Basic\-Description}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{get\-Basic\-Description}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Course\-::\-Tile\-Base\-::get\-Basic\-Description (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_tile_base_a945d17320cac2d8aa6a60705e3a4b930}
+
+
+Gets basic\-Description\-\_\- for the tile object. 
+
+\begin{DoxyReturn}{Returns}
+Description as a string 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_tile_base_ab6174bf534d4307c22945c08b621c02b}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!get\-Building@{get\-Building}}
+\index{get\-Building@{get\-Building}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{get\-Building}]{\setlength{\rightskip}{0pt plus 5cm}std\-::shared\-\_\-ptr$<$ {\bf Building\-Base} $>$ Course\-::\-Tile\-Base\-::get\-Building (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [virtual]}}}\label{class_course_1_1_tile_base_ab6174bf534d4307c22945c08b621c02b}
+
+
+Returns the shared pointer to the building the tile possibly has. 
+
+\begin{DoxyReturn}{Returns}
+Shared pointer of the building or nullptr 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ?????????????? 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_tile_base_a9798c1cf99f7dcc4927d1561ec41079e}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!get\-Conquering\-Unit\-Count@{get\-Conquering\-Unit\-Count}}
+\index{get\-Conquering\-Unit\-Count@{get\-Conquering\-Unit\-Count}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{get\-Conquering\-Unit\-Count}]{\setlength{\rightskip}{0pt plus 5cm}unsigned int Course\-::\-Tile\-Base\-::get\-Conquering\-Unit\-Count (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [virtual]}}}\label{class_course_1_1_tile_base_a9798c1cf99f7dcc4927d1561ec41079e}
+
+
+Returns the number of conquering units on the tile. 
+
+\begin{DoxyReturn}{Returns}
+Unsigned integer of the number of conquering units on the tile 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_tile_base_ad55f272baa2b7f8c813bba65003fee9c}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!get\-Conquering\-Units@{get\-Conquering\-Units}}
+\index{get\-Conquering\-Units@{get\-Conquering\-Units}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{get\-Conquering\-Units}]{\setlength{\rightskip}{0pt plus 5cm}std\-::vector$<$ std\-::shared\-\_\-ptr$<$ {\bf Unit\-Base} $>$ $>$ Course\-::\-Tile\-Base\-::get\-Conquering\-Units (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [virtual]}}}\label{class_course_1_1_tile_base_ad55f272baa2b7f8c813bba65003fee9c}
+
+
+Returns a vector of shared pointers to the conquering units that are in the tile. 
+
+\begin{DoxyReturn}{Returns}
+A vector of shared pointers to the conquering units that are in the tile. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_tile_base_ac3c14047883c67ee39c9f04cb403e8f3}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!get\-Current\-Expenses@{get\-Current\-Expenses}}
+\index{get\-Current\-Expenses@{get\-Current\-Expenses}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{get\-Current\-Expenses}]{\setlength{\rightskip}{0pt plus 5cm}Resource\-Map Course\-::\-Tile\-Base\-::get\-Current\-Expenses (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_tile_base_ac3c14047883c67ee39c9f04cb403e8f3}
+
+
+Returns a resource map of the expenses the tile will reduce from the player when the turn ends. 
+
+\begin{DoxyReturn}{Returns}
+Resource map of the expenses the tile will reduce from the player when the turn ends. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ????????????????????????????? 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_tile_base_aee1269b23b676b08a7ea21344ac514c7}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!get\-Current\-Net@{get\-Current\-Net}}
+\index{get\-Current\-Net@{get\-Current\-Net}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{get\-Current\-Net}]{\setlength{\rightskip}{0pt plus 5cm}Resource\-Map Course\-::\-Tile\-Base\-::get\-Current\-Net (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_tile_base_aee1269b23b676b08a7ea21344ac514c7}
+
+
+Returns a resource map of the net expenses/revenues the tile will add/reduce from the player when the turn ends. 
+
+\begin{DoxyReturn}{Returns}
+Resource map of the net expenses/revenues the tile will add/reduce from the player when the turn ends. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ????????????????????????????? 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_tile_base_ae93137daa766a5984f783cadf0dbf516}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!get\-Max\-Soldiers\-Increase@{get\-Max\-Soldiers\-Increase}}
+\index{get\-Max\-Soldiers\-Increase@{get\-Max\-Soldiers\-Increase}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{get\-Max\-Soldiers\-Increase}]{\setlength{\rightskip}{0pt plus 5cm}int Course\-::\-Tile\-Base\-::get\-Max\-Soldiers\-Increase (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [virtual]}}}\label{class_course_1_1_tile_base_ae93137daa766a5984f783cadf0dbf516}
+
+
+Returns the increase of how many soldiers the player can have according to the building the tile has. 
+
+\begin{DoxyReturn}{Returns}
+Integer of the number of soldiers the player can have. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ????????????????????????????? 
+\end{DoxyPostcond}
+
+
+Reimplemented in \hyperlink{class_course_1_1_grassland_ae6266dd4107af80a221e05093b560f62}{Course\-::\-Grassland}.
+
+\hypertarget{class_course_1_1_tile_base_a23ed20f49cac43141776dc45d8ceb9c0}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!get\-Max\-Units\-Increase@{get\-Max\-Units\-Increase}}
+\index{get\-Max\-Units\-Increase@{get\-Max\-Units\-Increase}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{get\-Max\-Units\-Increase}]{\setlength{\rightskip}{0pt plus 5cm}int Course\-::\-Tile\-Base\-::get\-Max\-Units\-Increase (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [virtual]}}}\label{class_course_1_1_tile_base_a23ed20f49cac43141776dc45d8ceb9c0}
+
+
+Returns the increase of how many basic workers or experts the player can have according to the building the tile has. 
+
+\begin{DoxyReturn}{Returns}
+Integer of the number of basic workers or experts the player can have. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ????????????????????????????? 
+\end{DoxyPostcond}
+
+
+Reimplemented in \hyperlink{class_course_1_1_grassland_a1bb5fd5c45a70751c8a175138060fb94}{Course\-::\-Grassland}.
+
+\hypertarget{class_course_1_1_tile_base_a09aece148011f9fab23a5af25bf10a1c}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!get\-Neighbour\-Four\-Tiles@{get\-Neighbour\-Four\-Tiles}}
+\index{get\-Neighbour\-Four\-Tiles@{get\-Neighbour\-Four\-Tiles}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{get\-Neighbour\-Four\-Tiles}]{\setlength{\rightskip}{0pt plus 5cm}std\-::vector$<$ std\-::shared\-\_\-ptr$<$ {\bf Tile\-Base} $>$ $>$ Course\-::\-Tile\-Base\-::get\-Neighbour\-Four\-Tiles (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_tile_base_a09aece148011f9fab23a5af25bf10a1c}
+
+
+Returns the four neighbouring tiles of the tile. 
+
+\begin{DoxyReturn}{Returns}
+Vector of the shared pointers of the neighbouring tiles 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ??????????????????? 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_tile_base_afee4e55a484bcbbdb3544fca480bed2f}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!get\-Neighbour\-Tiles@{get\-Neighbour\-Tiles}}
+\index{get\-Neighbour\-Tiles@{get\-Neighbour\-Tiles}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{get\-Neighbour\-Tiles}]{\setlength{\rightskip}{0pt plus 5cm}std\-::vector$<$ std\-::shared\-\_\-ptr$<$ {\bf Tile\-Base} $>$ $>$ Course\-::\-Tile\-Base\-::get\-Neighbour\-Tiles (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_tile_base_afee4e55a484bcbbdb3544fca480bed2f}
+
+
+Returns the all neighbouring tiles of the tile. 
+
+\begin{DoxyReturn}{Returns}
+Vector of the shared pointers of the neighbouring tiles 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ??????????????????? 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_tile_base_a602eabff37145bdbac5ed66f8909bcd1}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!get\-Net\-Description@{get\-Net\-Description}}
+\index{get\-Net\-Description@{get\-Net\-Description}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{get\-Net\-Description}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Course\-::\-Tile\-Base\-::get\-Net\-Description (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [virtual]}}}\label{class_course_1_1_tile_base_a602eabff37145bdbac5ed66f8909bcd1}
+
+
+This function is used by the menu to get information about the net production the tile has. The information is showed to the player as a text. 
+
+\begin{DoxyReturn}{Returns}
+String of the net production the tile might have 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ????????????????????????????? 
+\end{DoxyPostcond}
+
+
+Reimplemented in \hyperlink{class_course_1_1_grassland_a29381c9984060b969e187ed584fcd5b2}{Course\-::\-Grassland}.
+
+\hypertarget{class_course_1_1_tile_base_a2b8a9cbb638de74dad63967c77876d85}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!get\-Opponent\-Soldier\-Count@{get\-Opponent\-Soldier\-Count}}
+\index{get\-Opponent\-Soldier\-Count@{get\-Opponent\-Soldier\-Count}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{get\-Opponent\-Soldier\-Count}]{\setlength{\rightskip}{0pt plus 5cm}unsigned int Course\-::\-Tile\-Base\-::get\-Opponent\-Soldier\-Count (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [virtual]}}}\label{class_course_1_1_tile_base_a2b8a9cbb638de74dad63967c77876d85}
+
+
+Returns the number of opponent's soldiers on the tile. 
+
+\begin{DoxyReturn}{Returns}
+Unsigned integer of the number of opponent's soldiers on the tile 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_tile_base_a199fcbfb54f1bb1559ae59adb064d2ad}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!get\-Owner\-Border\-Pixmap@{get\-Owner\-Border\-Pixmap}}
+\index{get\-Owner\-Border\-Pixmap@{get\-Owner\-Border\-Pixmap}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{get\-Owner\-Border\-Pixmap}]{\setlength{\rightskip}{0pt plus 5cm}std\-::vector$<$ Q\-Pixmap $>$ Course\-::\-Tile\-Base\-::get\-Owner\-Border\-Pixmap (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [virtual]}}}\label{class_course_1_1_tile_base_a199fcbfb54f1bb1559ae59adb064d2ad}
+
+
+Finds out if the tile is neighbouring a tile that has a different owner or no owner at all. The function then forms a vector that has pixmaps of the colored borders that need to be drawn on top of the tile. 
+
+\begin{DoxyReturn}{Returns}
+Vector of the pixmaps to be drawn on top of the tile 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ??????????????????????????? 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_tile_base_af8a063cc31be281fdfa98c4d9725dd2b}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!get\-Soldier\-Count@{get\-Soldier\-Count}}
+\index{get\-Soldier\-Count@{get\-Soldier\-Count}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{get\-Soldier\-Count}]{\setlength{\rightskip}{0pt plus 5cm}unsigned int Course\-::\-Tile\-Base\-::get\-Soldier\-Count (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [virtual]}}}\label{class_course_1_1_tile_base_af8a063cc31be281fdfa98c4d9725dd2b}
+
+
+Returns the number of own soldiers on the tile. 
+
+\begin{DoxyReturn}{Returns}
+Unsigned integer of the number of soldiers on the tile 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_tile_base_af1a8aaa3407ad3ade7ffe8f2fb421288}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!get\-Type@{get\-Type}}
+\index{get\-Type@{get\-Type}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{get\-Type}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Course\-::\-Tile\-Base\-::get\-Type (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_course_1_1_tile_base_af1a8aaa3407ad3ade7ffe8f2fb421288}
+
+
+Returns the tile's type in string. In this case it's \char`\"{}\-Tile\-Base\char`\"{}. 
+
+\begin{DoxyReturn}{Returns}
+Tile's type in string. In this case it's \char`\"{}\-Tile\-Base\char`\"{} 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+Reimplemented from \hyperlink{class_course_1_1_game_object_a9a7b36c7f9258af82898190ee6ba7222}{Course\-::\-Game\-Object}.
+
+
+
+Reimplemented in \hyperlink{class_course_1_1_grassland_a0a652bbecdda0216613dad980936e30e}{Course\-::\-Grassland}, \hyperlink{class_course_1_1_forest_a783378b8f5c1ec5d0c5c4a771291a902}{Course\-::\-Forest}, \hyperlink{class_student_1_1_abundant_forest_a716c3d8cbbaf27a19fb23d95e66405ff}{Student\-::\-Abundant\-Forest}, \hyperlink{class_student_1_1_mountain_a0557d9683574b5d69a69b0477ce10595}{Student\-::\-Mountain}, and \hyperlink{class_student_1_1_river_a227a22ecd8983eb71188fd5256f28068}{Student\-::\-River}.
+
+\hypertarget{class_course_1_1_tile_base_a4ebe5a95c14f423f696e43ac0cf3f09a}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!get\-Unit\-Count@{get\-Unit\-Count}}
+\index{get\-Unit\-Count@{get\-Unit\-Count}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{get\-Unit\-Count}]{\setlength{\rightskip}{0pt plus 5cm}unsigned int Course\-::\-Tile\-Base\-::get\-Unit\-Count (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [virtual]}}}\label{class_course_1_1_tile_base_a4ebe5a95c14f423f696e43ac0cf3f09a}
+
+
+Returns the number of normal units on the tile. 
+
+\begin{DoxyReturn}{Returns}
+Unsigned integer of the number of normal units on the tile 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_tile_base_a25cd5fb6e407e637ff5ade01f78ec374}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!get\-Units@{get\-Units}}
+\index{get\-Units@{get\-Units}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{get\-Units}]{\setlength{\rightskip}{0pt plus 5cm}std\-::vector$<$ std\-::shared\-\_\-ptr$<$ {\bf Unit\-Base} $>$ $>$ Course\-::\-Tile\-Base\-::get\-Units (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [virtual]}}}\label{class_course_1_1_tile_base_a25cd5fb6e407e637ff5ade01f78ec374}
+
+
+Returns a vector of shared pointers to the non-\/conquering units that are in the tile. 
+
+\begin{DoxyReturn}{Returns}
+A vector of shared pointers to the non-\/conquering units that are in the tile. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_tile_base_aec0f556239d935b4a97a700a3bb70ac5}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!has\-Opponent\-Headquarters@{has\-Opponent\-Headquarters}}
+\index{has\-Opponent\-Headquarters@{has\-Opponent\-Headquarters}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{has\-Opponent\-Headquarters}]{\setlength{\rightskip}{0pt plus 5cm}bool Course\-::\-Tile\-Base\-::has\-Opponent\-Headquarters (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Player\-Base} $>$}]{player}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [virtual]}}}\label{class_course_1_1_tile_base_aec0f556239d935b4a97a700a3bb70ac5}
+
+
+Checks if the tile has opponent's headquarters, The actual function is in Tiles/grassland.\-cpp. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Shared} & pointer to the player that wants to know if the grassland has opponent's headquarters \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+Bool value. True if the tile has opponent's headquarters and false if not. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ????????????????????????????? 
+\end{DoxyPostcond}
+
+
+Reimplemented in \hyperlink{class_course_1_1_grassland_ac5a3cea38462f4ab82fe3c2ddf0bca19}{Course\-::\-Grassland}.
+
+\hypertarget{class_course_1_1_tile_base_ae1dac55890d7c0b0e7e3e131857698db}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!has\-Space\-For\-Conquering\-Units@{has\-Space\-For\-Conquering\-Units}}
+\index{has\-Space\-For\-Conquering\-Units@{has\-Space\-For\-Conquering\-Units}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{has\-Space\-For\-Conquering\-Units}]{\setlength{\rightskip}{0pt plus 5cm}bool Course\-::\-Tile\-Base\-::has\-Space\-For\-Conquering\-Units (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [final]}, {\ttfamily [virtual]}}}\label{class_course_1_1_tile_base_ae1dac55890d7c0b0e7e3e131857698db}
+
+
+Checks if the tile has space for conquering units. 
+
+\begin{DoxyReturn}{Returns}
+Boolean value. True if the tile has space for conquering units and false if not. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_tile_base_a1033414247cce3b6c6894b787bdf2b64}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!has\-Space\-For\-Units@{has\-Space\-For\-Units}}
+\index{has\-Space\-For\-Units@{has\-Space\-For\-Units}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{has\-Space\-For\-Units}]{\setlength{\rightskip}{0pt plus 5cm}bool Course\-::\-Tile\-Base\-::has\-Space\-For\-Units (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [final]}, {\ttfamily [virtual]}}}\label{class_course_1_1_tile_base_a1033414247cce3b6c6894b787bdf2b64}
+
+
+Checks if the tile has space for non-\/conquering units. 
+
+\begin{DoxyReturn}{Returns}
+Boolean value. True if the tile has space for non-\/conquering units and false if not. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_tile_base_a1692e8dc8309f5ee3b88924313e22053}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!remove\-Unit@{remove\-Unit}}
+\index{remove\-Unit@{remove\-Unit}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{remove\-Unit}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Tile\-Base\-::remove\-Unit (
+\begin{DoxyParamCaption}
+\item[{const std\-::shared\-\_\-ptr$<$ {\bf Unit\-Base} $>$ \&}]{unit}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [virtual]}}}\label{class_course_1_1_tile_base_a1692e8dc8309f5ee3b88924313e22053}
+
+
+Removes an unit from the \hyperlink{class_course_1_1_tile_base}{Tile\-Base} object and from the corresponding vector it is in (either units\-\_\- or conquering\-Units\-\_\-) 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Shared} & pointer of the unit to be removed \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ?????????????? 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_tile_base_afad742bfab32427ebc0283c145ef3740}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!set\-Game\-Settings@{set\-Game\-Settings}}
+\index{set\-Game\-Settings@{set\-Game\-Settings}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{set\-Game\-Settings}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Tile\-Base\-::set\-Game\-Settings (
+\begin{DoxyParamCaption}
+\item[{const std\-::shared\-\_\-ptr$<$ {\bf Student\-::\-Game\-Settings\-Manager} $>$}]{manager}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_tile_base_afad742bfab32427ebc0283c145ef3740}
+
+
+Sets game\-Settings\-Manager\-\_\- to the object. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Shared} & pointer to the Game\-Settings\-Manager \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_tile_base_a3889af6b1fc5f16656f46f030aed34d9}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!update\-Animation@{update\-Animation}}
+\index{update\-Animation@{update\-Animation}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{update\-Animation}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Tile\-Base\-::update\-Animation (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [virtual]}}}\label{class_course_1_1_tile_base_a3889af6b1fc5f16656f46f030aed34d9}
+
+
+Updates the animation of an object that might be in \hyperlink{class_course_1_1_grassland}{Grassland} or River tile. 
+
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+Reimplemented in \hyperlink{class_course_1_1_grassland_a63e385f4a15a53111970f426a54117d5}{Course\-::\-Grassland}, and \hyperlink{class_student_1_1_river_af2cbaa57c5a4895b7c695219255a486c}{Student\-::\-River}.
+
+\hypertarget{class_course_1_1_tile_base_a161cb46028a65ca20ece683314a8fa46}{\index{Course\-::\-Tile\-Base@{Course\-::\-Tile\-Base}!update\-Unit\-Coordinates@{update\-Unit\-Coordinates}}
+\index{update\-Unit\-Coordinates@{update\-Unit\-Coordinates}!Course::TileBase@{Course\-::\-Tile\-Base}}
+\subsubsection[{update\-Unit\-Coordinates}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Tile\-Base\-::update\-Unit\-Coordinates (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [virtual]}}}\label{class_course_1_1_tile_base_a161cb46028a65ca20ece683314a8fa46}
+
+
+Updates the tile relative coordinates of the units. The tile has a 3x2 grid where the units can be placed. 
+
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ??????????????????? 
+\end{DoxyPostcond}
+
+
+Reimplemented in \hyperlink{class_student_1_1_river_aaf133bf15078e138b4b716a45fa67007}{Student\-::\-River}.
+
+
+
+The documentation for this class was generated from the following files\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Tiles/tilebase.\-h\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Tiles/tilebase.\-cpp\end{DoxyCompactItemize}

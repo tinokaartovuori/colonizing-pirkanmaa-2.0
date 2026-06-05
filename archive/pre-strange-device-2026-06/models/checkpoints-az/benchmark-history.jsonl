@@ -1,0 +1,14 @@
+{"gen":0,"winRate":0.2083,"lossRate":0.5417,"timeoutRate":0.2083,"tileFrac":0.1409,"ts":"2026-06-02T16:03:25Z"}
+{"gen":3,"winRate":0.2500,"lossRate":0.5417,"timeoutRate":0.1667,"tileFrac":0.1398,"ts":"2026-06-02T16:05:16Z"}
+{"gen":6,"winRate":0.2917,"lossRate":0.4583,"timeoutRate":0.2083,"tileFrac":0.1944,"ts":"2026-06-02T16:06:57Z"}
+{"gen":9,"winRate":0.2500,"lossRate":0.5417,"timeoutRate":0.1667,"tileFrac":0.1635,"ts":"2026-06-02T16:09:00Z"}
+{"gen":12,"winRate":0.3333,"lossRate":0.3333,"timeoutRate":0.2917,"tileFrac":0.2503,"ts":"2026-06-02T16:10:30Z"}
+{"gen":15,"winRate":0.3750,"lossRate":0.4583,"timeoutRate":0.1250,"tileFrac":0.1858,"ts":"2026-06-02T16:12:03Z"}
+{"gen":18,"winRate":0.2917,"lossRate":0.4583,"timeoutRate":0.2083,"tileFrac":0.2031,"ts":"2026-06-02T16:13:51Z"}
+{"gen":21,"winRate":0.3333,"lossRate":0.4167,"timeoutRate":0.2083,"tileFrac":0.2202,"ts":"2026-06-02T16:15:42Z"}
+{"gen":24,"winRate":0.2500,"lossRate":0.5000,"timeoutRate":0.2083,"tileFrac":0.1554,"ts":"2026-06-02T16:17:45Z"}
+{"gen":27,"winRate":0.2917,"lossRate":0.4167,"timeoutRate":0.2500,"tileFrac":0.2089,"ts":"2026-06-02T16:19:39Z"}
+{"gen":30,"winRate":0.3333,"lossRate":0.4167,"timeoutRate":0.2083,"tileFrac":0.2075,"ts":"2026-06-02T16:21:33Z"}
+{"gen":33,"winRate":0.3333,"lossRate":0.5000,"timeoutRate":0.1250,"tileFrac":0.1869,"ts":"2026-06-02T16:23:15Z"}
+{"gen":36,"winRate":0.3750,"lossRate":0.3750,"timeoutRate":0.2083,"tileFrac":0.2266,"ts":"2026-06-02T16:25:25Z"}
+{"gen":39,"winRate":0.3333,"lossRate":0.4583,"timeoutRate":0.1667,"tileFrac":0.2098,"ts":"2026-06-02T16:27:12Z"}

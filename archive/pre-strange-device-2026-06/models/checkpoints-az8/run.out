@@ -1,0 +1,28 @@
+alphazero: 16 worker threads (20 cores detected, leaving headroom)
+alphazero: warm-start policy from checkpoints-az/champion.json (arch [63, 24, 16, 1])
+alphazero: warm-start SPATIAL value net from checkpoints-az4/value.json (arch [41, 32, 16, 1])
+alphazero: out=checkpoints-az8 iters=120 games/iter=32 sims=96 bench every 5 (40 games)
+alphazero: Φ shaping λ=0.25 (AGGRESSION: push-to-kill)
+iter 0: vs-hard win 20.0% (loss 30.0%, timeout 45.0%) | ploss 0.7397 vloss 0.2744 | buf 6947 | 20s
+iter 5: vs-hard win 22.5% (loss 32.5%, timeout 40.0%) | ploss 0.7109 vloss 0.2122 | buf 30000 | 122s
+iter 10: vs-hard win 30.0% (loss 32.5%, timeout 32.5%) | ploss 0.7500 vloss 0.2018 | buf 30000 | 234s
+iter 15: vs-hard win 27.5% (loss 32.5%, timeout 35.0%) | ploss 0.7824 vloss 0.2345 | buf 30000 | 332s
+iter 20: vs-hard win 40.0% (loss 22.5%, timeout 32.5%) | ploss 0.7827 vloss 0.2057 | buf 30000 | 440s
+iter 25: vs-hard win 27.5% (loss 32.5%, timeout 35.0%) | ploss 0.7704 vloss 0.2007 | buf 30000 | 545s
+iter 30: vs-hard win 20.0% (loss 45.0%, timeout 30.0%) | ploss 0.7919 vloss 0.2430 | buf 30000 | 646s
+iter 35: vs-hard win 37.5% (loss 30.0%, timeout 25.0%) | ploss 0.8214 vloss 0.2113 | buf 30000 | 749s
+iter 40: vs-hard win 30.0% (loss 25.0%, timeout 40.0%) | ploss 0.7757 vloss 0.2115 | buf 30000 | 843s
+iter 45: vs-hard win 32.5% (loss 27.5%, timeout 35.0%) | ploss 0.7833 vloss 0.2182 | buf 30000 | 938s
+iter 50: vs-hard win 30.0% (loss 40.0%, timeout 25.0%) | ploss 0.7950 vloss 0.2099 | buf 30000 | 1033s
+iter 55: vs-hard win 32.5% (loss 27.5%, timeout 35.0%) | ploss 0.8214 vloss 0.2178 | buf 30000 | 1132s
+iter 60: vs-hard win 25.0% (loss 32.5%, timeout 35.0%) | ploss 0.7716 vloss 0.1966 | buf 30000 | 1230s
+iter 65: vs-hard win 35.0% (loss 27.5%, timeout 32.5%) | ploss 0.7704 vloss 0.2191 | buf 30000 | 1326s
+iter 70: vs-hard win 30.0% (loss 30.0%, timeout 35.0%) | ploss 0.7509 vloss 0.2008 | buf 30000 | 1424s
+iter 75: vs-hard win 30.0% (loss 25.0%, timeout 40.0%) | ploss 0.7242 vloss 0.1883 | buf 30000 | 1513s
+iter 80: vs-hard win 27.5% (loss 15.0%, timeout 52.5%) | ploss 0.7054 vloss 0.1868 | buf 30000 | 1587s
+iter 85: vs-hard win 30.0% (loss 22.5%, timeout 42.5%) | ploss 0.7133 vloss 0.1683 | buf 30000 | 1670s
+iter 90: vs-hard win 27.5% (loss 25.0%, timeout 40.0%) | ploss 0.7044 vloss 0.1279 | buf 30000 | 1761s
+iter 95: vs-hard win 27.5% (loss 25.0%, timeout 42.5%) | ploss 0.7361 vloss 0.1578 | buf 30000 | 1853s
+iter 100: vs-hard win 25.0% (loss 27.5%, timeout 42.5%) | ploss 0.6880 vloss 0.1595 | buf 30000 | 1938s
+iter 105: vs-hard win 25.0% (loss 25.0%, timeout 45.0%) | ploss 0.7359 vloss 0.2105 | buf 30000 | 2020s
+iter 110: vs-hard win 40.0% (loss 15.0%, timeout 40.0%) | ploss 0.6887 vloss 0.1952 | buf 30000 | 2101s

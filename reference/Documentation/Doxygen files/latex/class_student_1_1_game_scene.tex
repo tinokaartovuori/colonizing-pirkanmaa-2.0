@@ -1,0 +1,513 @@
+\hypertarget{class_student_1_1_game_scene}{\section{Student\-:\-:Game\-Scene Class Reference}
+\label{class_student_1_1_game_scene}\index{Student\-::\-Game\-Scene@{Student\-::\-Game\-Scene}}
+}
+
+
+The \hyperlink{class_student_1_1_game_scene}{Game\-Scene} class manages graphical items on the gamescene and draws them with the help of Q\-Graphics\-Scene.  
+
+
+
+
+{\ttfamily \#include $<$gamescene.\-h$>$}
+
+
+
+Inheritance diagram for Student\-:\-:Game\-Scene\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[width=252pt]{class_student_1_1_game_scene__inherit__graph}
+\end{center}
+\end{figure}
+
+
+Collaboration diagram for Student\-:\-:Game\-Scene\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[width=252pt]{class_student_1_1_game_scene__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Slots}
+\begin{DoxyCompactItemize}
+\item 
+void \hyperlink{class_student_1_1_game_scene_acded731627ae618c0b59929811d1292e}{change\-Frame\-For\-Scene\-Items} ()
+\begin{DoxyCompactList}\small\item\em Is called by the timer to change the frame of every animated obejct. \end{DoxyCompactList}\end{DoxyCompactItemize}
+\subsection*{Signals}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_student_1_1_game_scene_ab5785c3c21d25de0576b4cd626377a7f}{void \hyperlink{class_student_1_1_game_scene_ab5785c3c21d25de0576b4cd626377a7f}{update\-Scene} ()}\label{class_student_1_1_game_scene_ab5785c3c21d25de0576b4cd626377a7f}
+
+\begin{DoxyCompactList}\small\item\em Calls mainwidow to refresh the scene. This is done by emitting the signal. \end{DoxyCompactList}\end{DoxyCompactItemize}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hyperlink{class_student_1_1_game_scene_a581998b6cbdf8f29a2d2ae1751d47f75}{Game\-Scene} (Q\-Widget $\ast$qt\-\_\-parent, std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler} $>$ event\-Handler, std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{Course\-::i\-Object\-Manager} $>$ object\-Manager, std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1i_menu_object_manager}{Student\-::i\-Menu\-Object\-Manager} $>$ menu\-Object\-Manager, std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1_game_settings_manager}{Student\-::\-Game\-Settings\-Manager} $>$ game\-Settings\-Manager)
+\begin{DoxyCompactList}\small\item\em Constructor for the class. \end{DoxyCompactList}\item 
+\hypertarget{class_student_1_1_game_scene_a27134d9be436038e0f5184803574a1c4}{\hyperlink{class_student_1_1_game_scene_a27134d9be436038e0f5184803574a1c4}{$\sim$\-Game\-Scene} ()=default}\label{class_student_1_1_game_scene_a27134d9be436038e0f5184803574a1c4}
+
+\begin{DoxyCompactList}\small\item\em Destructor. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_scene_a93a476ffb725f5fa913dff1110221955}{delete\-Objects} ()
+\begin{DoxyCompactList}\small\item\em Deletes the shared pointer references of Scene\-Items and Q\-Timer object. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_scene_ad2bc91fba43318ee9dd304f2bcca6267}{add\-Scene\-Item} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1_scene_item}{Scene\-Item} $>$ scene\-Item)
+\begin{DoxyCompactList}\small\item\em Adds a scene item into the scene\-Items\-\_\- vector. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_scene_a1ae69029ef6f0c411edda1ab35afe201}{draw\-Item} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_game_object}{Course\-::\-Game\-Object} $>$ obj)
+\begin{DoxyCompactList}\small\item\em Draws tiles and buildings on the game\-Scene. The function creates a map\-Scene\-Item and passes various variables to it. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_scene_ab6ea04e955749b9dfbe1419e33509815}{draw\-Item} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_unit_base}{Course\-::\-Unit\-Base} $>$ obj)
+\begin{DoxyCompactList}\small\item\em Draws units on the game\-Scene. The function creates an unit\-Scene\-Item and passes various variables to it. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_scene_a3378a68b76da9b86e21e1a86b1683f76}{draw\-Item} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1_menu_view}{Menu\-View} $>$ obj)
+\begin{DoxyCompactList}\small\item\em Draws \hyperlink{class_student_1_1_menu_view}{Menu\-View} on the game\-Scene. The \hyperlink{class_student_1_1_menu_view}{Menu\-View} is the main background of the menu and other menu graphics are drawn on top of it. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_scene_acc706c5bb651e371df81415ca96cb810}{draw\-Item} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1_menu_object_container}{Menu\-Object\-Container} $>$ obj, std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1i_container}{i\-Container} $>$ cont)
+\begin{DoxyCompactList}\small\item\em Draws \hyperlink{class_student_1_1_menu_object_container}{Menu\-Object\-Container} on the menu. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_scene_ae189662aa849d3dec3b1a503b079e7e7}{draw\-Item} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1_menu_object}{Menu\-Object} $>$ obj, std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1i_container}{i\-Container} $>$ cont)
+\begin{DoxyCompactList}\small\item\em Draws Menu\-Objects such as buttons and labels. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_scene_a88826868f44ca25fddd09b9dab54d225}{draw\-Mouse\-Follow\-Item} (Q\-Event $\ast$\hyperlink{class_student_1_1_game_scene_a60a33d6cd4e3c40979e50b665d8cb024}{event})
+\begin{DoxyCompactList}\small\item\em Draws items that follow the mouse cursor. It could be implemented to any item but is used for units at the moment. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_scene_acad27d95730599e6d80b04be32807d2f}{update\-Item} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_game_object}{Course\-::\-Game\-Object} $>$ obj)
+\begin{DoxyCompactList}\small\item\em Updates the game object's location and images if they've changed. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_scene_acb7e3b120df9bd94fcbdf6fe140e643f}{update\-Item} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1_menu_object}{Menu\-Object} $>$ obj)
+\begin{DoxyCompactList}\small\item\em Updates menuobject's location. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_scene_a7c3301a7e8cdbf52eabd789cd7741c25}{update\-Tile} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ tileobj)
+\begin{DoxyCompactList}\small\item\em Updates a tile in the game graphically by drawing a building on it if a building is built. The function can also draw and remove units as is required. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_scene_ad496f5f342bbd98d275b757c77161bbf}{remove\-Item} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_base_object}{Course\-::\-Base\-Object} $>$ obj)
+\begin{DoxyCompactList}\small\item\em Removes a Game\-Obect from the game scene. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_scene_a14018146bcc2e5849f8bfbd88d02fa4f}{remove\-Container} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1i_container}{i\-Container} $>$ cont)
+\begin{DoxyCompactList}\small\item\em Removes a menu container from the game scene. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_scene_ab49d7189a3475ce719055c8f3f562535}{remove\-Mouse\-Follow\-Item} ()
+\begin{DoxyCompactList}\small\item\em Removes the item that follows the mouse cursor. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_scene_a98c0a4ad385e050cbe463fc28e7619aa}{add\-Mouse\-Follow\-Picture} (std\-::vector$<$ std\-::string $>$ imagevector)
+\begin{DoxyCompactList}\small\item\em Removes a menu container from the game scene. \end{DoxyCompactList}\item 
+bool \hyperlink{class_student_1_1_game_scene_afc442856a25e9a5e5b46d9565abb7b9b}{is\-Object\-In\-Scene} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_base_object}{Course\-::\-Base\-Object} $>$ obj)
+\begin{DoxyCompactList}\small\item\em Checks if the given item is on the scene. \end{DoxyCompactList}\item 
+\hyperlink{class_student_1_1_scene_item}{Scene\-Item} $\ast$ \hyperlink{class_student_1_1_game_scene_a76e1879837c2a65b08ed263091a941ed}{get\-Object\-In\-Scene} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_base_object}{Course\-::\-Base\-Object} $>$ obj)
+\begin{DoxyCompactList}\small\item\em Returns a pointer to an object in the scene. \end{DoxyCompactList}\item 
+Q\-Point\-F \hyperlink{class_student_1_1_game_scene_aa62612b4e15beadfb9f2f7a8f0e84ffe}{mouse\-Point} (Q\-Event $\ast$\hyperlink{class_student_1_1_game_scene_a60a33d6cd4e3c40979e50b665d8cb024}{event})
+\begin{DoxyCompactList}\small\item\em Returns the tile point of the mouse pointer. \end{DoxyCompactList}\item 
+virtual bool \hyperlink{class_student_1_1_game_scene_a60a33d6cd4e3c40979e50b665d8cb024}{event} (Q\-Event $\ast$event) override
+\begin{DoxyCompactList}\small\item\em Receives events that happen on the game scene such as mouse actions and does required actions dependening on the event. \end{DoxyCompactList}\end{DoxyCompactItemize}
+
+
+\subsection{Detailed Description}
+The \hyperlink{class_student_1_1_game_scene}{Game\-Scene} class manages graphical items on the gamescene and draws them with the help of Q\-Graphics\-Scene. 
+
+\subsection{Constructor \& Destructor Documentation}
+\hypertarget{class_student_1_1_game_scene_a581998b6cbdf8f29a2d2ae1751d47f75}{\index{Student\-::\-Game\-Scene@{Student\-::\-Game\-Scene}!Game\-Scene@{Game\-Scene}}
+\index{Game\-Scene@{Game\-Scene}!Student::GameScene@{Student\-::\-Game\-Scene}}
+\subsubsection[{Game\-Scene}]{\setlength{\rightskip}{0pt plus 5cm}Student\-::\-Game\-Scene\-::\-Game\-Scene (
+\begin{DoxyParamCaption}
+\item[{Q\-Widget $\ast$}]{qt\-\_\-parent, }
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::i\-Game\-Event\-Handler} $>$}]{event\-Handler, }
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::i\-Object\-Manager} $>$}]{object\-Manager, }
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Student\-::i\-Menu\-Object\-Manager} $>$}]{menu\-Object\-Manager, }
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Student\-::\-Game\-Settings\-Manager} $>$}]{game\-Settings\-Manager}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_game_scene_a581998b6cbdf8f29a2d2ae1751d47f75}
+
+
+Constructor for the class. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em qt\-\_\-parent} & points to the parent object per Qt's parent-\/child-\/system. \\
+\hline
+{\em width} & in tiles for the game map. \\
+\hline
+{\em height} & in tiles for the game map. \\
+\hline
+{\em scale} & is the size in pixels of a single square tile.\\
+\hline
+\end{DoxyParams}
+\begin{DoxyPrecond}{Precondition}
+0 $<$ width $<$= 100 \&\& 0 $<$ height $<$= 100 \&\& 0 $<$ scale $<$= 500. Otherwise default values are used for the created object. 
+\end{DoxyPrecond}
+
+
+\subsection{Member Function Documentation}
+\hypertarget{class_student_1_1_game_scene_a98c0a4ad385e050cbe463fc28e7619aa}{\index{Student\-::\-Game\-Scene@{Student\-::\-Game\-Scene}!add\-Mouse\-Follow\-Picture@{add\-Mouse\-Follow\-Picture}}
+\index{add\-Mouse\-Follow\-Picture@{add\-Mouse\-Follow\-Picture}!Student::GameScene@{Student\-::\-Game\-Scene}}
+\subsubsection[{add\-Mouse\-Follow\-Picture}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Scene\-::add\-Mouse\-Follow\-Picture (
+\begin{DoxyParamCaption}
+\item[{std\-::vector$<$ std\-::string $>$}]{imagevector}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_game_scene_a98c0a4ad385e050cbe463fc28e7619aa}
+
+
+Removes a menu container from the game scene. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em vector} & of the filepaths to the item's graphics (multiple frames) \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: Strong 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_scene_ad2bc91fba43318ee9dd304f2bcca6267}{\index{Student\-::\-Game\-Scene@{Student\-::\-Game\-Scene}!add\-Scene\-Item@{add\-Scene\-Item}}
+\index{add\-Scene\-Item@{add\-Scene\-Item}!Student::GameScene@{Student\-::\-Game\-Scene}}
+\subsubsection[{add\-Scene\-Item}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Scene\-::add\-Scene\-Item (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Scene\-Item} $>$}]{scene\-Item}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_game_scene_ad2bc91fba43318ee9dd304f2bcca6267}
+
+
+Adds a scene item into the scene\-Items\-\_\- vector. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em pointer} & to the scene\-Item to be added \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: Strong 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_scene_acded731627ae618c0b59929811d1292e}{\index{Student\-::\-Game\-Scene@{Student\-::\-Game\-Scene}!change\-Frame\-For\-Scene\-Items@{change\-Frame\-For\-Scene\-Items}}
+\index{change\-Frame\-For\-Scene\-Items@{change\-Frame\-For\-Scene\-Items}!Student::GameScene@{Student\-::\-Game\-Scene}}
+\subsubsection[{change\-Frame\-For\-Scene\-Items}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Scene\-::change\-Frame\-For\-Scene\-Items (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [slot]}}}\label{class_student_1_1_game_scene_acded731627ae618c0b59929811d1292e}
+
+
+Is called by the timer to change the frame of every animated obejct. 
+
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_scene_a93a476ffb725f5fa913dff1110221955}{\index{Student\-::\-Game\-Scene@{Student\-::\-Game\-Scene}!delete\-Objects@{delete\-Objects}}
+\index{delete\-Objects@{delete\-Objects}!Student::GameScene@{Student\-::\-Game\-Scene}}
+\subsubsection[{delete\-Objects}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Scene\-::delete\-Objects (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_game_scene_a93a476ffb725f5fa913dff1110221955}
+
+
+Deletes the shared pointer references of Scene\-Items and Q\-Timer object. 
+
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_scene_a1ae69029ef6f0c411edda1ab35afe201}{\index{Student\-::\-Game\-Scene@{Student\-::\-Game\-Scene}!draw\-Item@{draw\-Item}}
+\index{draw\-Item@{draw\-Item}!Student::GameScene@{Student\-::\-Game\-Scene}}
+\subsubsection[{draw\-Item}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Scene\-::draw\-Item (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Game\-Object} $>$}]{obj}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_game_scene_a1ae69029ef6f0c411edda1ab35afe201}
+
+
+Draws tiles and buildings on the game\-Scene. The function creates a map\-Scene\-Item and passes various variables to it. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em pointer} & to the Game\-Object to be drawn \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_scene_ab6ea04e955749b9dfbe1419e33509815}{\index{Student\-::\-Game\-Scene@{Student\-::\-Game\-Scene}!draw\-Item@{draw\-Item}}
+\index{draw\-Item@{draw\-Item}!Student::GameScene@{Student\-::\-Game\-Scene}}
+\subsubsection[{draw\-Item}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Scene\-::draw\-Item (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Unit\-Base} $>$}]{obj}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_game_scene_ab6ea04e955749b9dfbe1419e33509815}
+
+
+Draws units on the game\-Scene. The function creates an unit\-Scene\-Item and passes various variables to it. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em pointer} & to the Unit\-Base to be drawn \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_scene_a3378a68b76da9b86e21e1a86b1683f76}{\index{Student\-::\-Game\-Scene@{Student\-::\-Game\-Scene}!draw\-Item@{draw\-Item}}
+\index{draw\-Item@{draw\-Item}!Student::GameScene@{Student\-::\-Game\-Scene}}
+\subsubsection[{draw\-Item}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Scene\-::draw\-Item (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Menu\-View} $>$}]{obj}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_game_scene_a3378a68b76da9b86e21e1a86b1683f76}
+
+
+Draws \hyperlink{class_student_1_1_menu_view}{Menu\-View} on the game\-Scene. The \hyperlink{class_student_1_1_menu_view}{Menu\-View} is the main background of the menu and other menu graphics are drawn on top of it. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em pointer} & to the \hyperlink{class_student_1_1_menu_view}{Menu\-View} to be drawn \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_scene_acc706c5bb651e371df81415ca96cb810}{\index{Student\-::\-Game\-Scene@{Student\-::\-Game\-Scene}!draw\-Item@{draw\-Item}}
+\index{draw\-Item@{draw\-Item}!Student::GameScene@{Student\-::\-Game\-Scene}}
+\subsubsection[{draw\-Item}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Scene\-::draw\-Item (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Menu\-Object\-Container} $>$}]{obj, }
+\item[{std\-::shared\-\_\-ptr$<$ {\bf i\-Container} $>$}]{cont}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_game_scene_acc706c5bb651e371df81415ca96cb810}
+
+
+Draws \hyperlink{class_student_1_1_menu_object_container}{Menu\-Object\-Container} on the menu. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em obj} & points to the \hyperlink{class_student_1_1_menu_object_container}{Menu\-Object\-Container} to be drawn \\
+\hline
+{\em cont} & points to the container interface which makes possible to insert containers inside another container. It also makes relative coordinates possible \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_scene_ae189662aa849d3dec3b1a503b079e7e7}{\index{Student\-::\-Game\-Scene@{Student\-::\-Game\-Scene}!draw\-Item@{draw\-Item}}
+\index{draw\-Item@{draw\-Item}!Student::GameScene@{Student\-::\-Game\-Scene}}
+\subsubsection[{draw\-Item}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Scene\-::draw\-Item (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Menu\-Object} $>$}]{obj, }
+\item[{std\-::shared\-\_\-ptr$<$ {\bf i\-Container} $>$}]{cont}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_game_scene_ae189662aa849d3dec3b1a503b079e7e7}
+
+
+Draws Menu\-Objects such as buttons and labels. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em obj} & points to the \hyperlink{class_student_1_1_menu_object}{Menu\-Object} to be drawn \\
+\hline
+{\em cont} & points to the container interface which makes possible to insert containers inside another container. It also makes relative coordinates possible \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_scene_a88826868f44ca25fddd09b9dab54d225}{\index{Student\-::\-Game\-Scene@{Student\-::\-Game\-Scene}!draw\-Mouse\-Follow\-Item@{draw\-Mouse\-Follow\-Item}}
+\index{draw\-Mouse\-Follow\-Item@{draw\-Mouse\-Follow\-Item}!Student::GameScene@{Student\-::\-Game\-Scene}}
+\subsubsection[{draw\-Mouse\-Follow\-Item}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Scene\-::draw\-Mouse\-Follow\-Item (
+\begin{DoxyParamCaption}
+\item[{Q\-Event $\ast$}]{event}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_game_scene_a88826868f44ca25fddd09b9dab54d225}
+
+
+Draws items that follow the mouse cursor. It could be implemented to any item but is used for units at the moment. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em event} & points to the event that happened on the scene \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_scene_a60a33d6cd4e3c40979e50b665d8cb024}{\index{Student\-::\-Game\-Scene@{Student\-::\-Game\-Scene}!event@{event}}
+\index{event@{event}!Student::GameScene@{Student\-::\-Game\-Scene}}
+\subsubsection[{event}]{\setlength{\rightskip}{0pt plus 5cm}bool Student\-::\-Game\-Scene\-::event (
+\begin{DoxyParamCaption}
+\item[{Q\-Event $\ast$}]{event}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_game_scene_a60a33d6cd4e3c40979e50b665d8cb024}
+
+
+Receives events that happen on the game scene such as mouse actions and does required actions dependening on the event. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em event} & points to the event that happened on the scene \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+True\-: the event was handled in the handler. False\-: the event handling was passed over. 
+\end{DoxyReturn}
+\hypertarget{class_student_1_1_game_scene_a76e1879837c2a65b08ed263091a941ed}{\index{Student\-::\-Game\-Scene@{Student\-::\-Game\-Scene}!get\-Object\-In\-Scene@{get\-Object\-In\-Scene}}
+\index{get\-Object\-In\-Scene@{get\-Object\-In\-Scene}!Student::GameScene@{Student\-::\-Game\-Scene}}
+\subsubsection[{get\-Object\-In\-Scene}]{\setlength{\rightskip}{0pt plus 5cm}{\bf Scene\-Item} $\ast$ Student\-::\-Game\-Scene\-::get\-Object\-In\-Scene (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Base\-Object} $>$}]{obj}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_game_scene_a76e1879837c2a65b08ed263091a941ed}
+
+
+Returns a pointer to an object in the scene. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em pointer} & to the Base\-Object \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+pointer to a object in scene 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_scene_afc442856a25e9a5e5b46d9565abb7b9b}{\index{Student\-::\-Game\-Scene@{Student\-::\-Game\-Scene}!is\-Object\-In\-Scene@{is\-Object\-In\-Scene}}
+\index{is\-Object\-In\-Scene@{is\-Object\-In\-Scene}!Student::GameScene@{Student\-::\-Game\-Scene}}
+\subsubsection[{is\-Object\-In\-Scene}]{\setlength{\rightskip}{0pt plus 5cm}bool Student\-::\-Game\-Scene\-::is\-Object\-In\-Scene (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Base\-Object} $>$}]{obj}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_game_scene_afc442856a25e9a5e5b46d9565abb7b9b}
+
+
+Checks if the given item is on the scene. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em pointer} & to the object \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+True\-: the object is in the scene False\-: the item is not in the scene 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_scene_aa62612b4e15beadfb9f2f7a8f0e84ffe}{\index{Student\-::\-Game\-Scene@{Student\-::\-Game\-Scene}!mouse\-Point@{mouse\-Point}}
+\index{mouse\-Point@{mouse\-Point}!Student::GameScene@{Student\-::\-Game\-Scene}}
+\subsubsection[{mouse\-Point}]{\setlength{\rightskip}{0pt plus 5cm}Q\-Point\-F Student\-::\-Game\-Scene\-::mouse\-Point (
+\begin{DoxyParamCaption}
+\item[{Q\-Event $\ast$}]{event}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_game_scene_aa62612b4e15beadfb9f2f7a8f0e84ffe}
+
+
+Returns the tile point of the mouse pointer. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em event} & points to the event that happened on the scene \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+Tile location of the mouse pointer in Q\-Point\-F 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_scene_a14018146bcc2e5849f8bfbd88d02fa4f}{\index{Student\-::\-Game\-Scene@{Student\-::\-Game\-Scene}!remove\-Container@{remove\-Container}}
+\index{remove\-Container@{remove\-Container}!Student::GameScene@{Student\-::\-Game\-Scene}}
+\subsubsection[{remove\-Container}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Scene\-::remove\-Container (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf i\-Container} $>$}]{cont}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_game_scene_a14018146bcc2e5849f8bfbd88d02fa4f}
+
+
+Removes a menu container from the game scene. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em pointer} & to the \hyperlink{class_student_1_1i_container}{i\-Container} to be removed \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_scene_ad496f5f342bbd98d275b757c77161bbf}{\index{Student\-::\-Game\-Scene@{Student\-::\-Game\-Scene}!remove\-Item@{remove\-Item}}
+\index{remove\-Item@{remove\-Item}!Student::GameScene@{Student\-::\-Game\-Scene}}
+\subsubsection[{remove\-Item}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Scene\-::remove\-Item (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Base\-Object} $>$}]{obj}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_game_scene_ad496f5f342bbd98d275b757c77161bbf}
+
+
+Removes a Game\-Obect from the game scene. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em pointer} & to the Game\-Obect to be removed \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_scene_ab49d7189a3475ce719055c8f3f562535}{\index{Student\-::\-Game\-Scene@{Student\-::\-Game\-Scene}!remove\-Mouse\-Follow\-Item@{remove\-Mouse\-Follow\-Item}}
+\index{remove\-Mouse\-Follow\-Item@{remove\-Mouse\-Follow\-Item}!Student::GameScene@{Student\-::\-Game\-Scene}}
+\subsubsection[{remove\-Mouse\-Follow\-Item}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Scene\-::remove\-Mouse\-Follow\-Item (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_game_scene_ab49d7189a3475ce719055c8f3f562535}
+
+
+Removes the item that follows the mouse cursor. 
+
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_scene_acad27d95730599e6d80b04be32807d2f}{\index{Student\-::\-Game\-Scene@{Student\-::\-Game\-Scene}!update\-Item@{update\-Item}}
+\index{update\-Item@{update\-Item}!Student::GameScene@{Student\-::\-Game\-Scene}}
+\subsubsection[{update\-Item}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Scene\-::update\-Item (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Game\-Object} $>$}]{obj}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_game_scene_acad27d95730599e6d80b04be32807d2f}
+
+
+Updates the game object's location and images if they've changed. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em pointer} & to the Game\-Object to be updated graphically \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_scene_acb7e3b120df9bd94fcbdf6fe140e643f}{\index{Student\-::\-Game\-Scene@{Student\-::\-Game\-Scene}!update\-Item@{update\-Item}}
+\index{update\-Item@{update\-Item}!Student::GameScene@{Student\-::\-Game\-Scene}}
+\subsubsection[{update\-Item}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Scene\-::update\-Item (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Menu\-Object} $>$}]{obj}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_game_scene_acb7e3b120df9bd94fcbdf6fe140e643f}
+
+
+Updates menuobject's location. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em pointer} & to the \hyperlink{class_student_1_1_menu_object}{Menu\-Object} to be updated graphically \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_scene_a7c3301a7e8cdbf52eabd789cd7741c25}{\index{Student\-::\-Game\-Scene@{Student\-::\-Game\-Scene}!update\-Tile@{update\-Tile}}
+\index{update\-Tile@{update\-Tile}!Student::GameScene@{Student\-::\-Game\-Scene}}
+\subsubsection[{update\-Tile}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Scene\-::update\-Tile (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Tile\-Base} $>$}]{tileobj}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_game_scene_a7c3301a7e8cdbf52eabd789cd7741c25}
+
+
+Updates a tile in the game graphically by drawing a building on it if a building is built. The function can also draw and remove units as is required. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em pointer} & to the tile to be updated \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+
+
+The documentation for this class was generated from the following files\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Graphics/gamescene.\-h\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Graphics/gamescene.\-cpp\end{DoxyCompactItemize}

@@ -1,0 +1,6 @@
+<map id="Student::Soldier" name="Student::Soldier">
+<area shape="rect" id="node2" href="$class_course_1_1_unit_base.html" title="The UnitBase class is aa base&#45;class for Unit&#45;objects. " alt="" coords="110,808,281,1032"/>
+<area shape="rect" id="node3" href="$class_course_1_1_placeable_game_object.html" title="The PlaceableGameObject class represents GameObjects that can be placed on Tile Objects. " alt="" coords="87,579,305,759"/>
+<area shape="rect" id="node4" href="$class_course_1_1_game_object.html" title="The GameObject class is base&#45;class that contain&#39;s general information on different Objects in game..." alt="" coords="113,336,279,531"/>
+<area shape="rect" id="node5" href="$class_course_1_1_base_object.html" title="The BaseObject class is base&#45;class that contain&#39;s general information on different Objects in game..." alt="" coords="5,5,176,288"/>
+</map>

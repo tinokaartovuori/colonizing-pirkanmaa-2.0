@@ -1,0 +1,7 @@
+<map id="Graphical Class Hierarchy" name="Graphical Class Hierarchy">
+<area shape="rect" id="node2" href="$class_student_1_1_free_scene_item.html" title="The FreeSceneItem class is a custom QGraphicsItem that acts as a single GameObject&#39;s graphical elemen..." alt="" coords="173,5,349,32"/>
+<area shape="rect" id="node3" href="$class_student_1_1_scene_item.html" title="The SceneItem class is a custom QGraphicsItem that has additional features such as animation frames..." alt="" coords="187,56,336,83"/>
+<area shape="rect" id="node4" href="$class_student_1_1_map_scene_item.html" title="The MapSceneItem class is derived from SceneItem. The class is used to draw tiles, buildings and overlays. " alt="" coords="401,5,577,32"/>
+<area shape="rect" id="node5" href="$class_student_1_1_menu_scene_item.html" title="Student::MenuSceneItem" alt="" coords="397,56,581,83"/>
+<area shape="rect" id="node6" href="$class_student_1_1_unit_scene_item.html" title="The MapSceneItem class is derived from SceneItem. The class is used to draw units. The units have their own tile specific. " alt="" coords="401,107,577,133"/>
+</map>

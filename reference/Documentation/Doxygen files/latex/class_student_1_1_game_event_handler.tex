@@ -1,0 +1,624 @@
+\hypertarget{class_student_1_1_game_event_handler}{\section{Student\-:\-:Game\-Event\-Handler Class Reference}
+\label{class_student_1_1_game_event_handler}\index{Student\-::\-Game\-Event\-Handler@{Student\-::\-Game\-Event\-Handler}}
+}
+
+
+The \hyperlink{class_student_1_1_game_event_handler}{Game\-Event\-Handler} class manages various events in the game.  
+
+
+
+
+{\ttfamily \#include $<$gameeventhandler.\-h$>$}
+
+
+
+Inheritance diagram for Student\-:\-:Game\-Event\-Handler\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[width=350pt]{class_student_1_1_game_event_handler__inherit__graph}
+\end{center}
+\end{figure}
+
+
+Collaboration diagram for Student\-:\-:Game\-Event\-Handler\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[width=350pt]{class_student_1_1_game_event_handler__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hyperlink{class_student_1_1_game_event_handler_aca6fae1c13215032811f273301e5aaeb}{Game\-Event\-Handler} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1_object_manager}{Student\-::\-Object\-Manager} $>$ objectmanager, std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1_player_manager}{Student\-::\-Player\-Manager} $>$ playermanager, std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1_menu_object_manager}{Student\-::\-Menu\-Object\-Manager} $>$ menuobjectmanager, std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1_game_settings_manager}{Student\-::\-Game\-Settings\-Manager} $>$ gamesettingsmanager)
+\begin{DoxyCompactList}\small\item\em Constructor for the class. \end{DoxyCompactList}\item 
+\hypertarget{class_student_1_1_game_event_handler_ac999a823c49c069000a660d0ae977afc}{\hyperlink{class_student_1_1_game_event_handler_ac999a823c49c069000a660d0ae977afc}{$\sim$\-Game\-Event\-Handler} ()=default}\label{class_student_1_1_game_event_handler_ac999a823c49c069000a660d0ae977afc}
+
+\begin{DoxyCompactList}\small\item\em Default destructor. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_event_handler_abae6c2f38ace8632bae46ec18b07247d}{set\-Game\-Scene} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1_game_scene}{Game\-Scene} $>$ gs) override
+\begin{DoxyCompactList}\small\item\em Sets a pointer to the gamescene and saves it into the event handler. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_event_handler_a0c407a2cb6f982ce5e6c7e5d3075cef1}{first\-Round\-Actions} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ tile) override
+\begin{DoxyCompactList}\small\item\em Handles the actions done in the first round. This includes placing the headquarters and getting the nine closest tiles if no one owns them. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_event_handler_a321b8e2db1e041549bfb22e9d98f38b2}{tile\-Clicked} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ tile) override
+\begin{DoxyCompactList}\small\item\em Handles the actions done when a tile is clicked. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_event_handler_a6ab8b7ecd8871e84e6e619a7d2249497}{end\-Turn} () override
+\begin{DoxyCompactList}\small\item\em Handles the actions done when turn is ended. This includes generating resources, paying salaries for units, conquering tiles, checking if there's tiles that are not connected to the headquarters and checking if someone lost. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_event_handler_a77551fd417e10239804f8900bbd6d055}{neutralize\-Player} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Course\-::\-Player\-Base} $>$ player) override
+\begin{DoxyCompactList}\small\item\em Neutralizes the player by removing the ownership of players' tiles, destroying the headquarters and resetting the player's farm. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_event_handler_a6cb9513b588826a11a7f0601d068a4bd}{update\-Animated\-Tile\-To\-Static} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ tile, int frame) override
+\begin{DoxyCompactList}\small\item\em Changes animated tile to be stuck in a specific frame. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_event_handler_ac29d1ec4eacc1b9efa34183ca6ba3b63}{update\-Forest} (std\-::string status, std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ tile, const std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_building_base}{Course\-::\-Building\-Base} $>$ \&building=nullptr) override
+\begin{DoxyCompactList}\small\item\em Updates the forest visually to be either grown or cut. The function can also change the tile type into grassland and set a building on it. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_event_handler_a11e4d6d1e9f67bb72f69cd9f9b2b4a60}{set\-Tile\-Inspection\-Menu\-View} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ tile, int index\-\_\-for\-\_\-buildings=0) override
+\begin{DoxyCompactList}\small\item\em Sets up the menu view that shows information about a tile that is clicked and the buildings that can be built on the tile. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_event_handler_a8ace791ddeef0cfbe27c09d060a9ec43}{open\-Stats\-Menu\-View} () override
+\begin{DoxyCompactList}\small\item\em Opens the menu view that shows how many rounds have been played and how much of map area players own. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_event_handler_a5beff8c3746359f5f85243adff4439bb}{open\-Default\-Menu\-View} () override
+\begin{DoxyCompactList}\small\item\em Opens the menu view that shows how many rounds have been played and how much of map area players own. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_event_handler_a0712fc2cdf6154039d28edf064b2e9de}{open\-Unit\-Buy\-Menu} () override
+\begin{DoxyCompactList}\small\item\em Opens the unit buy menu. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_event_handler_a26a4c686b6becf36b31434d7381ef7a5}{create\-Unit} (std\-::string unit) override
+\begin{DoxyCompactList}\small\item\em Creates the shared pointer for the unit to be created. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_event_handler_aa264f9e825b26c57dc748101fe7e0174}{move\-Unit\-From\-Tile} (int index, std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ tile) override
+\begin{DoxyCompactList}\small\item\em Is called when the \char`\"{}move\char`\"{} button is clicked on the menu for an unit. The function keeps track of the tile the unit was picked from and which unit it was. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_event_handler_ae27fbedf86bbe64a384ee0844c09c790}{buy\-Unit\-Or\-Building} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_placeable_game_object}{Course\-::\-Placeable\-Game\-Object} $>$ object) override
+\begin{DoxyCompactList}\small\item\em Removes resources from the current player according to the purchase cost of the given object. \end{DoxyCompactList}\item 
+bool \hyperlink{class_student_1_1_game_event_handler_ae1142bf1c664551b6443d8ffed4c7b7e}{can\-Buy\-Unit\-Or\-Building} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_placeable_game_object}{Course\-::\-Placeable\-Game\-Object} $>$ object) override
+\begin{DoxyCompactList}\small\item\em Checks if the current player has enough resources to buy the given object. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_event_handler_a4ee29863d407042502fd70ff7cbc1e7e}{delete\-Unit\-From\-Tile} (int index, std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ tile) override
+\begin{DoxyCompactList}\small\item\em Deletes unit from tile and excecutes the required actions. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_event_handler_a74f6b50a3b8b54eee5813007654f0b3a}{delete\-Unit\-From\-Tile} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_unit_base}{Course\-::\-Unit\-Base} $>$ unit, std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ tile) override
+\begin{DoxyCompactList}\small\item\em Deletes unit from tile and excecutes the required actions. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_event_handler_ac4be736d89fc2efd095c3d781b539ede}{update\-Tile} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ tile) override
+\begin{DoxyCompactList}\small\item\em Calls gamescene to update the given tile graphically. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_event_handler_a0b25328dd12bf6b3bf584c3772931b65}{build\-Building} (std\-::string building\-\_\-string, std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ tile) override
+\begin{DoxyCompactList}\small\item\em Creates a shared pointer to the building that is wanted to be built and removes the purchase cost from the current player if the player can addord the building,. \end{DoxyCompactList}\item 
+Course\-::\-Resource\-Map \hyperlink{class_student_1_1_game_event_handler_a285a4505308359e75d24f5f980b4e686}{get\-Current\-Revenue} () override
+\begin{DoxyCompactList}\small\item\em Returns a Resource map of the current revenue the current player has when the turn ends. This function is used by the menu. \end{DoxyCompactList}\item 
+Course\-::\-Resource\-Map \hyperlink{class_student_1_1_game_event_handler_a09d07bb2da6806ab42608430ca3a6c33}{get\-Current\-Expences} () override
+\begin{DoxyCompactList}\small\item\em Returns a Resource map of the current expenses the current player has when the turn ends. This function is used by the menu. \end{DoxyCompactList}\item 
+Course\-::\-Resource\-Map \hyperlink{class_student_1_1_game_event_handler_ab1b3ce5dce712e2f60ab30a4127f325e}{get\-Current\-Net} () override
+\begin{DoxyCompactList}\small\item\em Returns a Resource map of the current net revenue the current player will earn when the turn ends. In other words it's revenue summed with expenses. This function is used by the menu. \end{DoxyCompactList}\item 
+std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_course_1_1_player_base}{Course\-::\-Player\-Base} $>$ \hyperlink{class_student_1_1_game_event_handler_ae81b3048f48bd5b468ca37e91e9cfa8f}{get\-Current\-Player} () override
+\begin{DoxyCompactList}\small\item\em Returns a pointer to the player obejct currently in turn. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_game_event_handler_a823856a979a4ab60f8f7cc4c3555ec1e}{restart\-Game} () override
+\begin{DoxyCompactList}\small\item\em Calls mainwindow to restart the game. \end{DoxyCompactList}\end{DoxyCompactItemize}
+\subsection*{Additional Inherited Members}
+
+
+\subsection{Detailed Description}
+The \hyperlink{class_student_1_1_game_event_handler}{Game\-Event\-Handler} class manages various events in the game. 
+
+\subsection{Constructor \& Destructor Documentation}
+\hypertarget{class_student_1_1_game_event_handler_aca6fae1c13215032811f273301e5aaeb}{\index{Student\-::\-Game\-Event\-Handler@{Student\-::\-Game\-Event\-Handler}!Game\-Event\-Handler@{Game\-Event\-Handler}}
+\index{Game\-Event\-Handler@{Game\-Event\-Handler}!Student::GameEventHandler@{Student\-::\-Game\-Event\-Handler}}
+\subsubsection[{Game\-Event\-Handler}]{\setlength{\rightskip}{0pt plus 5cm}Student\-::\-Game\-Event\-Handler\-::\-Game\-Event\-Handler (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Student\-::\-Object\-Manager} $>$}]{objectmanager, }
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Student\-::\-Player\-Manager} $>$}]{playermanager, }
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Student\-::\-Menu\-Object\-Manager} $>$}]{menuobjectmanager, }
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Student\-::\-Game\-Settings\-Manager} $>$}]{gamesettingsmanager}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_game_event_handler_aca6fae1c13215032811f273301e5aaeb}
+
+
+Constructor for the class. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em objectmanager} & points to the \hyperlink{class_student_1_1_object_manager}{Object\-Manager} \\
+\hline
+{\em playermanager} & points to the \hyperlink{class_student_1_1_player_manager}{Player\-Manager} \\
+\hline
+{\em menuobjectmanager} & points to the \hyperlink{class_student_1_1_menu_object_manager}{Menu\-Object\-Manager} \\
+\hline
+{\em gamesettingsmanager} & points to the \hyperlink{class_student_1_1_game_settings_manager}{Game\-Settings\-Manager} \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee. 
+\end{DoxyPostcond}
+
+
+\subsection{Member Function Documentation}
+\hypertarget{class_student_1_1_game_event_handler_a0b25328dd12bf6b3bf584c3772931b65}{\index{Student\-::\-Game\-Event\-Handler@{Student\-::\-Game\-Event\-Handler}!build\-Building@{build\-Building}}
+\index{build\-Building@{build\-Building}!Student::GameEventHandler@{Student\-::\-Game\-Event\-Handler}}
+\subsubsection[{build\-Building}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Event\-Handler\-::build\-Building (
+\begin{DoxyParamCaption}
+\item[{std\-::string}]{building\-\_\-string, }
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Tile\-Base} $>$}]{tile}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}}}\label{class_student_1_1_game_event_handler_a0b25328dd12bf6b3bf584c3772931b65}
+
+
+Creates a shared pointer to the building that is wanted to be built and removes the purchase cost from the current player if the player can addord the building,. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em building\-\_\-string} & is the building type in string \\
+\hline
+{\em tile} & points to the tile that the building is wanted to added \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_event_handler_ae27fbedf86bbe64a384ee0844c09c790}{\index{Student\-::\-Game\-Event\-Handler@{Student\-::\-Game\-Event\-Handler}!buy\-Unit\-Or\-Building@{buy\-Unit\-Or\-Building}}
+\index{buy\-Unit\-Or\-Building@{buy\-Unit\-Or\-Building}!Student::GameEventHandler@{Student\-::\-Game\-Event\-Handler}}
+\subsubsection[{buy\-Unit\-Or\-Building}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Event\-Handler\-::buy\-Unit\-Or\-Building (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Placeable\-Game\-Object} $>$}]{object}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}}}\label{class_student_1_1_game_event_handler_ae27fbedf86bbe64a384ee0844c09c790}
+
+
+Removes resources from the current player according to the purchase cost of the given object. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em pointer} & to the object to be bought \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_event_handler_ae1142bf1c664551b6443d8ffed4c7b7e}{\index{Student\-::\-Game\-Event\-Handler@{Student\-::\-Game\-Event\-Handler}!can\-Buy\-Unit\-Or\-Building@{can\-Buy\-Unit\-Or\-Building}}
+\index{can\-Buy\-Unit\-Or\-Building@{can\-Buy\-Unit\-Or\-Building}!Student::GameEventHandler@{Student\-::\-Game\-Event\-Handler}}
+\subsubsection[{can\-Buy\-Unit\-Or\-Building}]{\setlength{\rightskip}{0pt plus 5cm}bool Student\-::\-Game\-Event\-Handler\-::can\-Buy\-Unit\-Or\-Building (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Placeable\-Game\-Object} $>$}]{object}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}}}\label{class_student_1_1_game_event_handler_ae1142bf1c664551b6443d8ffed4c7b7e}
+
+
+Checks if the current player has enough resources to buy the given object. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em pointer} & to the object to be bought \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_event_handler_a26a4c686b6becf36b31434d7381ef7a5}{\index{Student\-::\-Game\-Event\-Handler@{Student\-::\-Game\-Event\-Handler}!create\-Unit@{create\-Unit}}
+\index{create\-Unit@{create\-Unit}!Student::GameEventHandler@{Student\-::\-Game\-Event\-Handler}}
+\subsubsection[{create\-Unit}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Event\-Handler\-::create\-Unit (
+\begin{DoxyParamCaption}
+\item[{std\-::string}]{unit}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_game_event_handler_a26a4c686b6becf36b31434d7381ef7a5}
+
+
+Creates the shared pointer for the unit to be created. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em string} & of the unit type to be created \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler}.
+
+\hypertarget{class_student_1_1_game_event_handler_a4ee29863d407042502fd70ff7cbc1e7e}{\index{Student\-::\-Game\-Event\-Handler@{Student\-::\-Game\-Event\-Handler}!delete\-Unit\-From\-Tile@{delete\-Unit\-From\-Tile}}
+\index{delete\-Unit\-From\-Tile@{delete\-Unit\-From\-Tile}!Student::GameEventHandler@{Student\-::\-Game\-Event\-Handler}}
+\subsubsection[{delete\-Unit\-From\-Tile}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Event\-Handler\-::delete\-Unit\-From\-Tile (
+\begin{DoxyParamCaption}
+\item[{int}]{index, }
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Tile\-Base} $>$}]{tile}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}}}\label{class_student_1_1_game_event_handler_a4ee29863d407042502fd70ff7cbc1e7e}
+
+
+Deletes unit from tile and excecutes the required actions. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em index} & is the index of the unit either in the units\-\_\- or conquering\-Units\-\_\- vector to be removed \\
+\hline
+{\em tile} & points to the tile the unit is removed from \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_event_handler_a74f6b50a3b8b54eee5813007654f0b3a}{\index{Student\-::\-Game\-Event\-Handler@{Student\-::\-Game\-Event\-Handler}!delete\-Unit\-From\-Tile@{delete\-Unit\-From\-Tile}}
+\index{delete\-Unit\-From\-Tile@{delete\-Unit\-From\-Tile}!Student::GameEventHandler@{Student\-::\-Game\-Event\-Handler}}
+\subsubsection[{delete\-Unit\-From\-Tile}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Event\-Handler\-::delete\-Unit\-From\-Tile (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Unit\-Base} $>$}]{unit, }
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Tile\-Base} $>$}]{tile}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}}}\label{class_student_1_1_game_event_handler_a74f6b50a3b8b54eee5813007654f0b3a}
+
+
+Deletes unit from tile and excecutes the required actions. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em unit} & points to the unit to be removed \\
+\hline
+{\em tile} & points to the tile the unit is removed from \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_event_handler_a6ab8b7ecd8871e84e6e619a7d2249497}{\index{Student\-::\-Game\-Event\-Handler@{Student\-::\-Game\-Event\-Handler}!end\-Turn@{end\-Turn}}
+\index{end\-Turn@{end\-Turn}!Student::GameEventHandler@{Student\-::\-Game\-Event\-Handler}}
+\subsubsection[{end\-Turn}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Event\-Handler\-::end\-Turn (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_game_event_handler_a6ab8b7ecd8871e84e6e619a7d2249497}
+
+
+Handles the actions done when turn is ended. This includes generating resources, paying salaries for units, conquering tiles, checking if there's tiles that are not connected to the headquarters and checking if someone lost. 
+
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler}.
+
+\hypertarget{class_student_1_1_game_event_handler_a0c407a2cb6f982ce5e6c7e5d3075cef1}{\index{Student\-::\-Game\-Event\-Handler@{Student\-::\-Game\-Event\-Handler}!first\-Round\-Actions@{first\-Round\-Actions}}
+\index{first\-Round\-Actions@{first\-Round\-Actions}!Student::GameEventHandler@{Student\-::\-Game\-Event\-Handler}}
+\subsubsection[{first\-Round\-Actions}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Event\-Handler\-::first\-Round\-Actions (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Tile\-Base} $>$}]{tile}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}}}\label{class_student_1_1_game_event_handler_a0c407a2cb6f982ce5e6c7e5d3075cef1}
+
+
+Handles the actions done in the first round. This includes placing the headquarters and getting the nine closest tiles if no one owns them. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Pointer} & to the tile the headquarters is added on \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_event_handler_a09d07bb2da6806ab42608430ca3a6c33}{\index{Student\-::\-Game\-Event\-Handler@{Student\-::\-Game\-Event\-Handler}!get\-Current\-Expences@{get\-Current\-Expences}}
+\index{get\-Current\-Expences@{get\-Current\-Expences}!Student::GameEventHandler@{Student\-::\-Game\-Event\-Handler}}
+\subsubsection[{get\-Current\-Expences}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Resource\-Map Student\-::\-Game\-Event\-Handler\-::get\-Current\-Expences (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_game_event_handler_a09d07bb2da6806ab42608430ca3a6c33}
+
+
+Returns a Resource map of the current expenses the current player has when the turn ends. This function is used by the menu. 
+
+\begin{DoxyReturn}{Returns}
+resource map of the current expenses the current player has 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler}.
+
+\hypertarget{class_student_1_1_game_event_handler_ab1b3ce5dce712e2f60ab30a4127f325e}{\index{Student\-::\-Game\-Event\-Handler@{Student\-::\-Game\-Event\-Handler}!get\-Current\-Net@{get\-Current\-Net}}
+\index{get\-Current\-Net@{get\-Current\-Net}!Student::GameEventHandler@{Student\-::\-Game\-Event\-Handler}}
+\subsubsection[{get\-Current\-Net}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Resource\-Map Student\-::\-Game\-Event\-Handler\-::get\-Current\-Net (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_game_event_handler_ab1b3ce5dce712e2f60ab30a4127f325e}
+
+
+Returns a Resource map of the current net revenue the current player will earn when the turn ends. In other words it's revenue summed with expenses. This function is used by the menu. 
+
+\begin{DoxyReturn}{Returns}
+resource map of the current revenue the current player has 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler}.
+
+\hypertarget{class_student_1_1_game_event_handler_ae81b3048f48bd5b468ca37e91e9cfa8f}{\index{Student\-::\-Game\-Event\-Handler@{Student\-::\-Game\-Event\-Handler}!get\-Current\-Player@{get\-Current\-Player}}
+\index{get\-Current\-Player@{get\-Current\-Player}!Student::GameEventHandler@{Student\-::\-Game\-Event\-Handler}}
+\subsubsection[{get\-Current\-Player}]{\setlength{\rightskip}{0pt plus 5cm}std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Player\-Base} $>$ Student\-::\-Game\-Event\-Handler\-::get\-Current\-Player (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_game_event_handler_ae81b3048f48bd5b468ca37e91e9cfa8f}
+
+
+Returns a pointer to the player obejct currently in turn. 
+
+\begin{DoxyReturn}{Returns}
+pointer to the player obejct currently in turn 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler}.
+
+\hypertarget{class_student_1_1_game_event_handler_a285a4505308359e75d24f5f980b4e686}{\index{Student\-::\-Game\-Event\-Handler@{Student\-::\-Game\-Event\-Handler}!get\-Current\-Revenue@{get\-Current\-Revenue}}
+\index{get\-Current\-Revenue@{get\-Current\-Revenue}!Student::GameEventHandler@{Student\-::\-Game\-Event\-Handler}}
+\subsubsection[{get\-Current\-Revenue}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Resource\-Map Student\-::\-Game\-Event\-Handler\-::get\-Current\-Revenue (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_game_event_handler_a285a4505308359e75d24f5f980b4e686}
+
+
+Returns a Resource map of the current revenue the current player has when the turn ends. This function is used by the menu. 
+
+\begin{DoxyReturn}{Returns}
+resource map of the current revenue the current player has 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler}.
+
+\hypertarget{class_student_1_1_game_event_handler_aa264f9e825b26c57dc748101fe7e0174}{\index{Student\-::\-Game\-Event\-Handler@{Student\-::\-Game\-Event\-Handler}!move\-Unit\-From\-Tile@{move\-Unit\-From\-Tile}}
+\index{move\-Unit\-From\-Tile@{move\-Unit\-From\-Tile}!Student::GameEventHandler@{Student\-::\-Game\-Event\-Handler}}
+\subsubsection[{move\-Unit\-From\-Tile}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Event\-Handler\-::move\-Unit\-From\-Tile (
+\begin{DoxyParamCaption}
+\item[{int}]{index, }
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Tile\-Base} $>$}]{tile}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}}}\label{class_student_1_1_game_event_handler_aa264f9e825b26c57dc748101fe7e0174}
+
+
+Is called when the \char`\"{}move\char`\"{} button is clicked on the menu for an unit. The function keeps track of the tile the unit was picked from and which unit it was. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em index} & is the index of the unit either in the units\-\_\- or conquering\-Units\-\_\- vector \\
+\hline
+{\em tile} & points to the tile the unit is picked from \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_event_handler_a77551fd417e10239804f8900bbd6d055}{\index{Student\-::\-Game\-Event\-Handler@{Student\-::\-Game\-Event\-Handler}!neutralize\-Player@{neutralize\-Player}}
+\index{neutralize\-Player@{neutralize\-Player}!Student::GameEventHandler@{Student\-::\-Game\-Event\-Handler}}
+\subsubsection[{neutralize\-Player}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Event\-Handler\-::neutralize\-Player (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Player\-Base} $>$}]{player}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}}}\label{class_student_1_1_game_event_handler_a77551fd417e10239804f8900bbd6d055}
+
+
+Neutralizes the player by removing the ownership of players' tiles, destroying the headquarters and resetting the player's farm. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Pointer} & to the player who is wanted to be nautralized \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_event_handler_a5beff8c3746359f5f85243adff4439bb}{\index{Student\-::\-Game\-Event\-Handler@{Student\-::\-Game\-Event\-Handler}!open\-Default\-Menu\-View@{open\-Default\-Menu\-View}}
+\index{open\-Default\-Menu\-View@{open\-Default\-Menu\-View}!Student::GameEventHandler@{Student\-::\-Game\-Event\-Handler}}
+\subsubsection[{open\-Default\-Menu\-View}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Event\-Handler\-::open\-Default\-Menu\-View (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_game_event_handler_a5beff8c3746359f5f85243adff4439bb}
+
+
+Opens the menu view that shows how many rounds have been played and how much of map area players own. 
+
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler}.
+
+\hypertarget{class_student_1_1_game_event_handler_a8ace791ddeef0cfbe27c09d060a9ec43}{\index{Student\-::\-Game\-Event\-Handler@{Student\-::\-Game\-Event\-Handler}!open\-Stats\-Menu\-View@{open\-Stats\-Menu\-View}}
+\index{open\-Stats\-Menu\-View@{open\-Stats\-Menu\-View}!Student::GameEventHandler@{Student\-::\-Game\-Event\-Handler}}
+\subsubsection[{open\-Stats\-Menu\-View}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Event\-Handler\-::open\-Stats\-Menu\-View (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_game_event_handler_a8ace791ddeef0cfbe27c09d060a9ec43}
+
+
+Opens the menu view that shows how many rounds have been played and how much of map area players own. 
+
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler}.
+
+\hypertarget{class_student_1_1_game_event_handler_a0712fc2cdf6154039d28edf064b2e9de}{\index{Student\-::\-Game\-Event\-Handler@{Student\-::\-Game\-Event\-Handler}!open\-Unit\-Buy\-Menu@{open\-Unit\-Buy\-Menu}}
+\index{open\-Unit\-Buy\-Menu@{open\-Unit\-Buy\-Menu}!Student::GameEventHandler@{Student\-::\-Game\-Event\-Handler}}
+\subsubsection[{open\-Unit\-Buy\-Menu}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Event\-Handler\-::open\-Unit\-Buy\-Menu (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_game_event_handler_a0712fc2cdf6154039d28edf064b2e9de}
+
+
+Opens the unit buy menu. 
+
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler}.
+
+\hypertarget{class_student_1_1_game_event_handler_a823856a979a4ab60f8f7cc4c3555ec1e}{\index{Student\-::\-Game\-Event\-Handler@{Student\-::\-Game\-Event\-Handler}!restart\-Game@{restart\-Game}}
+\index{restart\-Game@{restart\-Game}!Student::GameEventHandler@{Student\-::\-Game\-Event\-Handler}}
+\subsubsection[{restart\-Game}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Event\-Handler\-::restart\-Game (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_game_event_handler_a823856a979a4ab60f8f7cc4c3555ec1e}
+
+
+Calls mainwindow to restart the game. 
+
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler}.
+
+\hypertarget{class_student_1_1_game_event_handler_abae6c2f38ace8632bae46ec18b07247d}{\index{Student\-::\-Game\-Event\-Handler@{Student\-::\-Game\-Event\-Handler}!set\-Game\-Scene@{set\-Game\-Scene}}
+\index{set\-Game\-Scene@{set\-Game\-Scene}!Student::GameEventHandler@{Student\-::\-Game\-Event\-Handler}}
+\subsubsection[{set\-Game\-Scene}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Event\-Handler\-::set\-Game\-Scene (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Game\-Scene} $>$}]{gs}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_game_event_handler_abae6c2f38ace8632bae46ec18b07247d}
+
+
+Sets a pointer to the gamescene and saves it into the event handler. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Pointer} & to the gamescene \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: Strong 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler}.
+
+\hypertarget{class_student_1_1_game_event_handler_a11e4d6d1e9f67bb72f69cd9f9b2b4a60}{\index{Student\-::\-Game\-Event\-Handler@{Student\-::\-Game\-Event\-Handler}!set\-Tile\-Inspection\-Menu\-View@{set\-Tile\-Inspection\-Menu\-View}}
+\index{set\-Tile\-Inspection\-Menu\-View@{set\-Tile\-Inspection\-Menu\-View}!Student::GameEventHandler@{Student\-::\-Game\-Event\-Handler}}
+\subsubsection[{set\-Tile\-Inspection\-Menu\-View}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Event\-Handler\-::set\-Tile\-Inspection\-Menu\-View (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Tile\-Base} $>$}]{tile, }
+\item[{int}]{index\-\_\-for\-\_\-buildings = {\ttfamily 0}}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}}}\label{class_student_1_1_game_event_handler_a11e4d6d1e9f67bb72f69cd9f9b2b4a60}
+
+
+Sets up the menu view that shows information about a tile that is clicked and the buildings that can be built on the tile. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em tile} & points to the tile that is clicked \\
+\hline
+{\em index\-\_\-for\-\_\-buildings} & is an index for the building that is visible in the menu \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_event_handler_a321b8e2db1e041549bfb22e9d98f38b2}{\index{Student\-::\-Game\-Event\-Handler@{Student\-::\-Game\-Event\-Handler}!tile\-Clicked@{tile\-Clicked}}
+\index{tile\-Clicked@{tile\-Clicked}!Student::GameEventHandler@{Student\-::\-Game\-Event\-Handler}}
+\subsubsection[{tile\-Clicked}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Event\-Handler\-::tile\-Clicked (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Tile\-Base} $>$}]{tile}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}}}\label{class_student_1_1_game_event_handler_a321b8e2db1e041549bfb22e9d98f38b2}
+
+
+Handles the actions done when a tile is clicked. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Pointer} & to the tile that was clicked \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_event_handler_a6cb9513b588826a11a7f0601d068a4bd}{\index{Student\-::\-Game\-Event\-Handler@{Student\-::\-Game\-Event\-Handler}!update\-Animated\-Tile\-To\-Static@{update\-Animated\-Tile\-To\-Static}}
+\index{update\-Animated\-Tile\-To\-Static@{update\-Animated\-Tile\-To\-Static}!Student::GameEventHandler@{Student\-::\-Game\-Event\-Handler}}
+\subsubsection[{update\-Animated\-Tile\-To\-Static}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Event\-Handler\-::update\-Animated\-Tile\-To\-Static (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Tile\-Base} $>$}]{tile, }
+\item[{int}]{frame}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}}}\label{class_student_1_1_game_event_handler_a6cb9513b588826a11a7f0601d068a4bd}
+
+
+Changes animated tile to be stuck in a specific frame. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em tile} & points to the tile that is wanted to be set static \\
+\hline
+{\em frame} & is an integer of the frame that is wanted to be set for the tile \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_event_handler_ac29d1ec4eacc1b9efa34183ca6ba3b63}{\index{Student\-::\-Game\-Event\-Handler@{Student\-::\-Game\-Event\-Handler}!update\-Forest@{update\-Forest}}
+\index{update\-Forest@{update\-Forest}!Student::GameEventHandler@{Student\-::\-Game\-Event\-Handler}}
+\subsubsection[{update\-Forest}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Event\-Handler\-::update\-Forest (
+\begin{DoxyParamCaption}
+\item[{std\-::string}]{status, }
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Tile\-Base} $>$}]{tile, }
+\item[{const std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Building\-Base} $>$ \&}]{building = {\ttfamily nullptr}}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}}}\label{class_student_1_1_game_event_handler_ac29d1ec4eacc1b9efa34183ca6ba3b63}
+
+
+Updates the forest visually to be either grown or cut. The function can also change the tile type into grassland and set a building on it. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em status} & is a string that tells the function what to do. \char`\"{}\-Cut\char`\"{} updates the tile to be visually cut, \char`\"{}\-Grow\char`\"{} updates the tile to be visually grown and \char`\"{}\-Grassland\char`\"{} converts the tile into grassland \\
+\hline
+{\em tile} & points to the tile that is wanted to be changed \\
+\hline
+{\em building} & points to a building is wanted to be built on the tile. This is only possible after the tile is converted into grassland \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_game_event_handler_ac4be736d89fc2efd095c3d781b539ede}{\index{Student\-::\-Game\-Event\-Handler@{Student\-::\-Game\-Event\-Handler}!update\-Tile@{update\-Tile}}
+\index{update\-Tile@{update\-Tile}!Student::GameEventHandler@{Student\-::\-Game\-Event\-Handler}}
+\subsubsection[{update\-Tile}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Game\-Event\-Handler\-::update\-Tile (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Tile\-Base} $>$}]{tile}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}}}\label{class_student_1_1_game_event_handler_ac4be736d89fc2efd095c3d781b539ede}
+
+
+Calls gamescene to update the given tile graphically. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em tile} & points to the tile to be updated \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+
+
+The documentation for this class was generated from the following files\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-D\-A\-L/gameeventhandler.\-h\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-D\-A\-L/gameeventhandler.\-cpp\end{DoxyCompactItemize}

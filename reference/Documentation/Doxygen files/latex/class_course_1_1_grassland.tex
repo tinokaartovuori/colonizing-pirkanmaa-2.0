@@ -1,0 +1,324 @@
+\hypertarget{class_course_1_1_grassland}{\section{Course\-:\-:Grassland Class Reference}
+\label{class_course_1_1_grassland}\index{Course\-::\-Grassland@{Course\-::\-Grassland}}
+}
+
+
+The \hyperlink{class_course_1_1_grassland}{Grassland} class represents a grassland tile in the gameworld.  
+
+
+
+
+{\ttfamily \#include $<$grassland.\-h$>$}
+
+
+
+Inheritance diagram for Course\-:\-:Grassland\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_course_1_1_grassland__inherit__graph}
+\end{center}
+\end{figure}
+
+
+Collaboration diagram for Course\-:\-:Grassland\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_course_1_1_grassland__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_course_1_1_grassland_a1263204b4995f7306d9a78c5769e30c0}{\hyperlink{class_course_1_1_grassland_a1263204b4995f7306d9a78c5769e30c0}{Grassland} ()=delete}\label{class_course_1_1_grassland_a1263204b4995f7306d9a78c5769e30c0}
+
+\begin{DoxyCompactList}\small\item\em Disabled parameterless constructor. \end{DoxyCompactList}\item 
+\hyperlink{class_course_1_1_grassland_ae5945a0163a4885da04970010b49074d}{Grassland} (const \hyperlink{class_course_1_1_coordinate}{Coordinate} \&location, int size\-\_\-x, int size\-\_\-y, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{i\-Object\-Manager} $>$ \&objectmanager, const unsigned int \&max\-\_\-work=3, const Resource\-Map \&production=Const\-Resource\-Maps\-::\-E\-M\-P\-T\-Y)
+\begin{DoxyCompactList}\small\item\em Constructor for the class. \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1_grassland_aa660837530ab2dcc563c9557ec599066}{virtual \hyperlink{class_course_1_1_grassland_aa660837530ab2dcc563c9557ec599066}{$\sim$\-Grassland} ()=default}\label{class_course_1_1_grassland_aa660837530ab2dcc563c9557ec599066}
+
+\begin{DoxyCompactList}\small\item\em Default destructor. \end{DoxyCompactList}\item 
+virtual std\-::string \hyperlink{class_course_1_1_grassland_a0a652bbecdda0216613dad980936e30e}{get\-Type} () const override
+\begin{DoxyCompactList}\small\item\em Returns the tile's type in string. In this case it's \char`\"{}\-Grassland\char`\"{}. \end{DoxyCompactList}\item 
+virtual std\-::vector$<$ std\-::string $>$ \hyperlink{class_course_1_1_grassland_ac3238ab8e0f1c406ad4d97abee6f3af2}{get\-Buildable\-Buildings} () override
+\begin{DoxyCompactList}\small\item\em Returns the building types that can be built on the tile. \end{DoxyCompactList}\item 
+virtual void \hyperlink{class_course_1_1_grassland_a1a01ba1c5cc9b8f1e1ef035d4791b2ea}{generate\-Resources} () override
+\begin{DoxyCompactList}\small\item\em Gives resources to tiles owner. The generated resources depend on the building and unit(s) the tile has. \end{DoxyCompactList}\item 
+virtual Course\-::\-Resource\-Map \hyperlink{class_course_1_1_grassland_a241566bcfa3ed33594c1030fd1f328f2}{get\-Current\-Revenue} () override
+\begin{DoxyCompactList}\small\item\em Returns a resource map of the revenue the grassland tile will produce when the turn ends. \end{DoxyCompactList}\item 
+virtual std\-::string \hyperlink{class_course_1_1_grassland_a00e31cba040bf89daf5d306396638cf4}{get\-Extra\-Description} () override
+\begin{DoxyCompactList}\small\item\em This function is used by the menu to get extra information about the grassland tile. The information is showed to the player as a text. \end{DoxyCompactList}\item 
+std\-::string \hyperlink{class_course_1_1_grassland_a29381c9984060b969e187ed584fcd5b2}{get\-Net\-Description} () override
+\begin{DoxyCompactList}\small\item\em This function is used by the menu to get information about the net production the tile has. The information is showed to the player as a text. \end{DoxyCompactList}\item 
+virtual bool \hyperlink{class_course_1_1_grassland_ac5a3cea38462f4ab82fe3c2ddf0bca19}{has\-Opponent\-Headquarters} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Player\-Base} $>$ player) override
+\begin{DoxyCompactList}\small\item\em Checks if the tile has opponent's headquarters. \end{DoxyCompactList}\item 
+virtual int \hyperlink{class_course_1_1_grassland_a1bb5fd5c45a70751c8a175138060fb94}{get\-Max\-Units\-Increase} () override
+\begin{DoxyCompactList}\small\item\em Returns the increase of how many basic workers or experts the player can have according to the building the tile has. \end{DoxyCompactList}\item 
+virtual int \hyperlink{class_course_1_1_grassland_ae6266dd4107af80a221e05093b560f62}{get\-Max\-Soldiers\-Increase} () override
+\begin{DoxyCompactList}\small\item\em Returns the increase of how many soldiers the player can have according to the building the tile has. \end{DoxyCompactList}\item 
+virtual void \hyperlink{class_course_1_1_grassland_a63e385f4a15a53111970f426a54117d5}{update\-Animation} () override
+\begin{DoxyCompactList}\small\item\em Updates nuclear power plant animation. The animation is on only when the power plant is operating. \end{DoxyCompactList}\end{DoxyCompactItemize}
+\subsection*{Additional Inherited Members}
+
+
+\subsection{Detailed Description}
+The \hyperlink{class_course_1_1_grassland}{Grassland} class represents a grassland tile in the gameworld. 
+
+A farm, headquarters, nuclear power plant, outpost and village can be built on the tile. 
+
+\subsection{Constructor \& Destructor Documentation}
+\hypertarget{class_course_1_1_grassland_ae5945a0163a4885da04970010b49074d}{\index{Course\-::\-Grassland@{Course\-::\-Grassland}!Grassland@{Grassland}}
+\index{Grassland@{Grassland}!Course::Grassland@{Course\-::\-Grassland}}
+\subsubsection[{Grassland}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Grassland\-::\-Grassland (
+\begin{DoxyParamCaption}
+\item[{const {\bf Coordinate} \&}]{location, }
+\item[{int}]{size\-\_\-x, }
+\item[{int}]{size\-\_\-y, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Game\-Event\-Handler} $>$ \&}]{eventhandler, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Object\-Manager} $>$ \&}]{objectmanager, }
+\item[{const unsigned int \&}]{max\-\_\-work = {\ttfamily 3}, }
+\item[{const Resource\-Map \&}]{production = {\ttfamily ConstResourceMaps\-:\-:EMPTY}}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_grassland_ae5945a0163a4885da04970010b49074d}
+
+
+Constructor for the class. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em location} & is the \hyperlink{class_course_1_1_coordinate}{Coordinate} where the Tile is located in the game. \\
+\hline
+{\em size\-\_\-x} & is how many maps grids wide the tile is (1) \\
+\hline
+{\em size\-\_\-y} & is how many maps grids tall the tile is (1) \\
+\hline
+{\em eventhandler} & points to the Game\-Event\-Handler. \\
+\hline
+{\em objectmanager} & points to the Object\-Manager. \\
+\hline
+{\em max\-\_\-unit} & tells how many units the tile can have as conquering or non-\/conquering. \\
+\hline
+{\em production} & is the production of the tile (nothing) \\
+\hline
+\end{DoxyParams}
+
+
+\subsection{Member Function Documentation}
+\hypertarget{class_course_1_1_grassland_a1a01ba1c5cc9b8f1e1ef035d4791b2ea}{\index{Course\-::\-Grassland@{Course\-::\-Grassland}!generate\-Resources@{generate\-Resources}}
+\index{generate\-Resources@{generate\-Resources}!Course::Grassland@{Course\-::\-Grassland}}
+\subsubsection[{generate\-Resources}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Grassland\-::generate\-Resources (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_course_1_1_grassland_a1a01ba1c5cc9b8f1e1ef035d4791b2ea}
+
+
+Gives resources to tiles owner. The generated resources depend on the building and unit(s) the tile has. 
+
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ???????????????????????? 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1_tile_base_a811c64342542fededc8e0dde4680410f}{Course\-::\-Tile\-Base}.
+
+\hypertarget{class_course_1_1_grassland_ac3238ab8e0f1c406ad4d97abee6f3af2}{\index{Course\-::\-Grassland@{Course\-::\-Grassland}!get\-Buildable\-Buildings@{get\-Buildable\-Buildings}}
+\index{get\-Buildable\-Buildings@{get\-Buildable\-Buildings}!Course::Grassland@{Course\-::\-Grassland}}
+\subsubsection[{get\-Buildable\-Buildings}]{\setlength{\rightskip}{0pt plus 5cm}std\-::vector$<$ std\-::string $>$ Course\-::\-Grassland\-::get\-Buildable\-Buildings (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_course_1_1_grassland_ac3238ab8e0f1c406ad4d97abee6f3af2}
+
+
+Returns the building types that can be built on the tile. 
+
+\begin{DoxyReturn}{Returns}
+List of building types (as a string) in a vector. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1_tile_base_aa268376209fba52b45b4aa7c8a7baf06}{Course\-::\-Tile\-Base}.
+
+\hypertarget{class_course_1_1_grassland_a241566bcfa3ed33594c1030fd1f328f2}{\index{Course\-::\-Grassland@{Course\-::\-Grassland}!get\-Current\-Revenue@{get\-Current\-Revenue}}
+\index{get\-Current\-Revenue@{get\-Current\-Revenue}!Course::Grassland@{Course\-::\-Grassland}}
+\subsubsection[{get\-Current\-Revenue}]{\setlength{\rightskip}{0pt plus 5cm}Resource\-Map Course\-::\-Grassland\-::get\-Current\-Revenue (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_course_1_1_grassland_a241566bcfa3ed33594c1030fd1f328f2}
+
+
+Returns a resource map of the revenue the grassland tile will produce when the turn ends. 
+
+\begin{DoxyReturn}{Returns}
+Resource map of the revenue the grassland tile will produce when the turn ends 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ????????????????????????????? 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1_tile_base_a07b6e0ed40f3a99bc7997fbba0435bbd}{Course\-::\-Tile\-Base}.
+
+\hypertarget{class_course_1_1_grassland_a00e31cba040bf89daf5d306396638cf4}{\index{Course\-::\-Grassland@{Course\-::\-Grassland}!get\-Extra\-Description@{get\-Extra\-Description}}
+\index{get\-Extra\-Description@{get\-Extra\-Description}!Course::Grassland@{Course\-::\-Grassland}}
+\subsubsection[{get\-Extra\-Description}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Course\-::\-Grassland\-::get\-Extra\-Description (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_course_1_1_grassland_a00e31cba040bf89daf5d306396638cf4}
+
+
+This function is used by the menu to get extra information about the grassland tile. The information is showed to the player as a text. 
+
+\begin{DoxyReturn}{Returns}
+String of the extra description the tile might have 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ????????????????????????????? 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1_tile_base_afbf2d7533a9da7492f360b53a11d1432}{Course\-::\-Tile\-Base}.
+
+\hypertarget{class_course_1_1_grassland_ae6266dd4107af80a221e05093b560f62}{\index{Course\-::\-Grassland@{Course\-::\-Grassland}!get\-Max\-Soldiers\-Increase@{get\-Max\-Soldiers\-Increase}}
+\index{get\-Max\-Soldiers\-Increase@{get\-Max\-Soldiers\-Increase}!Course::Grassland@{Course\-::\-Grassland}}
+\subsubsection[{get\-Max\-Soldiers\-Increase}]{\setlength{\rightskip}{0pt plus 5cm}int Course\-::\-Grassland\-::get\-Max\-Soldiers\-Increase (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_course_1_1_grassland_ae6266dd4107af80a221e05093b560f62}
+
+
+Returns the increase of how many soldiers the player can have according to the building the tile has. 
+
+\begin{DoxyReturn}{Returns}
+Integer of the number of soldiers the player can have. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ????????????????????????????? 
+\end{DoxyPostcond}
+
+
+Reimplemented from \hyperlink{class_course_1_1_tile_base_ae93137daa766a5984f783cadf0dbf516}{Course\-::\-Tile\-Base}.
+
+\hypertarget{class_course_1_1_grassland_a1bb5fd5c45a70751c8a175138060fb94}{\index{Course\-::\-Grassland@{Course\-::\-Grassland}!get\-Max\-Units\-Increase@{get\-Max\-Units\-Increase}}
+\index{get\-Max\-Units\-Increase@{get\-Max\-Units\-Increase}!Course::Grassland@{Course\-::\-Grassland}}
+\subsubsection[{get\-Max\-Units\-Increase}]{\setlength{\rightskip}{0pt plus 5cm}int Course\-::\-Grassland\-::get\-Max\-Units\-Increase (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_course_1_1_grassland_a1bb5fd5c45a70751c8a175138060fb94}
+
+
+Returns the increase of how many basic workers or experts the player can have according to the building the tile has. 
+
+\begin{DoxyReturn}{Returns}
+Integer of the number of basic workers or experts the player can have. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ????????????????????????????? 
+\end{DoxyPostcond}
+
+
+Reimplemented from \hyperlink{class_course_1_1_tile_base_a23ed20f49cac43141776dc45d8ceb9c0}{Course\-::\-Tile\-Base}.
+
+\hypertarget{class_course_1_1_grassland_a29381c9984060b969e187ed584fcd5b2}{\index{Course\-::\-Grassland@{Course\-::\-Grassland}!get\-Net\-Description@{get\-Net\-Description}}
+\index{get\-Net\-Description@{get\-Net\-Description}!Course::Grassland@{Course\-::\-Grassland}}
+\subsubsection[{get\-Net\-Description}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Course\-::\-Grassland\-::get\-Net\-Description (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_course_1_1_grassland_a29381c9984060b969e187ed584fcd5b2}
+
+
+This function is used by the menu to get information about the net production the tile has. The information is showed to the player as a text. 
+
+\begin{DoxyReturn}{Returns}
+String of the net production the tile might have 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ????????????????????????????? 
+\end{DoxyPostcond}
+
+
+Reimplemented from \hyperlink{class_course_1_1_tile_base_a602eabff37145bdbac5ed66f8909bcd1}{Course\-::\-Tile\-Base}.
+
+\hypertarget{class_course_1_1_grassland_a0a652bbecdda0216613dad980936e30e}{\index{Course\-::\-Grassland@{Course\-::\-Grassland}!get\-Type@{get\-Type}}
+\index{get\-Type@{get\-Type}!Course::Grassland@{Course\-::\-Grassland}}
+\subsubsection[{get\-Type}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Course\-::\-Grassland\-::get\-Type (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_course_1_1_grassland_a0a652bbecdda0216613dad980936e30e}
+
+
+Returns the tile's type in string. In this case it's \char`\"{}\-Grassland\char`\"{}. 
+
+\begin{DoxyReturn}{Returns}
+Tile's type in string. In this case it's \char`\"{}\-Grassland\char`\"{} 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+Reimplemented from \hyperlink{class_course_1_1_tile_base_af1a8aaa3407ad3ade7ffe8f2fb421288}{Course\-::\-Tile\-Base}.
+
+\hypertarget{class_course_1_1_grassland_ac5a3cea38462f4ab82fe3c2ddf0bca19}{\index{Course\-::\-Grassland@{Course\-::\-Grassland}!has\-Opponent\-Headquarters@{has\-Opponent\-Headquarters}}
+\index{has\-Opponent\-Headquarters@{has\-Opponent\-Headquarters}!Course::Grassland@{Course\-::\-Grassland}}
+\subsubsection[{has\-Opponent\-Headquarters}]{\setlength{\rightskip}{0pt plus 5cm}bool Course\-::\-Grassland\-::has\-Opponent\-Headquarters (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Player\-Base} $>$}]{player}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_course_1_1_grassland_ac5a3cea38462f4ab82fe3c2ddf0bca19}
+
+
+Checks if the tile has opponent's headquarters. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Shared} & pointer to the player that wants to know if the grassland has opponent's headquarters \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+Bool value. True if the tile has opponent's headquarters and false if not. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ????????????????????????????? 
+\end{DoxyPostcond}
+
+
+Reimplemented from \hyperlink{class_course_1_1_tile_base_aec0f556239d935b4a97a700a3bb70ac5}{Course\-::\-Tile\-Base}.
+
+\hypertarget{class_course_1_1_grassland_a63e385f4a15a53111970f426a54117d5}{\index{Course\-::\-Grassland@{Course\-::\-Grassland}!update\-Animation@{update\-Animation}}
+\index{update\-Animation@{update\-Animation}!Course::Grassland@{Course\-::\-Grassland}}
+\subsubsection[{update\-Animation}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Grassland\-::update\-Animation (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_course_1_1_grassland_a63e385f4a15a53111970f426a54117d5}
+
+
+Updates nuclear power plant animation. The animation is on only when the power plant is operating. 
+
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ????????????????????????????? 
+\end{DoxyPostcond}
+
+
+Reimplemented from \hyperlink{class_course_1_1_tile_base_a3889af6b1fc5f16656f46f030aed34d9}{Course\-::\-Tile\-Base}.
+
+
+
+The documentation for this class was generated from the following files\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Tiles/grassland.\-h\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Tiles/grassland.\-cpp\end{DoxyCompactItemize}

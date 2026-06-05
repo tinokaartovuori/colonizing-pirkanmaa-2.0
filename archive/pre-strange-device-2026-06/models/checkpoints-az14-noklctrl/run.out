@@ -1,0 +1,13 @@
+alphazero: 16 worker threads (20 cores detected, leaving headroom)
+alphazero: WARM-START spatial policy from rust-trainer/checkpoints-az/champion.json (transplant [63, 24, 16, 1] -> [69, 24, 16, 1], 6 spatial weights = 0; init == base)
+alphazero: warm-start SPATIAL value net from rust-trainer/checkpoints-az4/value.json (arch [41, 32, 16, 1])
+alphazero: out=rust-trainer/checkpoints-az14-noklctrl iters=250 games/iter=32 sims=96 bench every 5 (40 games)
+iter 0: vs-hard win 32.5% (loss 40.0%, timeout 27.5%) | ploss 0.6972 vloss 0.4673 | buf 9090 | 26s *BEST*
+iter 5: vs-hard win 25.0% (loss 47.5%, timeout 27.5%) | ploss 0.7277 vloss 0.5310 | buf 30000 | 172s
+iter 10: vs-hard win 17.5% (loss 47.5%, timeout 35.0%) | ploss 0.7212 vloss 0.5126 | buf 30000 | 314s
+iter 15: vs-hard win 20.0% (loss 45.0%, timeout 35.0%) | ploss 0.7443 vloss 0.4436 | buf 30000 | 466s
+iter 20: vs-hard win 15.0% (loss 47.5%, timeout 37.5%) | ploss 0.7238 vloss 0.3637 | buf 30000 | 590s
+iter 25: vs-hard win 20.0% (loss 47.5%, timeout 32.5%) | ploss 0.7758 vloss 0.4852 | buf 30000 | 711s
+iter 30: vs-hard win 27.5% (loss 32.5%, timeout 40.0%) | ploss 0.7518 vloss 0.4148 | buf 30000 | 838s
+iter 35: vs-hard win 15.0% (loss 40.0%, timeout 45.0%) | ploss 0.7316 vloss 0.3685 | buf 30000 | 972s
+iter 40: vs-hard win 22.5% (loss 27.5%, timeout 50.0%) | ploss 0.7182 vloss 0.4316 | buf 30000 | 1077s

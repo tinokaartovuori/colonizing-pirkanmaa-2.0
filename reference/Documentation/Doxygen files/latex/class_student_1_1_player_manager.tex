@@ -1,0 +1,186 @@
+\hypertarget{class_student_1_1_player_manager}{\section{Student\-:\-:Player\-Manager Class Reference}
+\label{class_student_1_1_player_manager}\index{Student\-::\-Player\-Manager@{Student\-::\-Player\-Manager}}
+}
+
+
+\hyperlink{class_student_1_1_player_manager}{Player\-Manager} manages the players in the game. It tracks which player is in turn and which have lost.  
+
+
+
+
+{\ttfamily \#include $<$playermanager.\-h$>$}
+
+
+
+Collaboration diagram for Student\-:\-:Player\-Manager\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[width=212pt]{class_student_1_1_player_manager__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hyperlink{class_student_1_1_player_manager_aa5cad17de967906a043004cdff97c919}{Player\-Manager} (std\-::vector$<$ std\-::string $>$ players, std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{Course\-::i\-Object\-Manager} $>$ objectmanager)
+\begin{DoxyCompactList}\small\item\em Constructor for the class. The constructor creates the shared pointers (Player\-Base) pointing to the players. \end{DoxyCompactList}\item 
+std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_course_1_1_player_base}{Course\-::\-Player\-Base} $>$ \hyperlink{class_student_1_1_player_manager_a8e277ef3ea5f1f465c4c254786c1a665}{get\-Current\-Player} ()
+\begin{DoxyCompactList}\small\item\em Returns a shared pointer to the player whose turn it is. \end{DoxyCompactList}\item 
+std\-::vector$<$ std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_course_1_1_player_base}{Course\-::\-Player\-Base} $>$ $>$ \hyperlink{class_student_1_1_player_manager_ac8719ba703e817006f757f82bc4e7cb8}{get\-Players} ()
+\begin{DoxyCompactList}\small\item\em Returns a vector of shared pointers to the players who are still in the game and haven't lost. \end{DoxyCompactList}\item 
+std\-::vector$<$ std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_course_1_1_player_base}{Course\-::\-Player\-Base} $>$ $>$ \hyperlink{class_student_1_1_player_manager_a000eee3785e85c5aa139407fd72e38bd}{get\-Lost\-Players} ()
+\begin{DoxyCompactList}\small\item\em Returns a vector of shared pointers to the players who have lost. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_player_manager_a3c994de59f1a1d96b9d4a742c8c7118a}{change\-Turn} ()
+\begin{DoxyCompactList}\small\item\em Changes the index which keeps track which player is in turn. The function also keeps track of how many turns there's been in the game. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_player_manager_ac2b86afb576bb4d8040d78fafcf4eeea}{set\-Player\-As\-Lost} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Course\-::\-Player\-Base} $>$ lost\-Player, std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Course\-::\-Player\-Base} $>$ current\-Player=nullptr)
+\begin{DoxyCompactList}\small\item\em Sets player as lost. This is done by removing the player from the players\-\_\- vector and adding the player into lost\-Players\-\_\- vector. \end{DoxyCompactList}\item 
+int \hyperlink{class_student_1_1_player_manager_a303470e0c391b43d1d8b35a7a5823c12}{get\-Rounds\-Played} ()
+\begin{DoxyCompactList}\small\item\em Returns an integer of the rounds there's been in the game. \end{DoxyCompactList}\end{DoxyCompactItemize}
+
+
+\subsection{Detailed Description}
+\hyperlink{class_student_1_1_player_manager}{Player\-Manager} manages the players in the game. It tracks which player is in turn and which have lost. 
+
+\subsection{Constructor \& Destructor Documentation}
+\hypertarget{class_student_1_1_player_manager_aa5cad17de967906a043004cdff97c919}{\index{Student\-::\-Player\-Manager@{Student\-::\-Player\-Manager}!Player\-Manager@{Player\-Manager}}
+\index{Player\-Manager@{Player\-Manager}!Student::PlayerManager@{Student\-::\-Player\-Manager}}
+\subsubsection[{Player\-Manager}]{\setlength{\rightskip}{0pt plus 5cm}Student\-::\-Player\-Manager\-::\-Player\-Manager (
+\begin{DoxyParamCaption}
+\item[{std\-::vector$<$ std\-::string $>$}]{players, }
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::i\-Object\-Manager} $>$}]{objectmanager}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_player_manager_aa5cad17de967906a043004cdff97c919}
+
+
+Constructor for the class. The constructor creates the shared pointers (Player\-Base) pointing to the players. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em players} & is a vector containing the player names in string type \\
+\hline
+{\em objectmanager} & points to the \hyperlink{class_student_1_1_object_manager}{Object\-Manager}. \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: No guarantee. 
+\end{DoxyPostcond}
+
+
+\subsection{Member Function Documentation}
+\hypertarget{class_student_1_1_player_manager_a3c994de59f1a1d96b9d4a742c8c7118a}{\index{Student\-::\-Player\-Manager@{Student\-::\-Player\-Manager}!change\-Turn@{change\-Turn}}
+\index{change\-Turn@{change\-Turn}!Student::PlayerManager@{Student\-::\-Player\-Manager}}
+\subsubsection[{change\-Turn}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Player\-Manager\-::change\-Turn (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_player_manager_a3c994de59f1a1d96b9d4a742c8c7118a}
+
+
+Changes the index which keeps track which player is in turn. The function also keeps track of how many turns there's been in the game. 
+
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: No-\/throw. 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_player_manager_a8e277ef3ea5f1f465c4c254786c1a665}{\index{Student\-::\-Player\-Manager@{Student\-::\-Player\-Manager}!get\-Current\-Player@{get\-Current\-Player}}
+\index{get\-Current\-Player@{get\-Current\-Player}!Student::PlayerManager@{Student\-::\-Player\-Manager}}
+\subsubsection[{get\-Current\-Player}]{\setlength{\rightskip}{0pt plus 5cm}std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Player\-Base} $>$ Student\-::\-Player\-Manager\-::get\-Current\-Player (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_player_manager_a8e277ef3ea5f1f465c4c254786c1a665}
+
+
+Returns a shared pointer to the player whose turn it is. 
+
+\begin{DoxyReturn}{Returns}
+Shared pointer to the player in turn 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: No guarantee. 
+\end{DoxyPostcond}
+
+\begin{DoxyExceptions}{Exceptions}
+{\em Out} & of range is possible in theory, though the index cannot be set to be too high \\
+\hline
+\end{DoxyExceptions}
+\hypertarget{class_student_1_1_player_manager_a000eee3785e85c5aa139407fd72e38bd}{\index{Student\-::\-Player\-Manager@{Student\-::\-Player\-Manager}!get\-Lost\-Players@{get\-Lost\-Players}}
+\index{get\-Lost\-Players@{get\-Lost\-Players}!Student::PlayerManager@{Student\-::\-Player\-Manager}}
+\subsubsection[{get\-Lost\-Players}]{\setlength{\rightskip}{0pt plus 5cm}std\-::vector$<$ std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Player\-Base} $>$ $>$ Student\-::\-Player\-Manager\-::get\-Lost\-Players (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_player_manager_a000eee3785e85c5aa139407fd72e38bd}
+
+
+Returns a vector of shared pointers to the players who have lost. 
+
+\begin{DoxyReturn}{Returns}
+Vector of the shared pointers to the players who have lost 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: No-\/throw. 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_player_manager_ac8719ba703e817006f757f82bc4e7cb8}{\index{Student\-::\-Player\-Manager@{Student\-::\-Player\-Manager}!get\-Players@{get\-Players}}
+\index{get\-Players@{get\-Players}!Student::PlayerManager@{Student\-::\-Player\-Manager}}
+\subsubsection[{get\-Players}]{\setlength{\rightskip}{0pt plus 5cm}std\-::vector$<$ std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Player\-Base} $>$ $>$ Student\-::\-Player\-Manager\-::get\-Players (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_player_manager_ac8719ba703e817006f757f82bc4e7cb8}
+
+
+Returns a vector of shared pointers to the players who are still in the game and haven't lost. 
+
+\begin{DoxyReturn}{Returns}
+Vector of the shared pointer to the players still in game 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: No-\/throw. 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_player_manager_a303470e0c391b43d1d8b35a7a5823c12}{\index{Student\-::\-Player\-Manager@{Student\-::\-Player\-Manager}!get\-Rounds\-Played@{get\-Rounds\-Played}}
+\index{get\-Rounds\-Played@{get\-Rounds\-Played}!Student::PlayerManager@{Student\-::\-Player\-Manager}}
+\subsubsection[{get\-Rounds\-Played}]{\setlength{\rightskip}{0pt plus 5cm}int Student\-::\-Player\-Manager\-::get\-Rounds\-Played (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_player_manager_a303470e0c391b43d1d8b35a7a5823c12}
+
+
+Returns an integer of the rounds there's been in the game. 
+
+\begin{DoxyReturn}{Returns}
+Integer of the rounds played 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: No-\/throw. 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_player_manager_ac2b86afb576bb4d8040d78fafcf4eeea}{\index{Student\-::\-Player\-Manager@{Student\-::\-Player\-Manager}!set\-Player\-As\-Lost@{set\-Player\-As\-Lost}}
+\index{set\-Player\-As\-Lost@{set\-Player\-As\-Lost}!Student::PlayerManager@{Student\-::\-Player\-Manager}}
+\subsubsection[{set\-Player\-As\-Lost}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Player\-Manager\-::set\-Player\-As\-Lost (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Player\-Base} $>$}]{lost\-Player, }
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Player\-Base} $>$}]{current\-Player = {\ttfamily nullptr}}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_player_manager_ac2b86afb576bb4d8040d78fafcf4eeea}
+
+
+Sets player as lost. This is done by removing the player from the players\-\_\- vector and adding the player into lost\-Players\-\_\- vector. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Shared} & pointer to the player to be set as lost \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: Strong 
+\end{DoxyPostcond}
+
+
+The documentation for this class was generated from the following files\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-D\-A\-L/playermanager.\-h\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-D\-A\-L/playermanager.\-cpp\end{DoxyCompactItemize}

@@ -1,0 +1,139 @@
+\hypertarget{class_student_1_1_map_scene_item}{\section{Student\-:\-:Map\-Scene\-Item Class Reference}
+\label{class_student_1_1_map_scene_item}\index{Student\-::\-Map\-Scene\-Item@{Student\-::\-Map\-Scene\-Item}}
+}
+
+
+The \hyperlink{class_student_1_1_map_scene_item}{Map\-Scene\-Item} class is derived from \hyperlink{class_student_1_1_scene_item}{Scene\-Item}. The class is used to draw tiles, buildings and overlays.  
+
+
+
+
+{\ttfamily \#include $<$mapsceneitem.\-h$>$}
+
+
+
+Inheritance diagram for Student\-:\-:Map\-Scene\-Item\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_student_1_1_map_scene_item__inherit__graph}
+\end{center}
+\end{figure}
+
+
+Collaboration diagram for Student\-:\-:Map\-Scene\-Item\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_student_1_1_map_scene_item__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hyperlink{class_student_1_1_map_scene_item_a2bcaeecbe183a3dd4a5d432e680027d4}{Map\-Scene\-Item} (const std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_game_object}{Course\-::\-Game\-Object} $>$ \&obj)
+\begin{DoxyCompactList}\small\item\em \hyperlink{class_student_1_1_map_scene_item}{Map\-Scene\-Item} constructor. \end{DoxyCompactList}\item 
+Q\-Rect\-F \hyperlink{class_student_1_1_map_scene_item_a787b3d644deb4ea6f9708d2233d2fc99}{bounding\-Rect} () const override
+\begin{DoxyCompactList}\small\item\em Returns the rectangle that is surrounding the item. \end{DoxyCompactList}\item 
+std\-::string \hyperlink{class_student_1_1_map_scene_item_a6f4badea271ec039183299eaa537c77d}{get\-Type} ()
+\begin{DoxyCompactList}\small\item\em Returns the type of the item. In this case it's \char`\"{}\-Map\-Scene\-Item\char`\"{}. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_map_scene_item_adb0a3bca97ed8df20bbc2cdbc41dd4dc}{paint} (Q\-Painter $\ast$painter, const Q\-Style\-Option\-Graphics\-Item $\ast$option, Q\-Widget $\ast$widget)
+\begin{DoxyCompactList}\small\item\em Paints the items on the scene. The function is derived from the Q\-Graphics\-Item. \end{DoxyCompactList}\item 
+\hypertarget{class_student_1_1_map_scene_item_a155c8b60d3c262a238ab0665f81284e4}{void \hyperlink{class_student_1_1_map_scene_item_a155c8b60d3c262a238ab0665f81284e4}{update\-Loc} ()}\label{class_student_1_1_map_scene_item_a155c8b60d3c262a238ab0665f81284e4}
+
+\begin{DoxyCompactList}\small\item\em Updates the item's coordinates. \end{DoxyCompactList}\end{DoxyCompactItemize}
+\subsection*{Additional Inherited Members}
+
+
+\subsection{Detailed Description}
+The \hyperlink{class_student_1_1_map_scene_item}{Map\-Scene\-Item} class is derived from \hyperlink{class_student_1_1_scene_item}{Scene\-Item}. The class is used to draw tiles, buildings and overlays. 
+
+\subsection{Constructor \& Destructor Documentation}
+\hypertarget{class_student_1_1_map_scene_item_a2bcaeecbe183a3dd4a5d432e680027d4}{\index{Student\-::\-Map\-Scene\-Item@{Student\-::\-Map\-Scene\-Item}!Map\-Scene\-Item@{Map\-Scene\-Item}}
+\index{Map\-Scene\-Item@{Map\-Scene\-Item}!Student::MapSceneItem@{Student\-::\-Map\-Scene\-Item}}
+\subsubsection[{Map\-Scene\-Item}]{\setlength{\rightskip}{0pt plus 5cm}Student\-::\-Map\-Scene\-Item\-::\-Map\-Scene\-Item (
+\begin{DoxyParamCaption}
+\item[{const std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Game\-Object} $>$ \&}]{obj}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_map_scene_item_a2bcaeecbe183a3dd4a5d432e680027d4}
+
+
+\hyperlink{class_student_1_1_map_scene_item}{Map\-Scene\-Item} constructor. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em obj} & points to the object to be drawn \\
+\hline
+\end{DoxyParams}
+
+
+\subsection{Member Function Documentation}
+\hypertarget{class_student_1_1_map_scene_item_a787b3d644deb4ea6f9708d2233d2fc99}{\index{Student\-::\-Map\-Scene\-Item@{Student\-::\-Map\-Scene\-Item}!bounding\-Rect@{bounding\-Rect}}
+\index{bounding\-Rect@{bounding\-Rect}!Student::MapSceneItem@{Student\-::\-Map\-Scene\-Item}}
+\subsubsection[{bounding\-Rect}]{\setlength{\rightskip}{0pt plus 5cm}Q\-Rect\-F Student\-::\-Map\-Scene\-Item\-::bounding\-Rect (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_map_scene_item_a787b3d644deb4ea6f9708d2233d2fc99}
+
+
+Returns the rectangle that is surrounding the item. 
+
+\begin{DoxyReturn}{Returns}
+Q\-Rect\-F 
+\end{DoxyReturn}
+
+
+Reimplemented from \hyperlink{class_student_1_1_scene_item_a001b7dbcb91dbd7217b8cded7f9fac18}{Student\-::\-Scene\-Item}.
+
+\hypertarget{class_student_1_1_map_scene_item_a6f4badea271ec039183299eaa537c77d}{\index{Student\-::\-Map\-Scene\-Item@{Student\-::\-Map\-Scene\-Item}!get\-Type@{get\-Type}}
+\index{get\-Type@{get\-Type}!Student::MapSceneItem@{Student\-::\-Map\-Scene\-Item}}
+\subsubsection[{get\-Type}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Student\-::\-Map\-Scene\-Item\-::get\-Type (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [virtual]}}}\label{class_student_1_1_map_scene_item_a6f4badea271ec039183299eaa537c77d}
+
+
+Returns the type of the item. In this case it's \char`\"{}\-Map\-Scene\-Item\char`\"{}. 
+
+\begin{DoxyReturn}{Returns}
+String of the item's type 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+Reimplemented from \hyperlink{class_student_1_1_scene_item_abeddbd7b240ebfa74579be94de8278a8}{Student\-::\-Scene\-Item}.
+
+\hypertarget{class_student_1_1_map_scene_item_adb0a3bca97ed8df20bbc2cdbc41dd4dc}{\index{Student\-::\-Map\-Scene\-Item@{Student\-::\-Map\-Scene\-Item}!paint@{paint}}
+\index{paint@{paint}!Student::MapSceneItem@{Student\-::\-Map\-Scene\-Item}}
+\subsubsection[{paint}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Map\-Scene\-Item\-::paint (
+\begin{DoxyParamCaption}
+\item[{Q\-Painter $\ast$}]{painter, }
+\item[{const Q\-Style\-Option\-Graphics\-Item $\ast$}]{option, }
+\item[{Q\-Widget $\ast$}]{widget}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_map_scene_item_adb0a3bca97ed8df20bbc2cdbc41dd4dc}
+
+
+Paints the items on the scene. The function is derived from the Q\-Graphics\-Item. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em painter} & points to the painter that paints on the scene \\
+\hline
+{\em option} & is unused \\
+\hline
+{\em widget} & is unused \\
+\hline
+\end{DoxyParams}
+
+
+The documentation for this class was generated from the following files\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Graphics/mapsceneitem.\-h\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Graphics/mapsceneitem.\-cpp\end{DoxyCompactItemize}

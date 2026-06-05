@@ -1,0 +1,48 @@
+{
+  "title": "AlphaZero-AI:n rakennus — Colonizing Pirkanmaa",
+  "updated": "2026-06-02T19:52:00.059Z",
+  "phases": [
+    {
+      "id": "research",
+      "title": "Kirjallisuustutkimus & diagnoosi",
+      "status": "done",
+      "detail": "25 primäärilähdettä, 23 adversariaalisesti vahvistettua väitettä. Diagnoosi: edustus-/toimintoavaruuskatto, ei reward-ongelma. AlphaZero/MuZero on todistettu reitti, koska meillä on forward-model.",
+      "progress": 1
+    },
+    {
+      "id": "infra",
+      "title": "Työkalut: dashboard + mallirekisteri + rakennusloki",
+      "status": "done",
+      "detail": "Uudistettu paikallinen dashboard (Rakennusprosessi / Mallit / Tutkimus / Koulutus -välilehdet), mallien versiointi ja rakennusprosessin tila + sanallinen loki. Varmistettu selaimessa.",
+      "progress": 1
+    },
+    {
+      "id": "representation",
+      "title": "Spatiaalinen / entity-edustus (jaettu)",
+      "status": "done",
+      "detail": "Spatiaalinen representaatio kytketty ADDITIIVISESTI value-verkkoon: value_features_spatial (36 global + 5 spatiaalista summaa: HQ-HQ-etäisyys, rintama, enemy-HQ-push, dispersio, cut-risk), VALUE_ARCH_SPATIAL [41,32,16,1], search value_leaf valitsee piirreleveyden automaattisesti. Policy/parity-polku koskematon (8/8). 29 testiä läpi.",
+      "progress": 1
+    },
+    {
+      "id": "net",
+      "title": "AlphaZero-verkko: spatiaalinen policy + value -päät",
+      "status": "done",
+      "detail": "Kaikki net-vaiheen palaset valmiit + testattu: policy_train (CE/Adam), value (jo ollut), search::select_with_pi, controller::plan_turn_record, selfplay::play_one_game (tuottaa policy+value-esimerkit). cp-ai-testit läpi, parity 8/8.",
+      "progress": 1
+    },
+    {
+      "id": "trainloop",
+      "title": "Self-play → replay buffer → gradient-treenaaja",
+      "status": "done",
+      "detail": "AlphaZero-iterate-loop (alphazero-bin) valmis ja ajossa päästä päähän: self-play→replay→gradient(policy CE + value MSE)→bench vs hard→checkpoint→dashboard. Diagnoosi: random-init kärsii cold-startista (ploss=ln2, tileFrac 0.03). Korjaus: warm-start championista → iter 0 = 20.8% vs hard.",
+      "progress": 1
+    },
+    {
+      "id": "train",
+      "title": "Koulutus, benchmark vs hard, julkaisu (tierit)",
+      "status": "active",
+      "detail": "PYSÄYTETTY käyttäjän pyynnöstä (token-säästö). Tila: GA 15% → AlphaZero ~33-35% (huiput 50%). Katto ~33-35% = policy-representaatio + konversio-ongelma (~40% timeout). Kokeet A-F rekisterissä. Resume: handoff.md. Seuraavat vivut: F loppuun, train-vs-hard, aggressio-shaping, policy-spatial-representaatio.",
+      "progress": 0.65
+    }
+  ]
+}

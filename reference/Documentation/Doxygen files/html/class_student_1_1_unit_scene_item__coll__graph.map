@@ -1,0 +1,4 @@
+<map id="Student::UnitSceneItem" name="Student::UnitSceneItem">
+<area shape="rect" id="node2" href="$class_student_1_1_scene_item.html" title="The SceneItem class is a custom QGraphicsItem that has additional features such as animation frames..." alt="" coords="53,235,253,591"/>
+<area shape="rect" id="node4" href="$class_student_1_1_animation_option.html" title="The AnimationOption class defines options for animations Every SceneItem contains this class..." alt="" coords="147,5,337,171"/>
+</map>

@@ -1,0 +1,105 @@
+\hypertarget{class_student_1_1_unit_scene_item}{\section{Student\-:\-:Unit\-Scene\-Item Class Reference}
+\label{class_student_1_1_unit_scene_item}\index{Student\-::\-Unit\-Scene\-Item@{Student\-::\-Unit\-Scene\-Item}}
+}
+
+
+The \hyperlink{class_student_1_1_map_scene_item}{Map\-Scene\-Item} class is derived from \hyperlink{class_student_1_1_scene_item}{Scene\-Item}. The class is used to draw units. The units have their own tile specific.  
+
+
+
+
+{\ttfamily \#include $<$unitsceneitem.\-h$>$}
+
+
+
+Inheritance diagram for Student\-:\-:Unit\-Scene\-Item\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_student_1_1_unit_scene_item__inherit__graph}
+\end{center}
+\end{figure}
+
+
+Collaboration diagram for Student\-:\-:Unit\-Scene\-Item\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_student_1_1_unit_scene_item__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_student_1_1_unit_scene_item_a3370a4de80451debad536523e3b27ea5}{{\bfseries Unit\-Scene\-Item} (const std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_unit_base}{Course\-::\-Unit\-Base} $>$ \&obj)}\label{class_student_1_1_unit_scene_item_a3370a4de80451debad536523e3b27ea5}
+
+\item 
+Q\-Rect\-F \hyperlink{class_student_1_1_unit_scene_item_ad326c46a9c5491766ab837bab74f7b05}{bounding\-Rect} () const override
+\begin{DoxyCompactList}\small\item\em Returns the rectangle that is surrounding the item. \end{DoxyCompactList}\item 
+std\-::string \hyperlink{class_student_1_1_unit_scene_item_ad50fcee7d5cba306787bd8222ff2954f}{get\-Type} ()
+\begin{DoxyCompactList}\small\item\em Returns the type of the \hyperlink{class_student_1_1_scene_item}{Scene\-Item}. If the item is not derived from this class the type is "\hyperlink{class_student_1_1_scene_item}{Scene\-Item}. \end{DoxyCompactList}\item 
+\hypertarget{class_student_1_1_unit_scene_item_a050b4107b8937eaaa27197de40f21fbe}{void {\bfseries update\-Loc} ()}\label{class_student_1_1_unit_scene_item_a050b4107b8937eaaa27197de40f21fbe}
+
+\item 
+\hypertarget{class_student_1_1_unit_scene_item_a01ce8c460191eca6b7453cce4c24acc6}{void {\bfseries paint} (Q\-Painter $\ast$painter, const Q\-Style\-Option\-Graphics\-Item $\ast$option, Q\-Widget $\ast$widget)}\label{class_student_1_1_unit_scene_item_a01ce8c460191eca6b7453cce4c24acc6}
+
+\end{DoxyCompactItemize}
+\subsection*{Protected Attributes}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_student_1_1_unit_scene_item_ababf0d87f33b4a962ae383d2e717148f}{Q\-Point {\bfseries absolute\-\_\-coordinates} = Q\-Point(0, 0)}\label{class_student_1_1_unit_scene_item_ababf0d87f33b4a962ae383d2e717148f}
+
+\item 
+\hypertarget{class_student_1_1_unit_scene_item_ac88e9e725fc41cb6462c0534d8cc5b4d}{Q\-Point {\bfseries relative\-\_\-coordinates} = Q\-Point(0, 0)}\label{class_student_1_1_unit_scene_item_ac88e9e725fc41cb6462c0534d8cc5b4d}
+
+\end{DoxyCompactItemize}
+
+
+\subsection{Detailed Description}
+The \hyperlink{class_student_1_1_map_scene_item}{Map\-Scene\-Item} class is derived from \hyperlink{class_student_1_1_scene_item}{Scene\-Item}. The class is used to draw units. The units have their own tile specific. 
+
+\subsection{Member Function Documentation}
+\hypertarget{class_student_1_1_unit_scene_item_ad326c46a9c5491766ab837bab74f7b05}{\index{Student\-::\-Unit\-Scene\-Item@{Student\-::\-Unit\-Scene\-Item}!bounding\-Rect@{bounding\-Rect}}
+\index{bounding\-Rect@{bounding\-Rect}!Student::UnitSceneItem@{Student\-::\-Unit\-Scene\-Item}}
+\subsubsection[{bounding\-Rect}]{\setlength{\rightskip}{0pt plus 5cm}Q\-Rect\-F Student\-::\-Unit\-Scene\-Item\-::bounding\-Rect (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_unit_scene_item_ad326c46a9c5491766ab837bab74f7b05}
+
+
+Returns the rectangle that is surrounding the item. 
+
+\begin{DoxyReturn}{Returns}
+Q\-Rect\-F 
+\end{DoxyReturn}
+
+
+Reimplemented from \hyperlink{class_student_1_1_scene_item_a001b7dbcb91dbd7217b8cded7f9fac18}{Student\-::\-Scene\-Item}.
+
+\hypertarget{class_student_1_1_unit_scene_item_ad50fcee7d5cba306787bd8222ff2954f}{\index{Student\-::\-Unit\-Scene\-Item@{Student\-::\-Unit\-Scene\-Item}!get\-Type@{get\-Type}}
+\index{get\-Type@{get\-Type}!Student::UnitSceneItem@{Student\-::\-Unit\-Scene\-Item}}
+\subsubsection[{get\-Type}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Student\-::\-Unit\-Scene\-Item\-::get\-Type (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [virtual]}}}\label{class_student_1_1_unit_scene_item_ad50fcee7d5cba306787bd8222ff2954f}
+
+
+Returns the type of the \hyperlink{class_student_1_1_scene_item}{Scene\-Item}. If the item is not derived from this class the type is "\hyperlink{class_student_1_1_scene_item}{Scene\-Item}. 
+
+\begin{DoxyReturn}{Returns}
+string of the type 
+\end{DoxyReturn}
+
+
+Reimplemented from \hyperlink{class_student_1_1_scene_item_abeddbd7b240ebfa74579be94de8278a8}{Student\-::\-Scene\-Item}.
+
+
+
+The documentation for this class was generated from the following files\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Graphics/unitsceneitem.\-h\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Graphics/unitsceneitem.\-cpp\end{DoxyCompactItemize}

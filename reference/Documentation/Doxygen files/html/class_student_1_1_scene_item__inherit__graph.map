@@ -1,0 +1,5 @@
+<map id="Student::SceneItem" name="Student::SceneItem">
+<area shape="rect" id="node3" href="$class_student_1_1_map_scene_item.html" title="The MapSceneItem class is derived from SceneItem. The class is used to draw tiles, buildings and overlays. " alt="" coords="5,637,181,773"/>
+<area shape="rect" id="node4" href="$class_student_1_1_menu_scene_item.html" title="{Student::MenuSceneItem\n|# absolute_coordinates\l# relative_coordinates\l# m_upperLayer\l# m_text\l# m_fontSize\l# m_color\l# m_style\l|+ MenuSceneItem()\l+ MenuSceneItem()\l+ MenuSceneItem()\l+ MenuSceneItem()\l+ boundingRect()\l+ getType()\l+ updateLoc()\l+ paint()\l+ setUpperLayer()\l+ setUpperLayer()\l+ setText()\l}" alt="" coords="205,549,389,861"/>
+<area shape="rect" id="node5" href="$class_student_1_1_unit_scene_item.html" title="The MapSceneItem class is derived from SceneItem. The class is used to draw units. The units have their own tile specific. " alt="" coords="413,630,589,781"/>
+</map>

@@ -1,0 +1,331 @@
+\hypertarget{class_course_1_1_player_base}{\section{Course\-:\-:Player\-Base Class Reference}
+\label{class_course_1_1_player_base}\index{Course\-::\-Player\-Base@{Course\-::\-Player\-Base}}
+}
+
+
+The \hyperlink{class_course_1_1_player_base}{Player\-Base} class is a base class for classes used to describe a player in game.  
+
+
+
+
+{\ttfamily \#include $<$playerbase.\-h$>$}
+
+
+
+Collaboration diagram for Course\-:\-:Player\-Base\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[width=234pt]{class_course_1_1_player_base__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hyperlink{class_course_1_1_player_base_a6578e302990fbc747bc5e9b96f8296bc}{Player\-Base} (const std\-::string \&name, int player\-Num, std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{Course\-::i\-Object\-Manager} $>$ objectmanager)
+\begin{DoxyCompactList}\small\item\em Constructor for the class. \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1_player_base_a056975b9b5c151e86ca1ca1a0501f87c}{\hyperlink{class_course_1_1_player_base_a056975b9b5c151e86ca1ca1a0501f87c}{$\sim$\-Player\-Base} ()=default}\label{class_course_1_1_player_base_a056975b9b5c151e86ca1ca1a0501f87c}
+
+\begin{DoxyCompactList}\small\item\em Default destructor. \end{DoxyCompactList}\item 
+void \hyperlink{class_course_1_1_player_base_a45eef8e289dc7e925cbd3cb90e9374ae}{add\-Object} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_game_object}{Game\-Object} $>$ object)
+\begin{DoxyCompactList}\small\item\em Stores a weak Game\-Object-\/pointer. \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1_player_base_ac850222857d804443a1e9a9c39fa18bf}{bool {\bfseries has\-Object} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_game_object}{Game\-Object} $>$ object)}\label{class_course_1_1_player_base_ac850222857d804443a1e9a9c39fa18bf}
+
+\item 
+void \hyperlink{class_course_1_1_player_base_a282f4042ea93bf7c241b8f11f4da7916}{add\-Objects} (const std\-::vector$<$ std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_game_object}{Game\-Object} $>$$>$ \&objects)
+\begin{DoxyCompactList}\small\item\em Stores a vector of weak Game\-Object-\/pointers. \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1_player_base_aabf0acaaa686428a30c49bf51c949ee6}{void {\bfseries add\-Or\-Remove\-Resources} (Resource\-Map resources)}\label{class_course_1_1_player_base_aabf0acaaa686428a30c49bf51c949ee6}
+
+\item 
+\hypertarget{class_course_1_1_player_base_ab94779846505a4df06790a94eff11625}{Resource\-Map {\bfseries get\-Resources} ()}\label{class_course_1_1_player_base_ab94779846505a4df06790a94eff11625}
+
+\item 
+\hypertarget{class_course_1_1_player_base_ac2e9dc1a965dd15a2393e0cb6b4b67af}{bool {\bfseries has\-Enough\-Resources} (Resource\-Map cost)}\label{class_course_1_1_player_base_ac2e9dc1a965dd15a2393e0cb6b4b67af}
+
+\item 
+void \hyperlink{class_course_1_1_player_base_ab2de2a65c8662b73589a806bed85eb62}{remove\-Object} (const std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_game_object}{Game\-Object} $>$ \&object)
+\begin{DoxyCompactList}\small\item\em Removes a weak Game\-Object-\/pointer and expired weak pointers. \end{DoxyCompactList}\item 
+void \hyperlink{class_course_1_1_player_base_a0a95de14cef530b9274c3aa37265bf24}{remove\-Objects} (const std\-::vector$<$ std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_game_object}{Game\-Object} $>$ $>$ \&objects)
+\begin{DoxyCompactList}\small\item\em Removes a list of weak Game\-Object-\/pointers and expired weak pointers. \end{DoxyCompactList}\item 
+void \hyperlink{class_course_1_1_player_base_ac0b3430fe8c7e1f47947d66c87df757c}{remove\-Object} (const Object\-Id \&id)
+\begin{DoxyCompactList}\small\item\em Removes a weak Game\-Object-\/pointers based on a Object\-Id and removes expired weak pointers. \end{DoxyCompactList}\item 
+void \hyperlink{class_course_1_1_player_base_aea9bc90c473e8bc94788118adbea6505}{remove\-Objects} (const std\-::vector$<$ Object\-Id $>$ \&objects)
+\begin{DoxyCompactList}\small\item\em Removes a list of weak Game\-Object-\/pointers based on a Object\-Id and removes expired weak pointers. \end{DoxyCompactList}\item 
+std\-::vector$<$ std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_course_1_1_game_object}{Game\-Object} $>$ $>$ \hyperlink{class_course_1_1_player_base_a802f8124306757ed976cdd126ce8000c}{get\-Objects} () const 
+\begin{DoxyCompactList}\small\item\em Returns the vector of weak Game\-Object-\/pointers that are currently stored in the Player-\/object. \end{DoxyCompactList}\item 
+std\-::string \hyperlink{class_course_1_1_player_base_af8d645391faa31a9ca0abf67812256de}{get\-Name} () const 
+\begin{DoxyCompactList}\small\item\em Returns the Player-\/object's name. \end{DoxyCompactList}\item 
+int \hyperlink{class_course_1_1_player_base_a9146a583bdeda1d715065ca38d9e006c}{get\-Player\-Num} () const 
+\begin{DoxyCompactList}\small\item\em Returns the Player-\/object's player number. \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1_player_base_a89b32c940fd18ee981ae6816fbd351dd}{int {\bfseries get\-Free\-Unit\-Amount} ()}\label{class_course_1_1_player_base_a89b32c940fd18ee981ae6816fbd351dd}
+
+\item 
+\hypertarget{class_course_1_1_player_base_a79b25ec8513637eddd65858e9db66e00}{int {\bfseries get\-Free\-Soldier\-Amount} ()}\label{class_course_1_1_player_base_a79b25ec8513637eddd65858e9db66e00}
+
+\item 
+\hypertarget{class_course_1_1_player_base_a461fc4888ff3df3fa3ce37344ec30d7c}{int {\bfseries get\-Max\-Unit\-Amount} ()}\label{class_course_1_1_player_base_a461fc4888ff3df3fa3ce37344ec30d7c}
+
+\item 
+\hypertarget{class_course_1_1_player_base_a71781e6d843a01219235586c75e717d0}{int {\bfseries get\-Max\-Soldier\-Amount} ()}\label{class_course_1_1_player_base_a71781e6d843a01219235586c75e717d0}
+
+\item 
+\hypertarget{class_course_1_1_player_base_a534f4e2041cf01f5b40dfe417e39bd68}{void {\bfseries update\-Unit\-Amounts} ()}\label{class_course_1_1_player_base_a534f4e2041cf01f5b40dfe417e39bd68}
+
+\item 
+\hypertarget{class_course_1_1_player_base_aa26a70f38a9a11b8253974df6fd2d52a}{void {\bfseries eliminate\-Excess\-Units} ()}\label{class_course_1_1_player_base_aa26a70f38a9a11b8253974df6fd2d52a}
+
+\item 
+\hypertarget{class_course_1_1_player_base_a504a0b9edc8ca0f1de43046b50dff9bb}{int {\bfseries get\-Current\-Unit\-Amount} ()}\label{class_course_1_1_player_base_a504a0b9edc8ca0f1de43046b50dff9bb}
+
+\item 
+\hypertarget{class_course_1_1_player_base_aaf74b7dc66fd49e88b6c341c249aeb3c}{int {\bfseries get\-Current\-Basic\-Worker\-Amount} ()}\label{class_course_1_1_player_base_aaf74b7dc66fd49e88b6c341c249aeb3c}
+
+\item 
+\hypertarget{class_course_1_1_player_base_a92efb6e834b678c25178efa04505e1b4}{int {\bfseries get\-Current\-Expert\-Amount} ()}\label{class_course_1_1_player_base_a92efb6e834b678c25178efa04505e1b4}
+
+\item 
+\hypertarget{class_course_1_1_player_base_aa1e8baef0dc737cca25c19a3618fa3a2}{int {\bfseries get\-Current\-Soldier\-Amount} ()}\label{class_course_1_1_player_base_aa1e8baef0dc737cca25c19a3618fa3a2}
+
+\item 
+\hypertarget{class_course_1_1_player_base_a0a818a518121d51457a27fcb62affb8c}{void {\bfseries limit\-Resources} ()}\label{class_course_1_1_player_base_a0a818a518121d51457a27fcb62affb8c}
+
+\end{DoxyCompactItemize}
+
+
+\subsection{Detailed Description}
+The \hyperlink{class_course_1_1_player_base}{Player\-Base} class is a base class for classes used to describe a player in game. 
+
+The class can be used to store and access Game\-Objects. Expired weak pointers are automatically removed when requesting or removing objects.
+
+\begin{DoxyNote}{Note}
+Objects are stored as weak pointers. 
+\end{DoxyNote}
+
+
+\subsection{Constructor \& Destructor Documentation}
+\hypertarget{class_course_1_1_player_base_a6578e302990fbc747bc5e9b96f8296bc}{\index{Course\-::\-Player\-Base@{Course\-::\-Player\-Base}!Player\-Base@{Player\-Base}}
+\index{Player\-Base@{Player\-Base}!Course::PlayerBase@{Course\-::\-Player\-Base}}
+\subsubsection[{Player\-Base}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Player\-Base\-::\-Player\-Base (
+\begin{DoxyParamCaption}
+\item[{const std\-::string \&}]{name, }
+\item[{int}]{player\-Num, }
+\item[{std\-::weak\-\_\-ptr$<$ {\bf Course\-::i\-Object\-Manager} $>$}]{objectmanager}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_player_base_a6578e302990fbc747bc5e9b96f8296bc}
+
+
+Constructor for the class. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em name} & A std\-::string for player's name \\
+\hline
+{\em objects} & (optional) A std\-::vector of shared-\/pointers to Game\-Objects. \\
+\hline
+\end{DoxyParams}
+
+
+\subsection{Member Function Documentation}
+\hypertarget{class_course_1_1_player_base_a45eef8e289dc7e925cbd3cb90e9374ae}{\index{Course\-::\-Player\-Base@{Course\-::\-Player\-Base}!add\-Object@{add\-Object}}
+\index{add\-Object@{add\-Object}!Course::PlayerBase@{Course\-::\-Player\-Base}}
+\subsubsection[{add\-Object}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Player\-Base\-::add\-Object (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Game\-Object} $>$}]{object}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_player_base_a45eef8e289dc7e925cbd3cb90e9374ae}
+
+
+Stores a weak Game\-Object-\/pointer. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em object} & Is a weak pointer to the stored \hyperlink{class_course_1_1_game_object}{Game\-Object} \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: Strong 
+\end{DoxyPostcond}
+
+\begin{DoxyExceptions}{Exceptions}
+{\em See} & std\-::vector\-::push\-\_\-back() \\
+\hline
+\end{DoxyExceptions}
+\hypertarget{class_course_1_1_player_base_a282f4042ea93bf7c241b8f11f4da7916}{\index{Course\-::\-Player\-Base@{Course\-::\-Player\-Base}!add\-Objects@{add\-Objects}}
+\index{add\-Objects@{add\-Objects}!Course::PlayerBase@{Course\-::\-Player\-Base}}
+\subsubsection[{add\-Objects}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Player\-Base\-::add\-Objects (
+\begin{DoxyParamCaption}
+\item[{const std\-::vector$<$ std\-::shared\-\_\-ptr$<$ {\bf Game\-Object} $>$$>$ \&}]{objects}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_player_base_a282f4042ea93bf7c241b8f11f4da7916}
+
+
+Stores a vector of weak Game\-Object-\/pointers. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em objects} & Is an std\-::vector of weak Game\-Object-\/pointers. \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: Strong 
+\end{DoxyPostcond}
+
+\begin{DoxyExceptions}{Exceptions}
+{\em See} & std\-::vector\-::insert() \\
+\hline
+\end{DoxyExceptions}
+\hypertarget{class_course_1_1_player_base_af8d645391faa31a9ca0abf67812256de}{\index{Course\-::\-Player\-Base@{Course\-::\-Player\-Base}!get\-Name@{get\-Name}}
+\index{get\-Name@{get\-Name}!Course::PlayerBase@{Course\-::\-Player\-Base}}
+\subsubsection[{get\-Name}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Course\-::\-Player\-Base\-::get\-Name (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const}}\label{class_course_1_1_player_base_af8d645391faa31a9ca0abf67812256de}
+
+
+Returns the Player-\/object's name. 
+
+\begin{DoxyReturn}{Returns}
+Copy of current string in m\-\_\-name 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_player_base_a802f8124306757ed976cdd126ce8000c}{\index{Course\-::\-Player\-Base@{Course\-::\-Player\-Base}!get\-Objects@{get\-Objects}}
+\index{get\-Objects@{get\-Objects}!Course::PlayerBase@{Course\-::\-Player\-Base}}
+\subsubsection[{get\-Objects}]{\setlength{\rightskip}{0pt plus 5cm}std\-::vector$<$ std\-::shared\-\_\-ptr$<$ {\bf Game\-Object} $>$ $>$ Course\-::\-Player\-Base\-::get\-Objects (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const}}\label{class_course_1_1_player_base_a802f8124306757ed976cdd126ce8000c}
+
+
+Returns the vector of weak Game\-Object-\/pointers that are currently stored in the Player-\/object. 
+
+\begin{DoxyReturn}{Returns}
+Copy of m\-\_\-objects -\/vector 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: Strong 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_player_base_a9146a583bdeda1d715065ca38d9e006c}{\index{Course\-::\-Player\-Base@{Course\-::\-Player\-Base}!get\-Player\-Num@{get\-Player\-Num}}
+\index{get\-Player\-Num@{get\-Player\-Num}!Course::PlayerBase@{Course\-::\-Player\-Base}}
+\subsubsection[{get\-Player\-Num}]{\setlength{\rightskip}{0pt plus 5cm}int Course\-::\-Player\-Base\-::get\-Player\-Num (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const}}\label{class_course_1_1_player_base_a9146a583bdeda1d715065ca38d9e006c}
+
+
+Returns the Player-\/object's player number. 
+
+\begin{DoxyReturn}{Returns}
+Copy of current string in player\-Num\-\_\- 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_player_base_ab2de2a65c8662b73589a806bed85eb62}{\index{Course\-::\-Player\-Base@{Course\-::\-Player\-Base}!remove\-Object@{remove\-Object}}
+\index{remove\-Object@{remove\-Object}!Course::PlayerBase@{Course\-::\-Player\-Base}}
+\subsubsection[{remove\-Object}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Player\-Base\-::remove\-Object (
+\begin{DoxyParamCaption}
+\item[{const std\-::shared\-\_\-ptr$<$ {\bf Game\-Object} $>$ \&}]{object}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_player_base_ab2de2a65c8662b73589a806bed85eb62}
+
+
+Removes a weak Game\-Object-\/pointer and expired weak pointers. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em object} & a weak pointer to \hyperlink{class_course_1_1_game_object}{Game\-Object} \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: Basic 
+\end{DoxyPostcond}
+
+\begin{DoxyExceptions}{Exceptions}
+{\em Expired\-Pointer} & -\/ object is expired \\
+\hline
+{\em \hyperlink{class_course_1_1_key_error}{Key\-Error}} & -\/ No objects match the searched object \\
+\hline
+\end{DoxyExceptions}
+\hypertarget{class_course_1_1_player_base_ac0b3430fe8c7e1f47947d66c87df757c}{\index{Course\-::\-Player\-Base@{Course\-::\-Player\-Base}!remove\-Object@{remove\-Object}}
+\index{remove\-Object@{remove\-Object}!Course::PlayerBase@{Course\-::\-Player\-Base}}
+\subsubsection[{remove\-Object}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Player\-Base\-::remove\-Object (
+\begin{DoxyParamCaption}
+\item[{const Object\-Id \&}]{id}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_player_base_ac0b3430fe8c7e1f47947d66c87df757c}
+
+
+Removes a weak Game\-Object-\/pointers based on a Object\-Id and removes expired weak pointers. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em id} & An Object\-Id (unsigned int) for \hyperlink{class_course_1_1_game_object}{Game\-Object} which is removed \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: Basic 
+\end{DoxyPostcond}
+
+\begin{DoxyExceptions}{Exceptions}
+{\em \hyperlink{class_course_1_1_key_error}{Key\-Error}} & -\/ No Game\-Objects with given I\-D were found. \\
+\hline
+{\em See} & std\-::remove\-\_\-if \\
+\hline
+\end{DoxyExceptions}
+\hypertarget{class_course_1_1_player_base_a0a95de14cef530b9274c3aa37265bf24}{\index{Course\-::\-Player\-Base@{Course\-::\-Player\-Base}!remove\-Objects@{remove\-Objects}}
+\index{remove\-Objects@{remove\-Objects}!Course::PlayerBase@{Course\-::\-Player\-Base}}
+\subsubsection[{remove\-Objects}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Player\-Base\-::remove\-Objects (
+\begin{DoxyParamCaption}
+\item[{const std\-::vector$<$ std\-::shared\-\_\-ptr$<$ {\bf Game\-Object} $>$ $>$ \&}]{objects}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_player_base_a0a95de14cef530b9274c3aa37265bf24}
+
+
+Removes a list of weak Game\-Object-\/pointers and expired weak pointers. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em objects} & A vector of weak Game\-Object-\/pointers \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\begin{DoxyNote}{Note}
+If some of the provided weak pointers are expired, no exceptions are thrown. 
+\end{DoxyNote}
+\hypertarget{class_course_1_1_player_base_aea9bc90c473e8bc94788118adbea6505}{\index{Course\-::\-Player\-Base@{Course\-::\-Player\-Base}!remove\-Objects@{remove\-Objects}}
+\index{remove\-Objects@{remove\-Objects}!Course::PlayerBase@{Course\-::\-Player\-Base}}
+\subsubsection[{remove\-Objects}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Player\-Base\-::remove\-Objects (
+\begin{DoxyParamCaption}
+\item[{const std\-::vector$<$ Object\-Id $>$ \&}]{objects}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_player_base_aea9bc90c473e8bc94788118adbea6505}
+
+
+Removes a list of weak Game\-Object-\/pointers based on a Object\-Id and removes expired weak pointers. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em objects} & A vector of Object\-Id (unsigned int) for Game\-Objects that are removed \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\begin{DoxyNote}{Note}
+Even if some of the provided I\-D's are not found, no exceptions are thrown. 
+\end{DoxyNote}
+
+
+The documentation for this class was generated from the following files\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Core/playerbase.\-h\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Core/playerbase.\-cpp\end{DoxyCompactItemize}

@@ -1,0 +1,9 @@
+Checkout project documentation in Documentation folder.
+For better understanding checkout:
+/Documentation/Doxy files/html/index.html
+
+Missing features:
+In game Help/Rules window is 
+not implemented because of unit testing problems. 
+The feature was implemented and can be enabled at buttons class,
+but this caused errors in unit tests

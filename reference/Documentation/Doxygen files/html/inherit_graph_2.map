@@ -1,0 +1,40 @@
+<map id="Graphical Class Hierarchy" name="Graphical Class Hierarchy">
+<area shape="rect" id="node1" href="$class_course_1_1_base_object.html" title="The BaseObject class is base&#45;class that contain&#39;s general information on different Objects in game..." alt="" coords="157,689,307,716"/>
+<area shape="rect" id="node2" href="$class_course_1_1_game_object.html" title="The GameObject class is base&#45;class that contain&#39;s general information on different Objects in game..." alt="" coords="410,613,566,640"/>
+<area shape="rect" id="node27" href="$class_student_1_1_menu_object.html" title="The MenuObject class is base&#45;class that contain&#39;s general information on different Objects in game..." alt="" coords="409,765,567,792"/>
+<area shape="rect" id="node3" href="$class_course_1_1_placeable_game_object.html" title="The PlaceableGameObject class represents GameObjects that can be placed on Tile Objects. " alt="" coords="641,461,860,488"/>
+<area shape="rect" id="node18" href="$class_course_1_1_tile_base.html" title="The TileBase class is a base&#45;class for different Tile&#45;objects in the game. " alt="" coords="685,664,816,691"/>
+<area shape="rect" id="node24" href="$class_student_1_1_blocked_tile.html" title="Student::BlockedTile" alt="" coords="673,512,829,539"/>
+<area shape="rect" id="node25" href="$class_student_1_1_clicked_tile_border.html" title="Student::ClickedTileBorder" alt="" coords="653,563,848,589"/>
+<area shape="rect" id="node26" href="$class_student_1_1_mouse_hover_border.html" title="Student::MouseHoverBorder" alt="" coords="649,613,853,640"/>
+<area shape="rect" id="node4" href="$class_course_1_1_building_base.html" title="The BuildingBase class is a base&#45;class for different buildings in the game. " alt="" coords="921,233,1081,260"/>
+<area shape="rect" id="node14" href="$class_course_1_1_unit_base.html" title="The UnitBase class is aa base&#45;class for Unit&#45;objects. " alt="" coords="934,487,1069,513"/>
+<area shape="rect" id="node5" href="$class_course_1_1_farm.html" title="The Farm class represents a farm building in the game. " alt="" coords="1171,5,1277,32"/>
+<area shape="rect" id="node6" href="$class_course_1_1_head_quarters.html" title="The HeadQuarters class represents player&#39;s headquarters in the game. " alt="" coords="1141,56,1307,83"/>
+<area shape="rect" id="node7" href="$class_course_1_1_outpost.html" title="The Outpost class represents an outpost in the game. " alt="" coords="1161,107,1287,133"/>
+<area shape="rect" id="node8" href="$class_student_1_1_bridge.html" title="The Bridge class represents a bridge in the game. " alt="" coords="1163,157,1285,184"/>
+<area shape="rect" id="node9" href="$class_student_1_1_hydro_power.html" title="The HydroPower class represents a hydroelectric power plant in the game. " alt="" coords="1145,208,1303,235"/>
+<area shape="rect" id="node10" href="$class_student_1_1_mikontalo.html" title="The Mikontalo class represents a Mikontalo in the game. " alt="" coords="1152,259,1296,285"/>
+<area shape="rect" id="node11" href="$class_student_1_1_mine.html" title="The Mine class represents a mine in the game. " alt="" coords="1169,309,1279,336"/>
+<area shape="rect" id="node12" href="$class_student_1_1_nuclear_plant.html" title="The NuclearPlant class represents a nuclear power plant in the game. " alt="" coords="1143,360,1305,387"/>
+<area shape="rect" id="node13" href="$class_student_1_1_village.html" title="The Village class represents a village in the game. " alt="" coords="1161,411,1287,437"/>
+<area shape="rect" id="node15" href="$class_course_1_1_basic_worker.html" title="The BasicWorker class represents a &quot;BasicWorker&quot; in the game. " alt="" coords="1146,461,1302,488"/>
+<area shape="rect" id="node16" href="$class_student_1_1_expert.html" title="The Expert class represents an expert in the game. " alt="" coords="1163,512,1285,539"/>
+<area shape="rect" id="node17" href="$class_student_1_1_soldier.html" title="The Soldier class represents a soldier in the game. " alt="" coords="1161,563,1287,589"/>
+<area shape="rect" id="node19" href="$class_course_1_1_forest.html" title="The Forest class represents a forest tile in the gameworld. " alt="" coords="944,563,1059,589"/>
+<area shape="rect" id="node20" href="$class_course_1_1_grassland.html" title="The Grassland class represents a grassland tile in the gameworld. " alt="" coords="931,613,1071,640"/>
+<area shape="rect" id="node21" href="$class_student_1_1_abundant_forest.html" title="The AbundantForest class represents a Abundant Forest tile in the gameworld. " alt="" coords="910,664,1093,691"/>
+<area shape="rect" id="node22" href="$class_student_1_1_mountain.html" title="The Mountain class represents mountain in the gameworld. " alt="" coords="931,715,1071,741"/>
+<area shape="rect" id="node23" href="$class_student_1_1_river.html" title="The River class represents River in the gameworld. " alt="" coords="944,765,1059,792"/>
+<area shape="rect" id="node28" href="$class_student_1_1_button.html" title="The Button class is a base&#45;class for different Tile&#45;objects in the game. &#160;. " alt="" coords="689,715,812,741"/>
+<area shape="rect" id="node29" href="$class_student_1_1_label.html" title="The Label class is a base&#45;class for different Tile&#45;objects in the game. &#160;. " alt="" coords="693,765,808,792"/>
+<area shape="rect" id="node30" href="$class_student_1_1_menu_object_container.html" title="The MenuObjectContainer class is a base&#45;class for different Tile&#45;objects in the game. &#160;. " alt="" coords="641,816,861,843"/>
+<area shape="rect" id="node31" href="$class_student_1_1_menu_view.html" title="The MenuView class is a base&#45;class for different Tile&#45;objects in the game. &#160;. " alt="" coords="677,867,824,893"/>
+<area shape="rect" id="node33" href="$class_course_1_1i_object_manager.html" title="The iObjectManager class is an interface which the Course&#45;side code uses to interact with the ObjectM..." alt="" coords="399,904,577,931"/>
+<area shape="rect" id="node35" href="$class_student_1_1_game_event_handler.html" title="The GameEventHandler class manages various events in the game. " alt="" coords="385,955,591,981"/>
+<area shape="rect" id="node34" href="$class_student_1_1_object_manager.html" title="The ObjectManager class manages the tiles and various tile overlays. " alt="" coords="661,917,840,944"/>
+<area shape="rect" id="node36" href="$class_student_1_1i_container.html" title="Student::iContainer" alt="" coords="415,828,561,855"/>
+<area shape="rect" id="node37" href="$class_student_1_1i_label.html" title="Student::iLabel" alt="" coords="429,715,547,741"/>
+<area shape="rect" id="node38" href="$class_student_1_1i_pressable_object.html" title="Student::iPressableObject" alt="" coords="393,664,583,691"/>
+<area shape="rect" id="node40" href="$class_course_1_1i_game_event_handler.html" title="The iGameEventHandler class is an interface which the Course&#45;side code uses to interact with the Game..." alt="" coords="129,955,335,981"/>
+</map>

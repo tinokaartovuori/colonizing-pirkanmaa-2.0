@@ -1,0 +1,10 @@
+{"gen":0,"bestFit":null,"meanFit":null,"medianFit":null,"fitStd":null,"policyLoss":0.65422,"valueLoss":0.31962,"bufferSize":6819,"newExamples":6819,"gamesPerSec":1.964,"elapsedSec":16.3,"winRateVsHeur":null}
+{"gen":1,"bestFit":null,"meanFit":null,"medianFit":null,"fitStd":null,"policyLoss":0.69924,"valueLoss":0.41635,"bufferSize":14621,"newExamples":7802,"gamesPerSec":1.417,"elapsedSec":45.2,"winRateVsHeur":null}
+{"gen":2,"bestFit":null,"meanFit":null,"medianFit":null,"fitStd":null,"policyLoss":0.68680,"valueLoss":0.37437,"bufferSize":21735,"newExamples":7114,"gamesPerSec":1.572,"elapsedSec":61.1,"winRateVsHeur":null}
+{"gen":3,"bestFit":null,"meanFit":null,"medianFit":null,"fitStd":null,"policyLoss":0.69951,"valueLoss":0.36731,"bufferSize":29233,"newExamples":7498,"gamesPerSec":1.593,"elapsedSec":80.3,"winRateVsHeur":null}
+{"gen":4,"bestFit":null,"meanFit":null,"medianFit":null,"fitStd":null,"policyLoss":0.71673,"valueLoss":0.36134,"bufferSize":30000,"newExamples":7818,"gamesPerSec":1.594,"elapsedSec":100.4,"winRateVsHeur":null}
+{"gen":5,"bestFit":null,"meanFit":null,"medianFit":null,"fitStd":null,"policyLoss":0.71805,"valueLoss":0.35774,"bufferSize":30000,"newExamples":7939,"gamesPerSec":1.562,"elapsedSec":122.9,"winRateVsHeur":null}
+{"gen":6,"bestFit":null,"meanFit":null,"medianFit":null,"fitStd":null,"policyLoss":0.73550,"valueLoss":0.36512,"bufferSize":30000,"newExamples":8263,"gamesPerSec":1.450,"elapsedSec":154.5,"winRateVsHeur":null}
+{"gen":7,"bestFit":null,"meanFit":null,"medianFit":null,"fitStd":null,"policyLoss":0.74422,"valueLoss":0.41463,"bufferSize":30000,"newExamples":7635,"gamesPerSec":1.444,"elapsedSec":177.2,"winRateVsHeur":null}
+{"gen":8,"bestFit":null,"meanFit":null,"medianFit":null,"fitStd":null,"policyLoss":0.75804,"valueLoss":0.39831,"bufferSize":30000,"newExamples":6337,"gamesPerSec":1.469,"elapsedSec":196.0,"winRateVsHeur":null}
+{"gen":9,"bestFit":null,"meanFit":null,"medianFit":null,"fitStd":null,"policyLoss":0.76298,"valueLoss":0.41098,"bufferSize":30000,"newExamples":7763,"gamesPerSec":1.457,"elapsedSec":219.6,"winRateVsHeur":null}

@@ -1,0 +1,176 @@
+\hypertarget{class_course_1_1_farm}{\section{Course\-:\-:Farm Class Reference}
+\label{class_course_1_1_farm}\index{Course\-::\-Farm@{Course\-::\-Farm}}
+}
+
+
+The \hyperlink{class_course_1_1_farm}{Farm} class represents a farm building in the game.  
+
+
+
+
+{\ttfamily \#include $<$farm.\-h$>$}
+
+
+
+Inheritance diagram for Course\-:\-:Farm\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_course_1_1_farm__inherit__graph}
+\end{center}
+\end{figure}
+
+
+Collaboration diagram for Course\-:\-:Farm\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_course_1_1_farm__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_course_1_1_farm_a3b92d4bdac7e8f7fd1f648bb1a4a2490}{\hyperlink{class_course_1_1_farm_a3b92d4bdac7e8f7fd1f648bb1a4a2490}{Farm} ()=delete}\label{class_course_1_1_farm_a3b92d4bdac7e8f7fd1f648bb1a4a2490}
+
+\begin{DoxyCompactList}\small\item\em Disabled parameterless constructor. \end{DoxyCompactList}\item 
+\hyperlink{class_course_1_1_farm_a14ac36a4cd1dfb9f488b6bfffe4f7baf}{Farm} (const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{i\-Object\-Manager} $>$ \&objectmanager, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Player\-Base} $>$ \&owner, const Resource\-Map \&buildcost=Const\-Resource\-Maps\-::\-F\-A\-R\-M\-\_\-\-B\-U\-I\-L\-D\-\_\-\-C\-O\-S\-T, const Resource\-Map \&production=Const\-Resource\-Maps\-::\-F\-A\-R\-M\-\_\-\-P\-R\-O\-D\-U\-C\-T\-I\-O\-N)
+\begin{DoxyCompactList}\small\item\em Constructor for the class. \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1_farm_a99c06d0eeb549a04390bd260cc7ac68d}{virtual \hyperlink{class_course_1_1_farm_a99c06d0eeb549a04390bd260cc7ac68d}{$\sim$\-Farm} ()=default}\label{class_course_1_1_farm_a99c06d0eeb549a04390bd260cc7ac68d}
+
+\begin{DoxyCompactList}\small\item\em Default destructor. \end{DoxyCompactList}\item 
+virtual std\-::string \hyperlink{class_course_1_1_farm_a54ade72809a36d31e0e426eb79d6251a}{get\-Type} () const override
+\begin{DoxyCompactList}\small\item\em Returns the building's type in string. In this case it's \char`\"{}\-Farm\char`\"{}. \end{DoxyCompactList}\item 
+int \hyperlink{class_course_1_1_farm_a565721fca3c0343d991675ae70e1de1a}{get\-Growth\-Phase} ()
+\begin{DoxyCompactList}\small\item\em Gets the growth phase of the farm. \end{DoxyCompactList}\item 
+void \hyperlink{class_course_1_1_farm_a8c60ea7d4e2761468b4b0ebba7a6bb3a}{set\-Growth\-Phase} (int phase)
+\begin{DoxyCompactList}\small\item\em Sets the growth phase of the farm. If the growth phase is set to five or more the phase resets to one. \end{DoxyCompactList}\item 
+void \hyperlink{class_course_1_1_farm_af231394911670b60f64a8e89662207c1}{reset\-Farm} ()
+\begin{DoxyCompactList}\small\item\em If the tile has a farm, this function resets the crop growth cycle. \end{DoxyCompactList}\end{DoxyCompactItemize}
+\subsection*{Additional Inherited Members}
+
+
+\subsection{Detailed Description}
+The \hyperlink{class_course_1_1_farm}{Farm} class represents a farm building in the game. 
+
+The player can grow crops on the farm which produces money. One worker is needed to operate the farm. The farm has a growth cycle which is updated visually. When growth\-Phase\-\_\- reaches 5 the crop is immediately harvested. 
+
+\subsection{Constructor \& Destructor Documentation}
+\hypertarget{class_course_1_1_farm_a14ac36a4cd1dfb9f488b6bfffe4f7baf}{\index{Course\-::\-Farm@{Course\-::\-Farm}!Farm@{Farm}}
+\index{Farm@{Farm}!Course::Farm@{Course\-::\-Farm}}
+\subsubsection[{Farm}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Farm\-::\-Farm (
+\begin{DoxyParamCaption}
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Game\-Event\-Handler} $>$ \&}]{eventhandler, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Object\-Manager} $>$ \&}]{objectmanager, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Player\-Base} $>$ \&}]{owner, }
+\item[{const Resource\-Map \&}]{buildcost = {\ttfamily ConstResourceMaps\-:\-:FARM\-\_\-BUILD\-\_\-COST}, }
+\item[{const Resource\-Map \&}]{production = {\ttfamily ConstResourceMaps\-:\-:FARM\-\_\-PRODUCTION}}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [explicit]}}}\label{class_course_1_1_farm_a14ac36a4cd1dfb9f488b6bfffe4f7baf}
+
+
+Constructor for the class. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em eventhandler} & points to the Game\-Event\-Handler. \\
+\hline
+{\em objectmanager} & points to the Object\-Manager. \\
+\hline
+{\em owner} & points to the owning player. \\
+\hline
+{\em buildcost} & is a Resource\-Map of the building cost of the building \\
+\hline
+{\em production} & is a Resource\-Map of the production of the building\\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: No guarantee. 
+\end{DoxyPostcond}
+
+\begin{DoxyExceptions}{Exceptions}
+{\em \hyperlink{class_course_1_1_owner_conflict}{Owner\-Conflict}} & -\/ if the building conflicts with tile's ownership. \\
+\hline
+\end{DoxyExceptions}
+
+
+\subsection{Member Function Documentation}
+\hypertarget{class_course_1_1_farm_a565721fca3c0343d991675ae70e1de1a}{\index{Course\-::\-Farm@{Course\-::\-Farm}!get\-Growth\-Phase@{get\-Growth\-Phase}}
+\index{get\-Growth\-Phase@{get\-Growth\-Phase}!Course::Farm@{Course\-::\-Farm}}
+\subsubsection[{get\-Growth\-Phase}]{\setlength{\rightskip}{0pt plus 5cm}int Course\-::\-Farm\-::get\-Growth\-Phase (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_farm_a565721fca3c0343d991675ae70e1de1a}
+
+
+Gets the growth phase of the farm. 
+
+\begin{DoxyReturn}{Returns}
+Integer of farm's growth phase. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_farm_a54ade72809a36d31e0e426eb79d6251a}{\index{Course\-::\-Farm@{Course\-::\-Farm}!get\-Type@{get\-Type}}
+\index{get\-Type@{get\-Type}!Course::Farm@{Course\-::\-Farm}}
+\subsubsection[{get\-Type}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Course\-::\-Farm\-::get\-Type (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_course_1_1_farm_a54ade72809a36d31e0e426eb79d6251a}
+
+
+Returns the building's type in string. In this case it's \char`\"{}\-Farm\char`\"{}. 
+
+\begin{DoxyReturn}{Returns}
+Building's type in string. In this case it's \char`\"{}\-Farm\char`\"{} 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+Reimplemented from \hyperlink{class_course_1_1_building_base_ac2cc44e08dc73d05b1617bf71295baaf}{Course\-::\-Building\-Base}.
+
+\hypertarget{class_course_1_1_farm_af231394911670b60f64a8e89662207c1}{\index{Course\-::\-Farm@{Course\-::\-Farm}!reset\-Farm@{reset\-Farm}}
+\index{reset\-Farm@{reset\-Farm}!Course::Farm@{Course\-::\-Farm}}
+\subsubsection[{reset\-Farm}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Farm\-::reset\-Farm (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_farm_af231394911670b60f64a8e89662207c1}
+
+
+If the tile has a farm, this function resets the crop growth cycle. 
+
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ????????????????????????????? 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_farm_a8c60ea7d4e2761468b4b0ebba7a6bb3a}{\index{Course\-::\-Farm@{Course\-::\-Farm}!set\-Growth\-Phase@{set\-Growth\-Phase}}
+\index{set\-Growth\-Phase@{set\-Growth\-Phase}!Course::Farm@{Course\-::\-Farm}}
+\subsubsection[{set\-Growth\-Phase}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Farm\-::set\-Growth\-Phase (
+\begin{DoxyParamCaption}
+\item[{int}]{phase}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_farm_a8c60ea7d4e2761468b4b0ebba7a6bb3a}
+
+
+Sets the growth phase of the farm. If the growth phase is set to five or more the phase resets to one. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Integer} & of farm's growth phase. \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+The documentation for this class was generated from the following files\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Buildings/farm.\-h\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Buildings/farm.\-cpp\end{DoxyCompactItemize}

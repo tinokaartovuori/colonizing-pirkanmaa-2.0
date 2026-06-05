@@ -1,0 +1,11 @@
+mode=baseline games/config=200 players=3 map=16x16 roundCap=120
+
+=== 3 players  (n=200) ===
+  decisive:   61.0%  (domination 2.5%, last-standing 58.5%)
+  tie:        0.5%   timeout: 38.5%   crashed: 0
+  bankruptcy: 0.0% of games had >=1 player go negative
+  rounds:     mean 90.1  (decisive games mean 71.6)
+  wins/seat:  [29.5%, 38.5%, 32.0%]
+  winner econ: tiles 93.1, cap 18.2, soldiers 2.8
+
+elapsed 458.753s

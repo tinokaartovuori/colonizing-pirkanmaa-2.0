@@ -1,0 +1,137 @@
+\hypertarget{class_student_1_1_button}{\section{Student\-:\-:Button Class Reference}
+\label{class_student_1_1_button}\index{Student\-::\-Button@{Student\-::\-Button}}
+}
+
+
+The \hyperlink{class_student_1_1_button}{Button} class is a base-\/class for different Tile-\/objects in the game. \par
+.  
+
+
+
+
+{\ttfamily \#include $<$button.\-h$>$}
+
+
+
+Inheritance diagram for Student\-:\-:Button\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[width=350pt]{class_student_1_1_button__inherit__graph}
+\end{center}
+\end{figure}
+
+
+Collaboration diagram for Student\-:\-:Button\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[width=350pt]{class_student_1_1_button__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_student_1_1_button_a7bdafcf67e4d8b74ab79c25670e8f663}{\hyperlink{class_student_1_1_button_a7bdafcf67e4d8b74ab79c25670e8f663}{Button} ()=delete}\label{class_student_1_1_button_a7bdafcf67e4d8b74ab79c25670e8f663}
+
+\begin{DoxyCompactList}\small\item\em Disabled parameterless constructor. \end{DoxyCompactList}\item 
+\hypertarget{class_student_1_1_button_a988a14b4708749500239374e9deac280}{\hyperlink{class_student_1_1_button_a988a14b4708749500239374e9deac280}{Button} (const \hyperlink{class_course_1_1_coordinate}{Course\-::\-Coordinate} \&coordinate, const int width, const int height, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{Course\-::i\-Object\-Manager} $>$ \&objectmanager)}\label{class_student_1_1_button_a988a14b4708749500239374e9deac280}
+
+\begin{DoxyCompactList}\small\item\em Constructor for the class. \end{DoxyCompactList}\item 
+\hypertarget{class_student_1_1_button_a3d2c87ee7ce6ec4a919b25a158b4b537}{{\bfseries Button} (const std\-::string task, const \hyperlink{class_course_1_1_coordinate}{Course\-::\-Coordinate} \&coordinate, const int width, const int height, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{Course\-::i\-Object\-Manager} $>$ \&objectmanager)}\label{class_student_1_1_button_a3d2c87ee7ce6ec4a919b25a158b4b537}
+
+\item 
+\hypertarget{class_student_1_1_button_acaaf136f9a8e053f3b4ee42c1d0e8761}{{\bfseries Button} (const std\-::string task, const \hyperlink{class_course_1_1_coordinate}{Course\-::\-Coordinate} \&coordinate, const int width, const int height, const std\-::string text, const int fontsize, const Q\-Color color, const std\-::string style, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{Course\-::i\-Object\-Manager} $>$ \&objectmanager)}\label{class_student_1_1_button_acaaf136f9a8e053f3b4ee42c1d0e8761}
+
+\item 
+\hypertarget{class_student_1_1_button_a2647be5df09126bd1c870db00b201644}{virtual \hyperlink{class_student_1_1_button_a2647be5df09126bd1c870db00b201644}{$\sim$\-Button} ()=default}\label{class_student_1_1_button_a2647be5df09126bd1c870db00b201644}
+
+\begin{DoxyCompactList}\small\item\em Default destructor. \end{DoxyCompactList}\item 
+virtual std\-::string \hyperlink{class_student_1_1_button_a2c69f5dcee1036b11154e799d6621acb}{get\-Type} () const override
+\begin{DoxyCompactList}\small\item\em get\-Type Returns a string describing objects type. \end{DoxyCompactList}\item 
+\hypertarget{class_student_1_1_button_a6112586b45c24bfbd8463f6748f28ac9}{virtual void {\bfseries click\-Action} () override}\label{class_student_1_1_button_a6112586b45c24bfbd8463f6748f28ac9}
+
+\item 
+\hypertarget{class_student_1_1_button_a527e02bc53cc1258e4bf8dd0fffea7ea}{std\-::string {\bfseries get\-Text} () override}\label{class_student_1_1_button_a527e02bc53cc1258e4bf8dd0fffea7ea}
+
+\item 
+\hypertarget{class_student_1_1_button_ab18659b36cc7f7df87776124bf4772c6}{void {\bfseries change\-Text} (std\-::string text) override}\label{class_student_1_1_button_ab18659b36cc7f7df87776124bf4772c6}
+
+\item 
+\hypertarget{class_student_1_1_button_a2cffbc88f362015ec782be46da92b064}{int {\bfseries get\-Font\-Size} () override}\label{class_student_1_1_button_a2cffbc88f362015ec782be46da92b064}
+
+\item 
+\hypertarget{class_student_1_1_button_ab0f900889f55263d6677f1126a96aff9}{Q\-Color {\bfseries get\-Color} () override}\label{class_student_1_1_button_ab0f900889f55263d6677f1126a96aff9}
+
+\item 
+\hypertarget{class_student_1_1_button_af24ffe18b916d185358a5bb0b2b5a90e}{std\-::string {\bfseries get\-Style} () override}\label{class_student_1_1_button_af24ffe18b916d185358a5bb0b2b5a90e}
+
+\item 
+\hypertarget{class_student_1_1_button_ac6cd60b8ee154093bd3b756c297657f3}{void {\bfseries set\-Corresponding\-Tile} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ tile\-\_\-)}\label{class_student_1_1_button_ac6cd60b8ee154093bd3b756c297657f3}
+
+\item 
+\hypertarget{class_student_1_1_button_ab4f0b6f623621def47400729724e94e5}{int {\bfseries get\-Margin} () override}\label{class_student_1_1_button_ab4f0b6f623621def47400729724e94e5}
+
+\item 
+\hypertarget{class_student_1_1_button_a306b3ebc900d9fbff4226e169f288775}{void {\bfseries set\-Margin} (int margin) override}\label{class_student_1_1_button_a306b3ebc900d9fbff4226e169f288775}
+
+\item 
+\hypertarget{class_student_1_1_button_a9667950ebdbb536d416f396699aed59f}{bool {\bfseries no\-Right\-Margin} () override}\label{class_student_1_1_button_a9667950ebdbb536d416f396699aed59f}
+
+\item 
+\hypertarget{class_student_1_1_button_a9d838b8a285233b2f2f7540534d6cdc4}{void {\bfseries set\-No\-Right\-Margin} (bool opt) override}\label{class_student_1_1_button_a9d838b8a285233b2f2f7540534d6cdc4}
+
+\item 
+\hypertarget{class_student_1_1_button_a2a67b4fc207bdce4e7a65aca7f749a2b}{void {\bfseries set\-Holding\-Index} (int index)}\label{class_student_1_1_button_a2a67b4fc207bdce4e7a65aca7f749a2b}
+
+\item 
+\hypertarget{class_student_1_1_button_a66287c42462378fa165f4fd3ace2e923}{int {\bfseries get\-Offset} () override}\label{class_student_1_1_button_a66287c42462378fa165f4fd3ace2e923}
+
+\item 
+\hypertarget{class_student_1_1_button_aaba7f6b6cc4d98bb13f0c78976a18817}{void {\bfseries set\-Offset} (int off) override}\label{class_student_1_1_button_aaba7f6b6cc4d98bb13f0c78976a18817}
+
+\end{DoxyCompactItemize}
+\subsection*{Additional Inherited Members}
+
+
+\subsection{Detailed Description}
+The \hyperlink{class_student_1_1_button}{Button} class is a base-\/class for different Tile-\/objects in the game. \par
+. 
+
+Tile is responsible for\-:
+\begin{DoxyItemize}
+\item Generating resources.
+\item Checking Tile-\/specific object placement rules. \par
+ Each Tile has some Base-\/production which is multiplied by worker's efficiency, when generating resources. Resource generation can also gain flat bonuses from buildings. Tiles also know how many Buildings or Workers can be placed on them. 
+\end{DoxyItemize}
+
+\subsection{Member Function Documentation}
+\hypertarget{class_student_1_1_button_a2c69f5dcee1036b11154e799d6621acb}{\index{Student\-::\-Button@{Student\-::\-Button}!get\-Type@{get\-Type}}
+\index{get\-Type@{get\-Type}!Student::Button@{Student\-::\-Button}}
+\subsubsection[{get\-Type}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Student\-::\-Button\-::get\-Type (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_button_a2c69f5dcee1036b11154e799d6621acb}
+
+
+get\-Type Returns a string describing objects type. 
+
+\begin{DoxyReturn}{Returns}
+std\-::string that represents Object's type. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+Reimplemented from \hyperlink{class_student_1_1_menu_object_ad014a4bd1e775c1be6689ffe018fed6b}{Student\-::\-Menu\-Object}.
+
+
+
+The documentation for this class was generated from the following files\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Menus/button.\-h\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Menus/button.\-cpp\end{DoxyCompactItemize}

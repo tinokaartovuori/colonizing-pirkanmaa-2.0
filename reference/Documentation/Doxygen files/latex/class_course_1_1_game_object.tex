@@ -1,0 +1,259 @@
+\hypertarget{class_course_1_1_game_object}{\section{Course\-:\-:Game\-Object Class Reference}
+\label{class_course_1_1_game_object}\index{Course\-::\-Game\-Object@{Course\-::\-Game\-Object}}
+}
+
+
+The \hyperlink{class_course_1_1_game_object}{Game\-Object} class is base-\/class that contain's general information on different Objects in game.  
+
+
+
+
+{\ttfamily \#include $<$gameobject.\-h$>$}
+
+
+
+Inheritance diagram for Course\-:\-:Game\-Object\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[width=350pt]{class_course_1_1_game_object__inherit__graph}
+\end{center}
+\end{figure}
+
+
+Collaboration diagram for Course\-:\-:Game\-Object\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[width=350pt]{class_course_1_1_game_object__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_course_1_1_game_object_a99d67fed6fa1266f50d43df01d8d3bb1}{{\bfseries Game\-Object} (const \hyperlink{class_course_1_1_coordinate}{Coordinate} \&coordinate, int width, int height, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{i\-Object\-Manager} $>$ \&objectmanager)}\label{class_course_1_1_game_object_a99d67fed6fa1266f50d43df01d8d3bb1}
+
+\item 
+\hyperlink{class_course_1_1_game_object_a8a993f2882cca86e6ba555ff75e7fea4}{Game\-Object} (const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Player\-Base} $>$ \&owner, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{i\-Object\-Manager} $>$ \&objectmanager)
+\begin{DoxyCompactList}\small\item\em \hyperlink{class_course_1_1_game_object}{Game\-Object} constructor that can specify an owner. \end{DoxyCompactList}\item 
+\hyperlink{class_course_1_1_game_object_a2517a49905d19c0fc9a79005a34a7db2}{Game\-Object} (const \hyperlink{class_course_1_1_coordinate}{Coordinate} \&coordinate, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Player\-Base} $>$ \&owner, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{i\-Object\-Manager} $>$ \&objectmanager)
+\begin{DoxyCompactList}\small\item\em \hyperlink{class_course_1_1_game_object}{Game\-Object} constructor that can specify a coordinate and an owner. \end{DoxyCompactList}\item 
+\hyperlink{class_course_1_1_game_object_a66b0a645e623a7e5f6f494df60d7b516}{Game\-Object} (const \hyperlink{class_course_1_1_coordinate}{Coordinate} \&coordinate, int width, int height, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Player\-Base} $>$ \&owner, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{i\-Object\-Manager} $>$ \&objectmanager)
+\begin{DoxyCompactList}\small\item\em \hyperlink{class_course_1_1_game_object}{Game\-Object} constructor that can specify a coordinate and an owner. \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1_game_object_abfa4185247b43636bf53897a4731a763}{virtual \hyperlink{class_course_1_1_game_object_abfa4185247b43636bf53897a4731a763}{$\sim$\-Game\-Object} ()=default}\label{class_course_1_1_game_object_abfa4185247b43636bf53897a4731a763}
+
+\begin{DoxyCompactList}\small\item\em $\sim$\-Game\-Object Default destructor. \end{DoxyCompactList}\item 
+void \hyperlink{class_course_1_1_game_object_ab0bc9a071a6be545e229e8255bff9fd1}{set\-Owner} (const std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Player\-Base} $>$ \&owner)
+\begin{DoxyCompactList}\small\item\em Change \hyperlink{class_course_1_1_game_object}{Game\-Object}'s \char`\"{}owner\char`\"{}. \end{DoxyCompactList}\item 
+std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Player\-Base} $>$ \hyperlink{class_course_1_1_game_object_ad0c27226469c45b63a0f9747b0097aea}{get\-Owner} () const 
+\begin{DoxyCompactList}\small\item\em Returns \hyperlink{class_course_1_1_game_object}{Game\-Object}'s owner. \end{DoxyCompactList}\item 
+virtual std\-::string \hyperlink{class_course_1_1_game_object_a9a7b36c7f9258af82898190ee6ba7222}{get\-Type} () const override
+\begin{DoxyCompactList}\small\item\em get\-Type Returns a string describing objects type. This should be overriden in each inherited class. Makes checking object's type easier for students. \end{DoxyCompactList}\item 
+bool \hyperlink{class_course_1_1_game_object_adeccfb311b86ecbcf6e2e35f87e18cc7}{has\-Same\-Owner\-As} (const std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_game_object}{Game\-Object} $>$ \&other) const 
+\begin{DoxyCompactList}\small\item\em Function to compare if objects have same owner. \end{DoxyCompactList}\end{DoxyCompactItemize}
+\subsection*{Protected Attributes}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_course_1_1_game_object_a438c8b8567f6f3fbe8e4df6442ebd12e}{std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Player\-Base} $>$ {\bfseries owner\-\_\-}}\label{class_course_1_1_game_object_a438c8b8567f6f3fbe8e4df6442ebd12e}
+
+\end{DoxyCompactItemize}
+\subsection*{Additional Inherited Members}
+
+
+\subsection{Detailed Description}
+The \hyperlink{class_course_1_1_game_object}{Game\-Object} class is base-\/class that contain's general information on different Objects in game. 
+
+
+\begin{DoxyItemize}
+\item I\-D
+\item Possible owner
+\item Possible location coordinate
+\item Metadata in a string-\/$>$string map
+\item Pointers to Game\-Event\-Handler and Object\-Manager
+\end{DoxyItemize}
+
+\begin{DoxyNote}{Note}
+The functions consist mainly of get and set -\/functions that are used to access and store the information specified above. 
+\end{DoxyNote}
+
+
+\subsection{Constructor \& Destructor Documentation}
+\hypertarget{class_course_1_1_game_object_a8a993f2882cca86e6ba555ff75e7fea4}{\index{Course\-::\-Game\-Object@{Course\-::\-Game\-Object}!Game\-Object@{Game\-Object}}
+\index{Game\-Object@{Game\-Object}!Course::GameObject@{Course\-::\-Game\-Object}}
+\subsubsection[{Game\-Object}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Game\-Object\-::\-Game\-Object (
+\begin{DoxyParamCaption}
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Player\-Base} $>$ \&}]{owner, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Game\-Event\-Handler} $>$ \&}]{eventhandler, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Object\-Manager} $>$ \&}]{objectmanager}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [explicit]}}}\label{class_course_1_1_game_object_a8a993f2882cca86e6ba555ff75e7fea4}
+
+
+\hyperlink{class_course_1_1_game_object}{Game\-Object} constructor that can specify an owner. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em owner} & a shared pointer to player that \char`\"{}owns\char`\"{} the object. \\
+\hline
+{\em eventhandler} & a shared pointer to Game's Game\-Event\-Handler. \\
+\hline
+{\em objectmanager} & a shared pointer to Game's Object\-Manager. \\
+\hline
+\end{DoxyParams}
+\hypertarget{class_course_1_1_game_object_a2517a49905d19c0fc9a79005a34a7db2}{\index{Course\-::\-Game\-Object@{Course\-::\-Game\-Object}!Game\-Object@{Game\-Object}}
+\index{Game\-Object@{Game\-Object}!Course::GameObject@{Course\-::\-Game\-Object}}
+\subsubsection[{Game\-Object}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Game\-Object\-::\-Game\-Object (
+\begin{DoxyParamCaption}
+\item[{const {\bf Coordinate} \&}]{coordinate, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Player\-Base} $>$ \&}]{owner, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Game\-Event\-Handler} $>$ \&}]{eventhandler, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Object\-Manager} $>$ \&}]{objectmanager}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [explicit]}}}\label{class_course_1_1_game_object_a2517a49905d19c0fc9a79005a34a7db2}
+
+
+\hyperlink{class_course_1_1_game_object}{Game\-Object} constructor that can specify a coordinate and an owner. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em coordinate} & a shared pointer to coordinates where the object is located. \\
+\hline
+{\em owner} & a shared pointer to player that \char`\"{}owns\char`\"{} the object. \\
+\hline
+{\em eventhandler} & a shared pointer to Game's Game\-Event\-Handler. \\
+\hline
+{\em objectmanager} & a shared pointer to Game's Object\-Manager. \\
+\hline
+\end{DoxyParams}
+\hypertarget{class_course_1_1_game_object_a66b0a645e623a7e5f6f494df60d7b516}{\index{Course\-::\-Game\-Object@{Course\-::\-Game\-Object}!Game\-Object@{Game\-Object}}
+\index{Game\-Object@{Game\-Object}!Course::GameObject@{Course\-::\-Game\-Object}}
+\subsubsection[{Game\-Object}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Game\-Object\-::\-Game\-Object (
+\begin{DoxyParamCaption}
+\item[{const {\bf Coordinate} \&}]{coordinate, }
+\item[{int}]{width, }
+\item[{int}]{height, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Player\-Base} $>$ \&}]{owner, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Game\-Event\-Handler} $>$ \&}]{eventhandler, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Object\-Manager} $>$ \&}]{objectmanager}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [explicit]}}}\label{class_course_1_1_game_object_a66b0a645e623a7e5f6f494df60d7b516}
+
+
+\hyperlink{class_course_1_1_game_object}{Game\-Object} constructor that can specify a coordinate and an owner. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em coordinate} & a shared pointer to coordinates where the object is located. \\
+\hline
+{\em owner} & a shared pointer to player that \char`\"{}owns\char`\"{} the object. \\
+\hline
+{\em eventhandler} & a shared pointer to Game's Game\-Event\-Handler. \\
+\hline
+{\em objectmanager} & a shared pointer to Game's Object\-Manager. \\
+\hline
+\end{DoxyParams}
+
+
+\subsection{Member Function Documentation}
+\hypertarget{class_course_1_1_game_object_ad0c27226469c45b63a0f9747b0097aea}{\index{Course\-::\-Game\-Object@{Course\-::\-Game\-Object}!get\-Owner@{get\-Owner}}
+\index{get\-Owner@{get\-Owner}!Course::GameObject@{Course\-::\-Game\-Object}}
+\subsubsection[{get\-Owner}]{\setlength{\rightskip}{0pt plus 5cm}std\-::shared\-\_\-ptr$<$ {\bf Player\-Base} $>$ Course\-::\-Game\-Object\-::get\-Owner (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const}}\label{class_course_1_1_game_object_ad0c27226469c45b63a0f9747b0097aea}
+
+
+Returns \hyperlink{class_course_1_1_game_object}{Game\-Object}'s owner. 
+
+\begin{DoxyReturn}{Returns}
+A shared-\/pointer to \hyperlink{class_course_1_1_game_object}{Game\-Object}'s owner 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_game_object_a9a7b36c7f9258af82898190ee6ba7222}{\index{Course\-::\-Game\-Object@{Course\-::\-Game\-Object}!get\-Type@{get\-Type}}
+\index{get\-Type@{get\-Type}!Course::GameObject@{Course\-::\-Game\-Object}}
+\subsubsection[{get\-Type}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Course\-::\-Game\-Object\-::get\-Type (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_course_1_1_game_object_a9a7b36c7f9258af82898190ee6ba7222}
+
+
+get\-Type Returns a string describing objects type. This should be overriden in each inherited class. Makes checking object's type easier for students. 
+
+\begin{DoxyReturn}{Returns}
+std\-::string that represents Object's type. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\begin{DoxyNote}{Note}
+You can use this in e.\-g. debugging and similar printing. 
+\end{DoxyNote}
+
+
+Reimplemented from \hyperlink{class_course_1_1_base_object_ae66880c372a67483fc4205a55839443a}{Course\-::\-Base\-Object}.
+
+
+
+Reimplemented in \hyperlink{class_course_1_1_tile_base_af1a8aaa3407ad3ade7ffe8f2fb421288}{Course\-::\-Tile\-Base}, \hyperlink{class_course_1_1_basic_worker_a8396e00dafd128cbb86e479296d75c12}{Course\-::\-Basic\-Worker}, \hyperlink{class_course_1_1_unit_base_a5b7353afcd94aa5ad3670ac652fd8ca2}{Course\-::\-Unit\-Base}, \hyperlink{class_course_1_1_building_base_ac2cc44e08dc73d05b1617bf71295baaf}{Course\-::\-Building\-Base}, \hyperlink{class_student_1_1_expert_a103f30e0809cd26e7bafe4ef94a8673d}{Student\-::\-Expert}, \hyperlink{class_student_1_1_soldier_a4339c81cdf40a1dba28f6fcffb555d33}{Student\-::\-Soldier}, \hyperlink{class_student_1_1_nuclear_plant_a2dfb7f93c216ca4c76507a3d4a1fa530}{Student\-::\-Nuclear\-Plant}, \hyperlink{class_student_1_1_village_a02b27bc84f9d250795ec2f9ff72fbe1b}{Student\-::\-Village}, \hyperlink{class_student_1_1_hydro_power_a3d1a591139fdd4f2c014a88fc3dcde59}{Student\-::\-Hydro\-Power}, \hyperlink{class_student_1_1_mikontalo_a71ab64374c57380dd45efea5a5304104}{Student\-::\-Mikontalo}, \hyperlink{class_student_1_1_mine_aa317adabe862ce41077d712d5b4cdf98}{Student\-::\-Mine}, \hyperlink{class_course_1_1_grassland_a0a652bbecdda0216613dad980936e30e}{Course\-::\-Grassland}, \hyperlink{class_course_1_1_outpost_a8c89c67187451e0a49ecd57d4fc80602}{Course\-::\-Outpost}, \hyperlink{class_course_1_1_farm_a54ade72809a36d31e0e426eb79d6251a}{Course\-::\-Farm}, \hyperlink{class_course_1_1_forest_a783378b8f5c1ec5d0c5c4a771291a902}{Course\-::\-Forest}, \hyperlink{class_student_1_1_bridge_a4c3d72252a2d1992e210accadecf5125}{Student\-::\-Bridge}, \hyperlink{class_student_1_1_abundant_forest_a716c3d8cbbaf27a19fb23d95e66405ff}{Student\-::\-Abundant\-Forest}, \hyperlink{class_student_1_1_mountain_a0557d9683574b5d69a69b0477ce10595}{Student\-::\-Mountain}, \hyperlink{class_student_1_1_river_a227a22ecd8983eb71188fd5256f28068}{Student\-::\-River}, \hyperlink{class_course_1_1_head_quarters_a1d9a996a6a87ca31aeb63dff2d41d242}{Course\-::\-Head\-Quarters}, \hyperlink{class_course_1_1_placeable_game_object_adcd0c91b52ccedd434092380644f210e}{Course\-::\-Placeable\-Game\-Object}, \hyperlink{class_student_1_1_blocked_tile_abad24fdf672b0b40c032b0cbbb227b59}{Student\-::\-Blocked\-Tile}, \hyperlink{class_student_1_1_clicked_tile_border_ae2c10c0a43e0fdf79fa19dfc6bc7fa11}{Student\-::\-Clicked\-Tile\-Border}, and \hyperlink{class_student_1_1_mouse_hover_border_a7b49922f0ab5a473ec3dbcc253cad7fe}{Student\-::\-Mouse\-Hover\-Border}.
+
+\hypertarget{class_course_1_1_game_object_adeccfb311b86ecbcf6e2e35f87e18cc7}{\index{Course\-::\-Game\-Object@{Course\-::\-Game\-Object}!has\-Same\-Owner\-As@{has\-Same\-Owner\-As}}
+\index{has\-Same\-Owner\-As@{has\-Same\-Owner\-As}!Course::GameObject@{Course\-::\-Game\-Object}}
+\subsubsection[{has\-Same\-Owner\-As}]{\setlength{\rightskip}{0pt plus 5cm}bool Course\-::\-Game\-Object\-::has\-Same\-Owner\-As (
+\begin{DoxyParamCaption}
+\item[{const std\-::shared\-\_\-ptr$<$ {\bf Game\-Object} $>$ \&}]{other}
+\end{DoxyParamCaption}
+) const}}\label{class_course_1_1_game_object_adeccfb311b86ecbcf6e2e35f87e18cc7}
+
+
+Function to compare if objects have same owner. 
+
+
+\begin{DoxyItemize}
+\item 
+\begin{DoxyParams}{Parameters}
+{\em other} & The other \hyperlink{class_course_1_1_game_object}{Game\-Object} \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+True -\/ If owners match or both are null False -\/ If owners don't match 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Excepetion guarantee\-: Strong 
+\end{DoxyPostcond}
+
+\begin{DoxyExceptions}{Exceptions}
+{\em Expired\-Pointer} & -\/ If any owner weak\-\_\-ptr has expired. \\
+\hline
+\end{DoxyExceptions}
+
+\end{DoxyItemize}\hypertarget{class_course_1_1_game_object_ab0bc9a071a6be545e229e8255bff9fd1}{\index{Course\-::\-Game\-Object@{Course\-::\-Game\-Object}!set\-Owner@{set\-Owner}}
+\index{set\-Owner@{set\-Owner}!Course::GameObject@{Course\-::\-Game\-Object}}
+\subsubsection[{set\-Owner}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Game\-Object\-::set\-Owner (
+\begin{DoxyParamCaption}
+\item[{const std\-::shared\-\_\-ptr$<$ {\bf Player\-Base} $>$ \&}]{owner}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_game_object_ab0bc9a071a6be545e229e8255bff9fd1}
+
+
+Change \hyperlink{class_course_1_1_game_object}{Game\-Object}'s \char`\"{}owner\char`\"{}. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em owner} & a shared pointer to the new \char`\"{}owner\char`\"{}. \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+The documentation for this class was generated from the following files\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Core/gameobject.\-h\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Core/gameobject.\-cpp\end{DoxyCompactItemize}

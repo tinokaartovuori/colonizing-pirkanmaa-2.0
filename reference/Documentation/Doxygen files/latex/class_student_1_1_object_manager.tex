@@ -1,0 +1,518 @@
+\hypertarget{class_student_1_1_object_manager}{\section{Student\-:\-:Object\-Manager Class Reference}
+\label{class_student_1_1_object_manager}\index{Student\-::\-Object\-Manager@{Student\-::\-Object\-Manager}}
+}
+
+
+The \hyperlink{class_student_1_1_object_manager}{Object\-Manager} class manages the tiles and various tile overlays.  
+
+
+
+
+{\ttfamily \#include $<$objectmanager.\-h$>$}
+
+
+
+Inheritance diagram for Student\-:\-:Object\-Manager\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_student_1_1_object_manager__inherit__graph}
+\end{center}
+\end{figure}
+
+
+Collaboration diagram for Student\-:\-:Object\-Manager\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_student_1_1_object_manager__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_student_1_1_object_manager_a7fc08f7e2eaeb07466a667cab4cd4a5f}{\hyperlink{class_student_1_1_object_manager_a7fc08f7e2eaeb07466a667cab4cd4a5f}{$\sim$\-Object\-Manager} ()=default}\label{class_student_1_1_object_manager_a7fc08f7e2eaeb07466a667cab4cd4a5f}
+
+\begin{DoxyCompactList}\small\item\em Default destructor. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_object_manager_a373b6a5f09885f8b163ff529a42530f0}{set\-Game\-Scene} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1_game_scene}{Game\-Scene} $>$ gs) override
+\begin{DoxyCompactList}\small\item\em Sets pointer to the \hyperlink{class_student_1_1_game_scene}{Game\-Scene} for the \hyperlink{class_student_1_1_object_manager}{Object\-Manager}. \end{DoxyCompactList}\item 
+std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1_game_scene}{Game\-Scene} $>$ \hyperlink{class_student_1_1_object_manager_ae06bc95169a9304d83b70f51623401fa}{get\-Game\-Scene} () override
+\begin{DoxyCompactList}\small\item\em Returns pointer to the \hyperlink{class_student_1_1_game_scene}{Game\-Scene}. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_object_manager_ae8dec4f7c5cb058f4451a95c18dfdf7a}{add\-Tiles} (const std\-::vector$<$ std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$$>$ \&tiles) override
+\begin{DoxyCompactList}\small\item\em Adds new tiles to the \hyperlink{class_student_1_1_object_manager}{Object\-Manager}. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_object_manager_aabd37c052d8ffb1d50664b0874926ac1}{replace\-Tile} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ old\-Tile, std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ new\-Tile) override
+\begin{DoxyCompactList}\small\item\em Replaces a tile in the tiles\-\_\- vector with a new one. \end{DoxyCompactList}\item 
+std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ \hyperlink{class_student_1_1_object_manager_a0e6cbf9d399876c203a68fc85ac58603}{get\-Tile} (const \hyperlink{class_course_1_1_coordinate}{Course\-::\-Coordinate} \&coordinate) override
+\begin{DoxyCompactList}\small\item\em Returns a shared pointer to a Tile that has specified coordinate. \end{DoxyCompactList}\item 
+std\-::vector$<$ std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ $>$ \hyperlink{class_student_1_1_object_manager_a0d6d943efd3d5ffb4504e7ca09faaca4}{get\-Tiles} () override
+\begin{DoxyCompactList}\small\item\em Returns a vector of shared pointers to Tiles specified by a vector of Coordinates. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_object_manager_a6e649730fdd0c158f76bced7d6cd218e}{set\-Hover\-Border} (const std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1_mouse_hover_border}{Student\-::\-Mouse\-Hover\-Border} $>$ border) override
+\begin{DoxyCompactList}\small\item\em Sets a pointer to an object that is on the tile the mouse pointer is on. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_object_manager_ae655fb33ee87cc5d18b2b6d678e79f63}{set\-Clicked\-Tile\-Border} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ tile) override
+\begin{DoxyCompactList}\small\item\em Sets a pointer to an object that shows the tile that was clicked. \end{DoxyCompactList}\item 
+std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_student_1_1_clicked_tile_border}{Student\-::\-Clicked\-Tile\-Border} $>$ \hyperlink{class_student_1_1_object_manager_a544a3250cff479812cfed34431799d52}{get\-Clicked\-Tile\-Border} () override
+\begin{DoxyCompactList}\small\item\em Gets the pointer to an object that shows the tile that was clicked. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_object_manager_a98a913a3d7ae9a73aec66b513ee71770}{remove\-Clicked\-Tile\-Border} () override
+\begin{DoxyCompactList}\small\item\em Removes the pointer to the object that shows the tile that was clicked. \end{DoxyCompactList}\item 
+std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_student_1_1_mouse_hover_border}{Student\-::\-Mouse\-Hover\-Border} $>$ \hyperlink{class_student_1_1_object_manager_ae2bb192b65b545e03bf754ad4b52e775}{get\-Border\-Tile} () override
+\begin{DoxyCompactList}\small\item\em Returns the pointer to the object that shows the tile the mouse pointer is on. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_object_manager_a460c283c4ba3c16a055cf9c223692873}{add\-D\-A\-L\-S} (const std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler} $>$ gameeventhandler, const std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1i_menu_object_manager}{Student\-::i\-Menu\-Object\-Manager} $>$ menuobjectmanager, const std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1_game_settings_manager}{Student\-::\-Game\-Settings\-Manager} $>$ gamesettingsmanager) override
+\begin{DoxyCompactList}\small\item\em Adds the pointers to the data access layers to the object manager. \end{DoxyCompactList}\item 
+std\-::vector$<$ std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ $>$ \hyperlink{class_student_1_1_object_manager_a9a815fc22b86f903473ac0f78643e9f2}{get\-Hq\-Connected\-Tiles} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Course\-::\-Player\-Base} $>$ player) override
+\begin{DoxyCompactList}\small\item\em Returns a vector of pointers to the tiles that are connected to the given player's headquarters. \end{DoxyCompactList}\item 
+std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ \hyperlink{class_student_1_1_object_manager_a14ff4416653fad129e352ba848955bac}{get\-Hq\-Tile} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Course\-::\-Player\-Base} $>$ player) override
+\begin{DoxyCompactList}\small\item\em Returns a pointer to the tile that has the given player's headquarters. \end{DoxyCompactList}\item 
+std\-::vector$<$ std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ $>$ \hyperlink{class_student_1_1_object_manager_adb8d0cd6c451e4b3eb6b3a0ece9c5efc}{get\-Available\-Tiles} () override
+\begin{DoxyCompactList}\small\item\em Returns a vector of pointers to the tiles the current player can place an unit. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_object_manager_a610b231ac8bb9d6f1236f6b8cda562cc}{add\-Block\-Tile\-Overlays} () override
+\begin{DoxyCompactList}\small\item\em Adds the overlay on the gamescene that shows the tiles the current player cannot place units on. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_object_manager_a7b4cc92e867501bc57ffbd5c136464bb}{remove\-Block\-Tile\-Overlays} () override
+\begin{DoxyCompactList}\small\item\em Removes the overlay on the gamescene that shows the tiles the current player cannot place units on. \end{DoxyCompactList}\item 
+int \hyperlink{class_student_1_1_object_manager_a6f8e95c3b38c5fc0f033e4cc280bf44f}{get\-Tile\-Count} () override
+\begin{DoxyCompactList}\small\item\em Returns the number of tiles the objectmanager (and scene) has. \end{DoxyCompactList}\item 
+int \hyperlink{class_student_1_1_object_manager_a531f54aeb068a9876af1090df3ee9588}{get\-Tile\-Count\-For\-Player} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Course\-::\-Player\-Base} $>$ player) override
+\begin{DoxyCompactList}\small\item\em Returns the number of tiles a specific player has in the objectmanager (and scene) \end{DoxyCompactList}\item 
+int \hyperlink{class_student_1_1_object_manager_af2fbef00669d61b19c96e5abdf143d88}{get\-Neutral\-Tiles} () override
+\begin{DoxyCompactList}\small\item\em Returns the number of tiles the objectmanager (and scene) has that are owned by no one. \end{DoxyCompactList}\end{DoxyCompactItemize}
+
+
+\subsection{Detailed Description}
+The \hyperlink{class_student_1_1_object_manager}{Object\-Manager} class manages the tiles and various tile overlays. 
+
+\subsection{Member Function Documentation}
+\hypertarget{class_student_1_1_object_manager_a610b231ac8bb9d6f1236f6b8cda562cc}{\index{Student\-::\-Object\-Manager@{Student\-::\-Object\-Manager}!add\-Block\-Tile\-Overlays@{add\-Block\-Tile\-Overlays}}
+\index{add\-Block\-Tile\-Overlays@{add\-Block\-Tile\-Overlays}!Student::ObjectManager@{Student\-::\-Object\-Manager}}
+\subsubsection[{add\-Block\-Tile\-Overlays}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Object\-Manager\-::add\-Block\-Tile\-Overlays (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_object_manager_a610b231ac8bb9d6f1236f6b8cda562cc}
+
+
+Adds the overlay on the gamescene that shows the tiles the current player cannot place units on. 
+
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: No guarantee 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1i_object_manager}{Course\-::i\-Object\-Manager}.
+
+\hypertarget{class_student_1_1_object_manager_a460c283c4ba3c16a055cf9c223692873}{\index{Student\-::\-Object\-Manager@{Student\-::\-Object\-Manager}!add\-D\-A\-L\-S@{add\-D\-A\-L\-S}}
+\index{add\-D\-A\-L\-S@{add\-D\-A\-L\-S}!Student::ObjectManager@{Student\-::\-Object\-Manager}}
+\subsubsection[{add\-D\-A\-L\-S}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Object\-Manager\-::add\-D\-A\-L\-S (
+\begin{DoxyParamCaption}
+\item[{const std\-::shared\-\_\-ptr$<$ {\bf Course\-::i\-Game\-Event\-Handler} $>$}]{gameeventhandler, }
+\item[{const std\-::shared\-\_\-ptr$<$ {\bf Student\-::i\-Menu\-Object\-Manager} $>$}]{menuobjectmanager, }
+\item[{const std\-::shared\-\_\-ptr$<$ {\bf Student\-::\-Game\-Settings\-Manager} $>$}]{gamesettingsmanager}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}}}\label{class_student_1_1_object_manager_a460c283c4ba3c16a055cf9c223692873}
+
+
+Adds the pointers to the data access layers to the object manager. 
+
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: ?????????? 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_object_manager_ae8dec4f7c5cb058f4451a95c18dfdf7a}{\index{Student\-::\-Object\-Manager@{Student\-::\-Object\-Manager}!add\-Tiles@{add\-Tiles}}
+\index{add\-Tiles@{add\-Tiles}!Student::ObjectManager@{Student\-::\-Object\-Manager}}
+\subsubsection[{add\-Tiles}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Object\-Manager\-::add\-Tiles (
+\begin{DoxyParamCaption}
+\item[{const std\-::vector$<$ std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Tile\-Base} $>$$>$ \&}]{tiles}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_object_manager_ae8dec4f7c5cb058f4451a95c18dfdf7a}
+
+
+Adds new tiles to the \hyperlink{class_student_1_1_object_manager}{Object\-Manager}. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em tiles} & is a vector that contains pointers to the Tiles to be added. \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: Basic 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1i_object_manager_a826fa55229bdc23c49f847245fbdda95}{Course\-::i\-Object\-Manager}.
+
+\hypertarget{class_student_1_1_object_manager_adb8d0cd6c451e4b3eb6b3a0ece9c5efc}{\index{Student\-::\-Object\-Manager@{Student\-::\-Object\-Manager}!get\-Available\-Tiles@{get\-Available\-Tiles}}
+\index{get\-Available\-Tiles@{get\-Available\-Tiles}!Student::ObjectManager@{Student\-::\-Object\-Manager}}
+\subsubsection[{get\-Available\-Tiles}]{\setlength{\rightskip}{0pt plus 5cm}std\-::vector$<$ std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Tile\-Base} $>$ $>$ Student\-::\-Object\-Manager\-::get\-Available\-Tiles (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_object_manager_adb8d0cd6c451e4b3eb6b3a0ece9c5efc}
+
+
+Returns a vector of pointers to the tiles the current player can place an unit. 
+
+\begin{DoxyReturn}{Returns}
+A vector of pointers to the tiles the current player can place an unit 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: No guarantee 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1i_object_manager}{Course\-::i\-Object\-Manager}.
+
+\hypertarget{class_student_1_1_object_manager_ae2bb192b65b545e03bf754ad4b52e775}{\index{Student\-::\-Object\-Manager@{Student\-::\-Object\-Manager}!get\-Border\-Tile@{get\-Border\-Tile}}
+\index{get\-Border\-Tile@{get\-Border\-Tile}!Student::ObjectManager@{Student\-::\-Object\-Manager}}
+\subsubsection[{get\-Border\-Tile}]{\setlength{\rightskip}{0pt plus 5cm}std\-::shared\-\_\-ptr$<$ {\bf Student\-::\-Mouse\-Hover\-Border} $>$ Student\-::\-Object\-Manager\-::get\-Border\-Tile (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_object_manager_ae2bb192b65b545e03bf754ad4b52e775}
+
+
+Returns the pointer to the object that shows the tile the mouse pointer is on. 
+
+\begin{DoxyReturn}{Returns}
+Pointer to the border that is below the mouse cursor 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1i_object_manager}{Course\-::i\-Object\-Manager}.
+
+\hypertarget{class_student_1_1_object_manager_a544a3250cff479812cfed34431799d52}{\index{Student\-::\-Object\-Manager@{Student\-::\-Object\-Manager}!get\-Clicked\-Tile\-Border@{get\-Clicked\-Tile\-Border}}
+\index{get\-Clicked\-Tile\-Border@{get\-Clicked\-Tile\-Border}!Student::ObjectManager@{Student\-::\-Object\-Manager}}
+\subsubsection[{get\-Clicked\-Tile\-Border}]{\setlength{\rightskip}{0pt plus 5cm}std\-::shared\-\_\-ptr$<$ {\bf Student\-::\-Clicked\-Tile\-Border} $>$ Student\-::\-Object\-Manager\-::get\-Clicked\-Tile\-Border (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_object_manager_a544a3250cff479812cfed34431799d52}
+
+
+Gets the pointer to an object that shows the tile that was clicked. 
+
+\begin{DoxyReturn}{Returns}
+Pointer to the object that shows the tile that was clicked 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1i_object_manager}{Course\-::i\-Object\-Manager}.
+
+\hypertarget{class_student_1_1_object_manager_ae06bc95169a9304d83b70f51623401fa}{\index{Student\-::\-Object\-Manager@{Student\-::\-Object\-Manager}!get\-Game\-Scene@{get\-Game\-Scene}}
+\index{get\-Game\-Scene@{get\-Game\-Scene}!Student::ObjectManager@{Student\-::\-Object\-Manager}}
+\subsubsection[{get\-Game\-Scene}]{\setlength{\rightskip}{0pt plus 5cm}std\-::shared\-\_\-ptr$<$ {\bf Game\-Scene} $>$ Student\-::\-Object\-Manager\-::get\-Game\-Scene (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_object_manager_ae06bc95169a9304d83b70f51623401fa}
+
+
+Returns pointer to the \hyperlink{class_student_1_1_game_scene}{Game\-Scene}. 
+
+\begin{DoxyReturn}{Returns}
+Pointer to the \hyperlink{class_student_1_1_game_scene}{Game\-Scene} 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw. Returns nullptr if scene is not set 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1i_object_manager}{Course\-::i\-Object\-Manager}.
+
+\hypertarget{class_student_1_1_object_manager_a9a815fc22b86f903473ac0f78643e9f2}{\index{Student\-::\-Object\-Manager@{Student\-::\-Object\-Manager}!get\-Hq\-Connected\-Tiles@{get\-Hq\-Connected\-Tiles}}
+\index{get\-Hq\-Connected\-Tiles@{get\-Hq\-Connected\-Tiles}!Student::ObjectManager@{Student\-::\-Object\-Manager}}
+\subsubsection[{get\-Hq\-Connected\-Tiles}]{\setlength{\rightskip}{0pt plus 5cm}std\-::vector$<$ std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Tile\-Base} $>$ $>$ Student\-::\-Object\-Manager\-::get\-Hq\-Connected\-Tiles (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Player\-Base} $>$}]{player}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}}}\label{class_student_1_1_object_manager_a9a815fc22b86f903473ac0f78643e9f2}
+
+
+Returns a vector of pointers to the tiles that are connected to the given player's headquarters. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Pointer} & to a player object \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+A vector of pointers to the tiles that are connected to the given player's headquarters 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: Strong 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_object_manager_a14ff4416653fad129e352ba848955bac}{\index{Student\-::\-Object\-Manager@{Student\-::\-Object\-Manager}!get\-Hq\-Tile@{get\-Hq\-Tile}}
+\index{get\-Hq\-Tile@{get\-Hq\-Tile}!Student::ObjectManager@{Student\-::\-Object\-Manager}}
+\subsubsection[{get\-Hq\-Tile}]{\setlength{\rightskip}{0pt plus 5cm}std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Tile\-Base} $>$ Student\-::\-Object\-Manager\-::get\-Hq\-Tile (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Player\-Base} $>$}]{player}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}}}\label{class_student_1_1_object_manager_a14ff4416653fad129e352ba848955bac}
+
+
+Returns a pointer to the tile that has the given player's headquarters. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Pointer} & to a player object \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+A pointer to the tile that has the given player's headquarters 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: Strong 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_object_manager_af2fbef00669d61b19c96e5abdf143d88}{\index{Student\-::\-Object\-Manager@{Student\-::\-Object\-Manager}!get\-Neutral\-Tiles@{get\-Neutral\-Tiles}}
+\index{get\-Neutral\-Tiles@{get\-Neutral\-Tiles}!Student::ObjectManager@{Student\-::\-Object\-Manager}}
+\subsubsection[{get\-Neutral\-Tiles}]{\setlength{\rightskip}{0pt plus 5cm}int Student\-::\-Object\-Manager\-::get\-Neutral\-Tiles (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_object_manager_af2fbef00669d61b19c96e5abdf143d88}
+
+
+Returns the number of tiles the objectmanager (and scene) has that are owned by no one. 
+
+\begin{DoxyReturn}{Returns}
+Integer of the number of neutral tiles the scene has 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: No guarantee 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1i_object_manager}{Course\-::i\-Object\-Manager}.
+
+\hypertarget{class_student_1_1_object_manager_a0e6cbf9d399876c203a68fc85ac58603}{\index{Student\-::\-Object\-Manager@{Student\-::\-Object\-Manager}!get\-Tile@{get\-Tile}}
+\index{get\-Tile@{get\-Tile}!Student::ObjectManager@{Student\-::\-Object\-Manager}}
+\subsubsection[{get\-Tile}]{\setlength{\rightskip}{0pt plus 5cm}std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Tile\-Base} $>$ Student\-::\-Object\-Manager\-::get\-Tile (
+\begin{DoxyParamCaption}
+\item[{const {\bf Course\-::\-Coordinate} \&}]{coordinate}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_object_manager_a0e6cbf9d399876c203a68fc85ac58603}
+
+
+Returns a shared pointer to a Tile that has specified coordinate. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em coordinate} & Requested Tile's Coordinate \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+a pointer to a Tile that has the given coordinate. If no for the coordinate exists, return empty pointer. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: Basic 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1i_object_manager_afd7ab74d8a4cfedd50340c1e9096672d}{Course\-::i\-Object\-Manager}.
+
+\hypertarget{class_student_1_1_object_manager_a6f8e95c3b38c5fc0f033e4cc280bf44f}{\index{Student\-::\-Object\-Manager@{Student\-::\-Object\-Manager}!get\-Tile\-Count@{get\-Tile\-Count}}
+\index{get\-Tile\-Count@{get\-Tile\-Count}!Student::ObjectManager@{Student\-::\-Object\-Manager}}
+\subsubsection[{get\-Tile\-Count}]{\setlength{\rightskip}{0pt plus 5cm}int Student\-::\-Object\-Manager\-::get\-Tile\-Count (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_object_manager_a6f8e95c3b38c5fc0f033e4cc280bf44f}
+
+
+Returns the number of tiles the objectmanager (and scene) has. 
+
+\begin{DoxyReturn}{Returns}
+Integer of the number of tiles the scene has 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1i_object_manager}{Course\-::i\-Object\-Manager}.
+
+\hypertarget{class_student_1_1_object_manager_a531f54aeb068a9876af1090df3ee9588}{\index{Student\-::\-Object\-Manager@{Student\-::\-Object\-Manager}!get\-Tile\-Count\-For\-Player@{get\-Tile\-Count\-For\-Player}}
+\index{get\-Tile\-Count\-For\-Player@{get\-Tile\-Count\-For\-Player}!Student::ObjectManager@{Student\-::\-Object\-Manager}}
+\subsubsection[{get\-Tile\-Count\-For\-Player}]{\setlength{\rightskip}{0pt plus 5cm}int Student\-::\-Object\-Manager\-::get\-Tile\-Count\-For\-Player (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Player\-Base} $>$}]{player}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}}}\label{class_student_1_1_object_manager_a531f54aeb068a9876af1090df3ee9588}
+
+
+Returns the number of tiles a specific player has in the objectmanager (and scene) 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Pointer} & to a player object \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+Integer of the number of tiles a specific player has in the objectmanager (and scene) 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_object_manager_a0d6d943efd3d5ffb4504e7ca09faaca4}{\index{Student\-::\-Object\-Manager@{Student\-::\-Object\-Manager}!get\-Tiles@{get\-Tiles}}
+\index{get\-Tiles@{get\-Tiles}!Student::ObjectManager@{Student\-::\-Object\-Manager}}
+\subsubsection[{get\-Tiles}]{\setlength{\rightskip}{0pt plus 5cm}std\-::vector$<$ std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Tile\-Base} $>$ $>$ Student\-::\-Object\-Manager\-::get\-Tiles (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_object_manager_a0d6d943efd3d5ffb4504e7ca09faaca4}
+
+
+Returns a vector of shared pointers to Tiles specified by a vector of Coordinates. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em coordinates} & a vector of Coordinates for the requested Tiles \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+Vector of that contains pointers to Tile's that match the coordinates. The vector is empty if no matches were made. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: Basic 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1i_object_manager_adbc182a5aeaa8989eb1c91244edbd043}{Course\-::i\-Object\-Manager}.
+
+\hypertarget{class_student_1_1_object_manager_a7b4cc92e867501bc57ffbd5c136464bb}{\index{Student\-::\-Object\-Manager@{Student\-::\-Object\-Manager}!remove\-Block\-Tile\-Overlays@{remove\-Block\-Tile\-Overlays}}
+\index{remove\-Block\-Tile\-Overlays@{remove\-Block\-Tile\-Overlays}!Student::ObjectManager@{Student\-::\-Object\-Manager}}
+\subsubsection[{remove\-Block\-Tile\-Overlays}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Object\-Manager\-::remove\-Block\-Tile\-Overlays (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_object_manager_a7b4cc92e867501bc57ffbd5c136464bb}
+
+
+Removes the overlay on the gamescene that shows the tiles the current player cannot place units on. 
+
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: No guarantee 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1i_object_manager}{Course\-::i\-Object\-Manager}.
+
+\hypertarget{class_student_1_1_object_manager_a98a913a3d7ae9a73aec66b513ee71770}{\index{Student\-::\-Object\-Manager@{Student\-::\-Object\-Manager}!remove\-Clicked\-Tile\-Border@{remove\-Clicked\-Tile\-Border}}
+\index{remove\-Clicked\-Tile\-Border@{remove\-Clicked\-Tile\-Border}!Student::ObjectManager@{Student\-::\-Object\-Manager}}
+\subsubsection[{remove\-Clicked\-Tile\-Border}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Object\-Manager\-::remove\-Clicked\-Tile\-Border (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_object_manager_a98a913a3d7ae9a73aec66b513ee71770}
+
+
+Removes the pointer to the object that shows the tile that was clicked. 
+
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1i_object_manager}{Course\-::i\-Object\-Manager}.
+
+\hypertarget{class_student_1_1_object_manager_aabd37c052d8ffb1d50664b0874926ac1}{\index{Student\-::\-Object\-Manager@{Student\-::\-Object\-Manager}!replace\-Tile@{replace\-Tile}}
+\index{replace\-Tile@{replace\-Tile}!Student::ObjectManager@{Student\-::\-Object\-Manager}}
+\subsubsection[{replace\-Tile}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Object\-Manager\-::replace\-Tile (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Tile\-Base} $>$}]{old\-Tile, }
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Tile\-Base} $>$}]{new\-Tile}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}}}\label{class_student_1_1_object_manager_aabd37c052d8ffb1d50664b0874926ac1}
+
+
+Replaces a tile in the tiles\-\_\- vector with a new one. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em old\-Tile} & is a pointer to the tile to be removed. \\
+\hline
+{\em new\-Tile} & is a pointer to the tile to be added. \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_object_manager_ae655fb33ee87cc5d18b2b6d678e79f63}{\index{Student\-::\-Object\-Manager@{Student\-::\-Object\-Manager}!set\-Clicked\-Tile\-Border@{set\-Clicked\-Tile\-Border}}
+\index{set\-Clicked\-Tile\-Border@{set\-Clicked\-Tile\-Border}!Student::ObjectManager@{Student\-::\-Object\-Manager}}
+\subsubsection[{set\-Clicked\-Tile\-Border}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Object\-Manager\-::set\-Clicked\-Tile\-Border (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Tile\-Base} $>$}]{tile}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}}}\label{class_student_1_1_object_manager_ae655fb33ee87cc5d18b2b6d678e79f63}
+
+
+Sets a pointer to an object that shows the tile that was clicked. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Pointer} & to the tile the border is wanted to be drawn \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: No guarantee 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_object_manager_a373b6a5f09885f8b163ff529a42530f0}{\index{Student\-::\-Object\-Manager@{Student\-::\-Object\-Manager}!set\-Game\-Scene@{set\-Game\-Scene}}
+\index{set\-Game\-Scene@{set\-Game\-Scene}!Student::ObjectManager@{Student\-::\-Object\-Manager}}
+\subsubsection[{set\-Game\-Scene}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Object\-Manager\-::set\-Game\-Scene (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Game\-Scene} $>$}]{gs}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_object_manager_a373b6a5f09885f8b163ff529a42530f0}
+
+
+Sets pointer to the \hyperlink{class_student_1_1_game_scene}{Game\-Scene} for the \hyperlink{class_student_1_1_object_manager}{Object\-Manager}. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Shared} & pointer to the game scene \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1i_object_manager}{Course\-::i\-Object\-Manager}.
+
+\hypertarget{class_student_1_1_object_manager_a6e649730fdd0c158f76bced7d6cd218e}{\index{Student\-::\-Object\-Manager@{Student\-::\-Object\-Manager}!set\-Hover\-Border@{set\-Hover\-Border}}
+\index{set\-Hover\-Border@{set\-Hover\-Border}!Student::ObjectManager@{Student\-::\-Object\-Manager}}
+\subsubsection[{set\-Hover\-Border}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Object\-Manager\-::set\-Hover\-Border (
+\begin{DoxyParamCaption}
+\item[{const std\-::shared\-\_\-ptr$<$ {\bf Student\-::\-Mouse\-Hover\-Border} $>$}]{border}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}}}\label{class_student_1_1_object_manager_a6e649730fdd0c158f76bced7d6cd218e}
+
+
+Sets a pointer to an object that is on the tile the mouse pointer is on. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em coordinates} & a vector of Coordinates for the requested Tiles \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+Vector of that contains pointers to Tile's that match the coordinates. The vector is empty if no matches were made. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+The documentation for this class was generated from the following files\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-D\-A\-L/objectmanager.\-h\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-D\-A\-L/objectmanager.\-cpp\end{DoxyCompactItemize}

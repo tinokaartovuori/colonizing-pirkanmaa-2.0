@@ -1,0 +1,8 @@
+<map id="Graphical Class Hierarchy" name="Graphical Class Hierarchy">
+<area shape="rect" id="node2" href="$class_course_1_1_base_exception.html" title="The Exception class is a base&#45;class for custom exceptions in project. " alt="" coords="141,81,312,108"/>
+<area shape="rect" id="node3" href="$class_course_1_1_illegal_action.html" title="The IllegalAction exception is usually used in cases, where an illegal game action was attempted..." alt="" coords="365,31,521,57"/>
+<area shape="rect" id="node6" href="$class_course_1_1_invalid_pointer.html" title="The InvalidPointer exception is usually used in cases, where data can&#39;t be accessed through a pointer..." alt="" coords="360,81,525,108"/>
+<area shape="rect" id="node7" href="$class_course_1_1_key_error.html" title="The KeyError class is an Exception&#45;class for cases where the used key is invalid. ..." alt="" coords="377,132,508,159"/>
+<area shape="rect" id="node4" href="$class_course_1_1_not_enough_space.html" title="The NotEnoughSpace class is an Exception&#45;class for errors where GameObjects are being placed onto Til..." alt="" coords="574,5,759,32"/>
+<area shape="rect" id="node5" href="$class_course_1_1_owner_conflict.html" title="The OwnerConflict class is an Exception&#45;class for errors where an operation is conflicting with a Gam..." alt="" coords="583,56,750,83"/>
+</map>

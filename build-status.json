@@ -1,0 +1,54 @@
+{
+  "title": "Strange Device → AlphaZero",
+  "phases": [
+    {
+      "id": "device",
+      "title": "Strange Device -mekaniikka (TS + Rust)",
+      "status": "done",
+      "detail": "Ratkaiseva voittoehto molempiin engineihin (cp-sim + cp-ai + src/), balanssitettu lukkoaskelin: ratkeamattomat pelit 41.5% → ~1.7%."
+    },
+    {
+      "id": "parity",
+      "title": "Pariteetin uudelleenbaseline",
+      "status": "done",
+      "detail": "Golden-tracet uusittu Device-mekaniikalle; cp-sim/cp-ai toistaa TS-enginen bitilleen (8/8, 1600 päätöstä / 4800 sormenjälkeä)."
+    },
+    {
+      "id": "decisive",
+      "title": "Ratkaisevuustutkimus",
+      "status": "done",
+      "detail": "hard_vs_hard §10 outcome-cause-erittely + tile-majority tiebreak. Device-voitto-osuus ~40%, Device-selviytyminen ~50%."
+    },
+    {
+      "id": "dashboard",
+      "title": "Dashboard-mittarit (§10 ★top-5)",
+      "status": "done",
+      "detail": "Voittotavat-paneeli (kuka voitti & miten, molemmin puolin), policy-entropia, value-kalibrointi, Device build/survival, win-rate per seat + CI, intent-histogrammi, kierrokset/voittotapa."
+    },
+    {
+      "id": "intent",
+      "title": "Neuro-intent: BuildStrangeDevice",
+      "status": "done",
+      "detail": "INTENT_COUNT 11→12 (policy-input 63→64), TS source-of-truth → Rust-peilaus, pariteetti vihreä. Toimitettu weights.ts laajennettu 63→64 (transplant)."
+    },
+    {
+      "id": "replay",
+      "title": "Live-pelin katselu (replay-ikkuna)",
+      "status": "done",
+      "detail": "Trainer kirjoittaa replay.json joka 5. iteraatio; animoitu lauta (maasto: joki/vuori/metsä, omistus, rakennukset, sotilaat). Kartan siemen vaihtelee joka kerta + oletusnopeus 4×."
+    },
+    {
+      "id": "train",
+      "title": "AlphaZero-koulutus (halpa 64-dim koe)",
+      "status": "active",
+      "detail": "Cold-start 64-dim policy + value-MCTS ratkaisevalla pelillä. Mittaa: rikkoiko Device ~33% katon, vai onko esitys (spatiaalisesti sokea) yhä katto. Tauotettu HQ-/kartta-korjauksia varten, käynnistetään uudelleen.",
+      "progress": 0
+    },
+    {
+      "id": "register",
+      "title": "Benchmark + mestarin rekisteröinti",
+      "status": "pending",
+      "detail": "npm run models -- register <champion.json> --arc sd --type az; promote --deployed jos voittaa hard-botin → kirjoittaa src/ai/nn/weights.ts."
+    }
+  ]
+}

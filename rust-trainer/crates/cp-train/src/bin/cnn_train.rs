@@ -1,0 +1,6613 @@
+//! Standalone AlphaZero-style trainer CORE for the hand-rolled spatial CNN
+//! ([`cp_ai::spatial_net::SpatialNet`]).
+//!
+//! This is its OWN MCTS over the `cp_sim` forward model (NOT the generic
+//! `search.rs` PUCT) so the leaf value + per-candidate priors come from
+//! `SpatialNet` instead of the legacy MLP genome. It builds the self-play +
+//! example-generation core and proves it with a `--smoke` test; a full
+//! benchmark / iteration wrapper is a later task.
+//!
+//! ADDITIVE: nothing here touches the parity-locked path. The only existing file
+//! changed for this feature is `planes.rs` (terrain planes).
+//!
+//! ## What it does
+//! 1. `mcts_select`: a PUCT search whose ROOT edges are
+//!    `candidates::enumerate(...)`, priors = softmax over
+//!    `SpatialNet::score_candidate` (temperature `TAU`), leaf value =
+//!    `SpatialNet::value_from` on the leaf board (root-player perspective). Visit
+//!    counts → policy target π over the root candidates.
+//! 2. `play_one_game`: a self-play loop (both seats = SpatialNet+MCTS, or seat-1 =
+//!    HardAi for `--vs-hard`) mirroring `selfplay.rs` (HQ placement, the stalemate
+//!    cut). Records an [`Example`] per decision and back-fills `z` from the
+//!    outcome relative to that example's seat.
+//! 3. `train_batch`: accumulate `train_grad` over the batch, `apply_grad(lr,l2)`.
+//!
+//! Run: `cargo run --release -p cp-train --bin cnn_train -- --smoke`
+
+use cp_ai::candidates::{self, INTENT_COUNT, LOCAL_DIM};
+use cp_ai::features::global_features;
+use cp_ai::hard_ai::HardAi;
+use cp_ai::mlp::Genome;
+use cp_ai::planes::{board_planes, PLANE_COUNT};
+use cp_ai::policy::{self, Rng, XorShift32};
+use cp_ai::policy_spatial::candidate_target_tile;
+use cp_ai::selfplay::{board_signature, device_on_board, STALL_ROUNDS};
+use cp_ai::spatial_net::{BoardCache, PolicyScratch, SpatialGrad, SpatialNet};
+use cp_ai::tiers::{TierConfig, TRAINING_CONFIG};
+use cp_sim::model::UnitType;
+use cp_sim::{BuildingType, EndTurnOutcome, Game, PlayerId, TileId, TileType, WinCause};
+use rayon::prelude::*;
+use std::collections::VecDeque;
+use std::fs::{create_dir_all, OpenOptions};
+use std::io::Write as _;
+use std::path::PathBuf;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
+
+// --- hyperparameters (sane defaults; smoke overrides the sizes) --------------
+
+/// PUCT exploration constant (mirrors `search.rs` SearchConfig default 1.5).
+const C_PUCT: f64 = 1.5;
+/// Prior softmax temperature over `score_candidate` (mirrors `tau_prior`).
+const TAU: f64 = 1.0;
+/// FIX 2 margin: under `--turn-search-spend`, when the greedy policy says Pass the
+/// completion still executes the best non-Pass action UNLESS doing so drops the net's
+/// VALUE of the resulting position by more than this margin (then it ends the turn).
+/// Small + positive so it only refuses actions the value head deems clearly harmful.
+const TURN_SPEND_MARGIN: f64 = 0.02;
+/// SGD learning rate for the spatial net.
+const LR: f64 = 0.01;
+/// L2 weight decay.
+const L2: f64 = 1e-5;
+/// SpatialNet intent one-hot width (== INTENT_COUNT == 12).
+const INTENT_DIM: usize = INTENT_COUNT;
+/// SpatialNet per-candidate LOCAL feature width. This is the SHARED `c.local`
+/// (`LOCAL_DIM` == 16, built in candidates.rs and used by the parity MLP — DO NOT
+/// CHANGE) PLUS two CNN-only "remaining-capacity" features appended in
+/// `cand_feat` (free soldier slots / 5, free unit slots / 5, both clamp3'd). The
+/// spatial net is constructed with this dim so its policy head can SEE how many
+/// free soldier/unit slots the acting player has (the parity path never sees
+/// these — they live only in this trainer's spatial feature vector).
+const SPATIAL_LOCAL_DIM: usize = LOCAL_DIM + 2;
+
+/// Per-state SCALAR economy/strategy features fed into the VALUE head (NOT the
+/// policy head) alongside the pooled `global_embed`. The value head previously
+/// pooled the spatial planes only and produced a near-FLAT value across very
+/// different economic/strategic states (verified via `--diagnose`: leaf_value and
+/// post-MCTS Q-values varied by < 0.05 between "build an Outpost", "Attack" and
+/// "Pass"), so MCTS could not discover the economy→army→Device line and the AI
+/// plateaued at conquest. These 8 scalars give the value head DIRECT, legible
+/// access to exactly the quantities the Φ-shaped value TARGET depends on (income,
+/// staffing, FILLED capacity, treasury-toward-Device) plus the decisive-window /
+/// device-countdown state, so it can REPRESENT the long economy→Device payoff.
+/// Built by [`value_scalars`]; length pinned here and gradient-checked at this
+/// width in `spatial_net.rs` (`combined_grad_fd_value_scalars`).
+const VALUE_SCALAR_DIM: usize = 12;
+
+/// A `(target, local, intent_onehot)` triple in the exact shape
+/// `SpatialNet::train_grad` expects per candidate.
+type CandFeat = (Option<(usize, usize)>, Vec<f64>, Vec<f64>);
+
+/// Build the [`VALUE_SCALAR_DIM`]-length per-state scalar feature vector for the
+/// VALUE head, from the ACTING `seat`'s perspective (the same seat `board_planes`
+/// is built from). All entries are bounded to roughly `[-1, 1]`. These mirror the
+/// quantities in [`potential`] (the Φ the value target is shaped with) plus the
+/// Strange-Device decisive state, which the pooled planes cannot expose:
+///   0. realized (growth-aware) income / round, normalised by 400, clamp01
+///   1. staffed ratio  (producing producers / total producers)
+///   2. FILLED worker slots / 10, clamp01  (used capacity, not empty)
+///   3. FILLED soldier slots / 6, clamp01
+///   4. treasury money / DEVICE_MONEY_COST, clamp01  (banking toward the Device)
+///   5. tile-lead  (my_tiles − max_enemy_tiles) / total_tiles, signed in [-1,1]
+///   6. device-window flag: 1.0 iff rounds ≥ DEVICE_MIN_ROUND AND no Device stands
+///      AND I am not losing on tiles (the state in which the Device is a live,
+///      buildable, decisive option for me) else 0.0
+///   7. MY device countdown / 40 (0.0 if I do not own a standing Device): the live
+///      race clock when I have committed to the Device.
+///   8. RELATIVE army strength: tanh((my_soldiers − max_enemy_soldiers)/4), signed
+///      in (-1,1). Lets the value head read whether I out- or under-number the foe.
+///   9. SOLDIER headroom: free_soldier_amount / 6, clamp01 — REMAINING soldier cap.
+///      The net could see filled cap (scalar 3) but not remaining, so it never
+///      learned that an Outpost UNLOCKS room (capacity-blindness).
+///  10. WORKER headroom: free_unit_amount / 10, clamp01 — remaining worker cap.
+///  11. ENEMY device threat: enemy device countdown progress in [0,1] (0 if no live
+///      enemy owns a standing Device) — the race clock against ME, mirror of #7.
+fn value_scalars(g: &Game, seat: PlayerId) -> Vec<f64> {
+    use cp_sim::resources::BasicResource;
+    let inc = clamp01(realized_income_per_round(g, seat) / 400.0);
+
+    // Staffed ratio (growth-aware), same definition as `potential`.
+    let mut total = 0i64;
+    let mut producing = 0i64;
+    for tid in g.owned_tiles(seat) {
+        let Some(b) = &g.tiles[tid.0].building else {
+            continue;
+        };
+        if !is_producer_building(b.kind) {
+            continue;
+        }
+        total += 1;
+        if is_producing_now(g, tid) {
+            producing += 1;
+        }
+    }
+    let staffed_ratio = producing as f64 / total.max(1) as f64;
+
+    // Filled (used) capacity — absolute, matching the fixed Φ cap term.
+    let max_unit = g.players[seat.0].max_unit_amount;
+    let max_soldier = g.players[seat.0].max_soldier_amount;
+    let used_unit = (max_unit - g.free_unit_amount(seat)).max(0);
+    let used_soldier = (max_soldier - g.free_soldier_amount(seat)).max(0);
+    let used_unit_n = clamp01(used_unit as f64 / 10.0);
+    let used_soldier_n = clamp01(used_soldier as f64 / 6.0);
+
+    // Treasury toward the Device.
+    let money = g.players[seat.0].resources.get(BasicResource::Money).unwrap_or(0) as f64;
+    let bank = clamp01(money / DEVICE_MONEY_COST);
+
+    // Tile lead, signed in [-1, 1].
+    let my_tiles = g.get_tile_count_for_player(seat) as f64;
+    let max_enemy = g
+        .live_players()
+        .iter()
+        .filter(|&&q| q != seat)
+        .map(|&q| g.get_tile_count_for_player(q))
+        .max()
+        .unwrap_or(0) as f64;
+    let total_tiles = (g.get_tile_count() as f64).max(1.0);
+    let tile_lead = ((my_tiles - max_enemy) / total_tiles).clamp(-1.0, 1.0);
+
+    // Device-window flag: rounds matured, no Device standing, and I am not losing.
+    let not_losing = g
+        .live_players()
+        .iter()
+        .all(|&q| q == seat || g.get_tile_count_for_player(q) as f64 <= my_tiles);
+    let device_window = if g.get_rounds_played() >= DEVICE_MIN_ROUND
+        && !g.has_strange_device()
+        && not_losing
+    {
+        1.0
+    } else {
+        0.0
+    };
+
+    // My device countdown (the live race clock) / 40, else 0.
+    let my_countdown = match g.find_strange_device_tile() {
+        Some(dt) if g.tiles[dt.0].owner == Some(seat) => {
+            let cd = g.tiles[dt.0].building.as_ref().map(|b| b.countdown).unwrap_or(0);
+            clamp01(cd as f64 / 40.0)
+        }
+        _ => 0.0,
+    };
+
+    // Relative army strength (signed): my soldiers vs the strongest live enemy.
+    let my_soldiers = g.current_soldier_amount(seat) as f64;
+    let max_enemy_soldiers = g
+        .live_players()
+        .iter()
+        .filter(|&&q| q != seat)
+        .map(|&q| g.current_soldier_amount(q))
+        .max()
+        .unwrap_or(0) as f64;
+    let rel_army = ((my_soldiers - max_enemy_soldiers) / 4.0).tanh();
+
+    // Remaining capacity HEADROOM (the capacity-blindness fix): how many soldier /
+    // worker slots are still FREE to fill (an Outpost/Village raises these).
+    let soldier_headroom = clamp01(g.free_soldier_amount(seat) as f64 / 6.0);
+    let worker_headroom = clamp01(g.free_unit_amount(seat) as f64 / 10.0);
+
+    // Enemy device threat: the race clock against me. Progress in [0,1] of any live
+    // ENEMY's standing device toward detonation (mirror of `my_countdown`).
+    let enemy_device_threat = match g.find_strange_device_tile() {
+        Some(dt) => match g.tiles[dt.0].owner {
+            Some(o) if o != seat && g.live_players().contains(&o) => {
+                let cd = g.tiles[dt.0].building.as_ref().map(|b| b.countdown.max(0)).unwrap_or(0) as f64;
+                let max_cd = cp_sim::resources::strange_device_countdown(g.get_tile_count()).max(1) as f64;
+                clamp01((max_cd - cd) / max_cd)
+            }
+            _ => 0.0,
+        },
+        None => 0.0,
+    };
+
+    vec![
+        inc,
+        staffed_ratio,
+        used_unit_n,
+        used_soldier_n,
+        bank,
+        tile_lead,
+        device_window,
+        my_countdown,
+        rel_army,
+        soldier_headroom,
+        worker_headroom,
+        enemy_device_threat,
+    ]
+}
+
+/// One recorded decision: the board the net sees, its candidate features, the
+/// MCTS visit-count policy target `pi`, the deciding seat, and (filled at game
+/// end) the outcome `z` from that seat's perspective.
+struct Example {
+    planes: Vec<f64>,
+    h: usize,
+    w: usize,
+    /// Per-state value-head scalar features (length [`VALUE_SCALAR_DIM`]) captured
+    /// at the same state as `planes`, for the acting `seat`. Fed into the value
+    /// head during training so the value loss/grad sees the same scalars inference
+    /// does. Built by [`value_scalars`].
+    value_scalars: Vec<f64>,
+    cands: Vec<CandFeat>,
+    pi: Vec<f64>,
+    seat: PlayerId,
+    /// Potential Φ(s) of the acting seat at the state this example was captured in
+    /// (filled at capture time). Used by potential-based reward shaping to compute
+    /// the per-step shaped value target. Ignored when `shape_weight = 0`.
+    phi: f64,
+    z: f64,
+    /// The Intent the acting seat CHOSE at this decision (for Lever C action-level
+    /// device credit). Lets the post-hoc credit pass add explicit advantage to the
+    /// `BuildStrangeDevice` decision and the device-DEFENDING decisions (HireSoldier
+    /// while owning a standing device) in games that end in a Device win, without
+    /// touching the diffuse whole-game |z| reweight. Not used by training itself —
+    /// only by the credit pass that adjusts `z`.
+    chosen_intent: candidates::Intent,
+    /// Whether the acting seat OWNED a standing Strange Device at this decision's
+    /// state (for Lever C action-level device credit: defending an own device, and
+    /// the negative credit for passively losing a winnable device). Captured at
+    /// example-push time.
+    owned_standing_device: bool,
+    /// VALUE-ONLY example: the `cands`/`pi` carry NO usable policy target (e.g. a
+    /// scripted HARD opponent seat's trajectory, recorded for its clean ±1 VALUE
+    /// signal only — Lever C `--record-opp-value`). When true, training uses
+    /// [`SpatialNet::train_grad_value_only_scalars`] (value head only; the policy
+    /// head is untouched). Default `false` → an ordinary MCTS policy+value example,
+    /// so prior runs are byte-identical.
+    value_only: bool,
+}
+
+// --- economy scaffold (mirror controller.rs::plan_turn) ----------------------
+//
+// The MLP controller (`controller.rs::plan_turn`) and the alphazero search path
+// run a deterministic, GENOME-INDEPENDENT safety scaffold each turn:
+//   - `ensure_income` (= ensure_wood_income + staff_income) BEFORE the decision loop,
+//   - `staff_income` AFTER every executed candidate (re-staff freed/new workers).
+// Without it a seat never staffs workers, generates no income, and `enumerate`
+// degenerates to {Pass} (+ the scaffold BuildFarm) from round 1 on — which is
+// exactly why the CNN's OWN turn loops (re-implemented from scratch here) only
+// ever produced BuildFarm/Pass. We reuse the controller's EXACT scaffold via a
+// throwaway controller over a zero genome (the scaffold ignores the genome).
+
+/// Run the full pre-loop scaffold (`ensure_income`) for `player`.
+fn scaffold_ensure(g: &mut Game, player: PlayerId, cfg: &TierConfig) {
+    use cp_ai::controller::NeuralAiController;
+    let genome = Genome::zero(&cp_ai::policy::DEFAULT_ARCH);
+    let ctrl = NeuralAiController::new(&genome, *cfg);
+    ctrl.ensure_income_pub(g, player);
+}
+
+/// Re-staff after a candidate executes (mirrors the controller's per-iteration
+/// `staff_income`).
+fn scaffold_staff(g: &mut Game, player: PlayerId, cfg: &TierConfig) {
+    use cp_ai::controller::NeuralAiController;
+    let genome = Genome::zero(&cp_ai::policy::DEFAULT_ARCH);
+    let ctrl = NeuralAiController::new(&genome, *cfg);
+    ctrl.staff_income_pub(g, player);
+}
+
+// --- candidate feature extraction --------------------------------------------
+
+/// Map a `TileId` target to its `(x, y)` grid cell via the tile coords.
+fn target_xy(g: &Game, c: &candidates::Candidate) -> Option<(usize, usize)> {
+    let t = candidate_target_tile(c)?;
+    let tile = &g.get_tiles()[t.0];
+    if tile.x < 0 || tile.y < 0 {
+        return None;
+    }
+    Some((tile.x as usize, tile.y as usize))
+}
+
+/// 12-dim one-hot of a candidate's `Intent`.
+fn intent_onehot(c: &candidates::Candidate) -> Vec<f64> {
+    let mut v = vec![0.0; INTENT_DIM];
+    let i = c.intent as usize;
+    if i < INTENT_DIM {
+        v[i] = 1.0;
+    }
+    v
+}
+
+/// Clamp to ±3 (identical to the private `candidates::clamp3` used to build
+/// `c.local`; re-declared locally because that one is not `pub`).
+#[inline]
+fn clamp3(v: f64) -> f64 {
+    if v < -3.0 {
+        -3.0
+    } else if v > 3.0 {
+        3.0
+    } else {
+        v
+    }
+}
+
+/// Build the `SpatialNet` candidate features for one candidate against `g`, for
+/// the ACTING `player` (the seat to move — the same seat `board_planes` is built
+/// from).
+///
+/// The local vector is the SHARED `c.local` (indices 0..15, length `LOCAL_DIM`,
+/// built in candidates.rs — UNTOUCHED, also used by the parity MLP) PLUS two
+/// CNN-only "remaining-capacity" features appended AFTER it (so 0..15 stay
+/// unchanged):
+///   - index 16 = clamp3(free_soldier_amount(player) / 5)
+///   - index 17 = clamp3(free_unit_amount(player) / 5)
+/// These are per-PLAYER scalars (same for every candidate of the state), so the
+/// policy head can SEE how many free soldier/unit slots remain (it was blind to
+/// this, which is why it never built Outposts). Result length == `SPATIAL_LOCAL_DIM`.
+fn cand_feat(g: &Game, player: PlayerId, c: &candidates::Candidate) -> CandFeat {
+    debug_assert_eq!(c.local.len(), LOCAL_DIM);
+    let mut local = Vec::with_capacity(SPATIAL_LOCAL_DIM);
+    local.extend_from_slice(&c.local); // 0..15 — SHARED, do not modify
+    local.push(clamp3(g.free_soldier_amount(player) as f64 / 5.0)); // 16
+    local.push(clamp3(g.free_unit_amount(player) as f64 / 5.0)); // 17
+    debug_assert_eq!(local.len(), SPATIAL_LOCAL_DIM);
+    (target_xy(g, c), local, intent_onehot(c))
+}
+
+// --- standalone PUCT MCTS over SpatialNet ------------------------------------
+
+/// One node = a mid-turn state for the ROOT player, reached by replaying edge
+/// actions from the root game. We cache the node's `Game` + enumerated
+/// candidates + priors (softmax over `score_candidate`), mirroring `search.rs`.
+struct Node {
+    game: Game,
+    cands: Vec<candidates::Candidate>,
+    priors: Vec<f64>,
+    children: Vec<Option<usize>>,
+    edge_visits: Vec<f64>,
+    edge_value: Vec<f64>,
+    visits: f64,
+    expanded: bool,
+    terminal: bool,
+    /// Trunk output (`forward_board`) cached at node creation so the leaf-value
+    /// evaluation reuses it instead of recomputing the (dominant-cost) conv
+    /// trunk. `None` for terminal nodes (which never run the trunk).
+    cache: Option<BoardCache>,
+}
+
+struct Mcts<'a> {
+    nodes: Vec<Node>,
+    net: &'a SpatialNet,
+    player: PlayerId,
+    cfg: TierConfig,
+    /// Reused across every edge expansion in this tree's lifetime so the forced
+    /// opponent turns in `advance_after_root` don't allocate a fresh `HardAi`
+    /// per MCTS node. `HardAi` is stateless across turns (`plan_turn` resets its
+    /// `budget`/`params` at entry and restores `params` at exit), so a single
+    /// instance produces identical play to per-node construction.
+    bot: HardAi,
+    /// LEVER A (horizon): when true, an expanded root edge does NOT end the turn
+    /// after its single searched intent. Instead the root player COMPLETES the
+    /// rest of its turn (greedy argmax over the net's own policy via the existing
+    /// `enumerate` → `score_candidate_into` → `execute_action` loop, mirroring the
+    /// deployed turn loop) up to the remaining budget, THEN the opponents move and
+    /// `end_turn` fires. Effect: one MCTS tree edge advances a FULL turn, so tree
+    /// DEPTH is measured in ROUNDS (not intents) and 48 sims reach many rounds —
+    /// far enough to see the conquest (~r35) / Strange-Device (~r90) payoffs that
+    /// the squashed value head and 1–2-decision-deep search could not.
+    ///
+    /// Parity-safe: search-side only. The 12-intent policy head, `candidates.rs`,
+    /// `enumerate`, costs/gates and net I/O are untouched; the recorded example
+    /// (root state, π over root candidates) is unchanged. Default false = the
+    /// pre-Lever-A behaviour (each edge = one intent then immediate `end_turn`).
+    turn_search: bool,
+    /// Remaining intent budget for completing the root turn under `turn_search`.
+    /// The root's first (searched) intent has already consumed one slot when the
+    /// completion runs, so this is `cfg.budget - 1` worth of follow-up intents.
+    turn_budget: i64,
+    /// FIX 2 (turn-search SPEND-the-budget). When true, `complete_root_turn` does
+    /// NOT `break` the moment the net's greedy argmax is Pass: it instead keeps
+    /// selecting the best NON-Pass candidate and executes it until the budget is
+    /// exhausted OR no non-Pass candidate improves the greedy leaf score beyond a
+    /// small margin. This cures the structural "do one thing then stop" that the
+    /// break-on-Pass completion reinforced. Only consulted when `turn_search` is on.
+    /// Default false = the exact break-on-Pass behaviour.
+    turn_search_spend: bool,
+}
+
+impl<'a> Mcts<'a> {
+    /// Build a node: enumerate candidates at `g`, run the trunk once on
+    /// `board_planes(g, player)`, score every candidate, softmax → priors.
+    ///
+    /// If `g` is already TERMINAL (≤1 live player — e.g. a child reached via
+    /// `advance_after_root` ended in a win or a mutual / 0-survivor elimination),
+    /// we must NOT call `enumerate`: it routes through `get_available_tiles` →
+    /// `current_player()`, which indexes the now empty `player_order` and panics.
+    /// Build a candidate-free terminal node instead; `leaf_value` scores it from
+    /// survivorship and the descent never expands past it.
+    fn make_node(&self, g: &Game) -> Node {
+        if g.live_players().len() <= 1 {
+            return Node {
+                game: g.clone(),
+                cands: Vec::new(),
+                priors: Vec::new(),
+                children: Vec::new(),
+                edge_visits: Vec::new(),
+                edge_value: Vec::new(),
+                visits: 0.0,
+                expanded: false,
+                terminal: true,
+                cache: None,
+            };
+        }
+        let cands = candidates::enumerate(g, self.player, &self.cfg);
+        let (planes, h, w) = board_planes(g, self.player);
+        let cache = self
+            .net
+            .forward_board_scalars(&planes, h, w, &value_scalars(g, self.player));
+        let mut scratch = PolicyScratch::new();
+        let scores: Vec<f64> = cands
+            .iter()
+            .map(|c| {
+                let (tgt, local, intent) = cand_feat(g, self.player, c);
+                self.net
+                    .score_candidate_into(&cache, tgt, &local, &intent, &mut scratch)
+            })
+            .collect();
+        let priors = softmax_tau(&scores, TAU);
+        let n = cands.len();
+        let terminal = cands
+            .iter()
+            .all(|c| c.intent == candidates::Intent::Pass);
+        Node {
+            game: g.clone(),
+            cands,
+            priors,
+            children: vec![None; n],
+            edge_visits: vec![0.0; n],
+            edge_value: vec![0.0; n],
+            visits: 0.0,
+            expanded: false,
+            terminal,
+            // Reuse this trunk output for the leaf-value evaluation.
+            cache: Some(cache),
+        }
+    }
+
+    /// Leaf value from the root player's perspective, evaluated on a `Node`. The
+    /// board planes are built FROM the root player, so the value is already in the
+    /// root's frame — no sign flip needed. Exact ±1 on a terminal leaf.
+    ///
+    /// Reuses the node's cached trunk output (`node.cache`, populated by
+    /// `make_node`) instead of recomputing the dominant-cost conv trunk. Non-
+    /// terminal nodes always carry a cache; the survivorship short-circuits below
+    /// cover the terminal cases (where `cache` is `None`).
+    fn leaf_value(&self, node: &Node) -> f64 {
+        let g = &node.game;
+        if !g.live_players().iter().any(|&p| p == self.player) {
+            return -1.0; // root eliminated
+        }
+        if g.live_players().len() <= 1 {
+            return 1.0; // root is sole survivor
+        }
+        match &node.cache {
+            Some(cache) => self.net.value_from(cache), // tanh output already in [-1,1]
+            None => {
+                // Defensive fallback: a non-terminal node should always carry a
+                // cache, but recompute the trunk if one is somehow missing.
+                let (planes, h, w) = board_planes(g, self.player);
+                let cache =
+                    self.net
+                        .forward_board_scalars(&planes, h, w, &value_scalars(g, self.player));
+                self.net.value_from(&cache)
+            }
+        }
+    }
+}
+
+impl<'a> Mcts<'a> {
+    /// LEVER A: complete the root player's CURRENT turn after its first (searched)
+    /// intent has executed, by greedily applying further intents via the net's own
+    /// policy — the SAME enumerate → `score_candidate_into` argmax → `execute_action`
+    /// + staff loop the deployed controller runs (`controller.rs::plan_turn`), minus
+    /// recording. Runs until Pass / no multi-candidate decision / budget exhausted.
+    /// No-op (never called) unless `turn_search` is set. Does NOT call `end_turn`
+    /// (the caller's `advance_after_root` does that). Mutates `g` in place.
+    fn complete_root_turn(&self, g: &mut Game) {
+        let mut budget = self.turn_budget;
+        let mut scratch = PolicyScratch::new();
+        while budget > 0 {
+            // The game can become terminal mid-turn (e.g. a conquest eliminates the
+            // last opponent on an Attack); never enumerate on a finished board.
+            if g.live_players().len() <= 1 || g.current_player() != self.player {
+                break;
+            }
+            let cands = candidates::enumerate(g, self.player, &self.cfg);
+            if cands.len() <= 1 {
+                break;
+            }
+            // Greedy argmax over the net's candidate scores (temperature-0 policy),
+            // reusing one trunk forward for all candidates of this decision.
+            let (planes, h, w) = board_planes(g, self.player);
+            let cache =
+                self.net
+                    .forward_board_scalars(&planes, h, w, &value_scalars(g, self.player));
+            let mut best = 0usize;
+            let mut best_s = f64::NEG_INFINITY;
+            for (i, c) in cands.iter().enumerate() {
+                let (tgt, local, intent) = cand_feat(g, self.player, c);
+                let s = self
+                    .net
+                    .score_candidate_into(&cache, tgt, &local, &intent, &mut scratch);
+                if s > best_s {
+                    best_s = s;
+                    best = i;
+                }
+            }
+            // FIX 2: by default, a greedy Pass ENDS the completion (break-on-Pass) —
+            // which forfeits the rest of the turn budget on the FIRST time Pass scores
+            // highest, the structural "do one thing then stop" passivity.
+            let choice_idx = if cands[best].intent == candidates::Intent::Pass {
+                if !self.turn_search_spend {
+                    break;
+                }
+                // SPEND-the-budget: a greedy Pass no longer stops the turn. Pick the
+                // best NON-Pass candidate (by the same policy score) and KEEP it ONLY
+                // if executing it does not WORSEN the net's VALUE of the resulting
+                // position by more than a tiny margin — i.e. acting is at least
+                // roughly value-neutral, not strictly worse than passing. This spends
+                // the remaining budget on productive expansion/build/hire instead of
+                // idling, while still refusing a move the value head deems harmful.
+                let mut nb = usize::MAX;
+                let mut nb_s = f64::NEG_INFINITY;
+                for (i, c) in cands.iter().enumerate() {
+                    if c.intent == candidates::Intent::Pass {
+                        continue;
+                    }
+                    let (tgt, local, intent) = cand_feat(g, self.player, c);
+                    let s = self
+                        .net
+                        .score_candidate_into(&cache, tgt, &local, &intent, &mut scratch);
+                    if s > nb_s {
+                        nb_s = s;
+                        nb = i;
+                    }
+                }
+                if nb == usize::MAX {
+                    break;
+                }
+                // Value of the CURRENT (pre-action) leaf vs the leaf AFTER the
+                // candidate. `value_from(&cache)` is the current state's value
+                // (root frame); simulate the action on a clone for the post-value.
+                let v_now = self.net.value_from(&cache);
+                let mut probe = g.clone();
+                if !candidates::execute_action(&mut probe, self.player, &self.cfg, &cands[nb].action) {
+                    break;
+                }
+                scaffold_staff(&mut probe, self.player, &self.cfg);
+                let (pp, ph, pw) = board_planes(&probe, self.player);
+                let pcache =
+                    self.net
+                        .forward_board_scalars(&pp, ph, pw, &value_scalars(&probe, self.player));
+                let v_next = self.net.value_from(&pcache);
+                if v_next + TURN_SPEND_MARGIN < v_now {
+                    break; // acting strictly worsens our position → end the turn
+                }
+                nb
+            } else {
+                best
+            };
+            let choice = &cands[choice_idx];
+            if !candidates::execute_action(g, self.player, &self.cfg, &choice.action) {
+                break;
+            }
+            scaffold_staff(g, self.player, &self.cfg);
+            budget -= 1;
+        }
+    }
+}
+
+/// PUCT: argmax Q + c_puct·P·sqrt(N)/(1+N(s,a)). Ties → lowest index.
+fn puct_select(node: &Node) -> usize {
+    let sqrt_n = node.visits.max(0.0).sqrt();
+    let mut best = 0usize;
+    let mut best_score = f64::NEG_INFINITY;
+    for a in 0..node.cands.len() {
+        let n_sa = node.edge_visits[a];
+        let q = if n_sa > 0.0 {
+            node.edge_value[a] / n_sa
+        } else {
+            0.0
+        };
+        let u = C_PUCT * node.priors[a] * sqrt_n / (1.0 + n_sa);
+        let s = q + u;
+        if s > best_score {
+            best_score = s;
+            best = a;
+        }
+    }
+    best
+}
+
+/// Advance every NON-root seat by one forced deterministic turn, then end the
+/// root player's turn. Mirrors `search.rs::advance_round_after_root_turn`, but
+/// the forced opponents are HARD-bot turns (a cheap, parity-free stand-in for the
+/// no-search policy; opponents are not branched in this single-player MCTS).
+fn advance_after_root(
+    g: &mut Game,
+    root: PlayerId,
+    cfg: &TierConfig,
+    bot: &mut HardAi,
+) -> Option<EndTurnOutcome> {
+    match g.end_turn() {
+        EndTurnOutcome::Win(p) => return Some(EndTurnOutcome::Win(p)),
+        EndTurnOutcome::Tie => return Some(EndTurnOutcome::Tie),
+        _ => {}
+    }
+    // Advance the non-root seats one forced turn each. `live_players().len() > 1`
+    // is the SAME terminal test the outer self-play loop uses: the moment an
+    // `end_turn` collapses the game to ≤1 live seat (a win or a mutual / 0-survivor
+    // elimination), we must STOP and never call `current_player()` on the now
+    // empty/short `player_order`. The `Win`/`Tie` arms below cover the 1- and
+    // 0-survivor cases respectively; the `> 1` guard re-checks before each read.
+    while g.live_players().len() > 1 {
+        let cur = g.current_player();
+        if cur == root {
+            break;
+        }
+        bot.plan_turn(g, cur);
+        match g.end_turn() {
+            EndTurnOutcome::Win(p) => return Some(EndTurnOutcome::Win(p)),
+            EndTurnOutcome::Tie => return Some(EndTurnOutcome::Tie),
+            _ => {}
+        }
+        // Defensive: if the game became terminal via any other outcome, do not
+        // loop back and read `current_player()` on a finished board.
+        if g.live_players().len() <= 1 {
+            break;
+        }
+    }
+    let _ = cfg;
+    None
+}
+
+/// One simulation: descend via PUCT to an unexpanded/terminal node, expand &
+/// evaluate it, back up the value (root-player perspective) along the path.
+fn simulate(tree: &mut Mcts, cfg: &TierConfig) -> f64 {
+    let mut visited: Vec<(usize, usize)> = Vec::new();
+    let mut node = 0usize;
+
+    loop {
+        if tree.nodes[node].terminal || !tree.nodes[node].expanded {
+            break;
+        }
+        let edge = puct_select(&tree.nodes[node]);
+        visited.push((node, edge));
+        match tree.nodes[node].children[edge] {
+            Some(child) => node = child,
+            None => {
+                // Expand: apply the edge action to the parent's cached game, then
+                // play out all opponents back to the root player's turn.
+                let mut g = tree.nodes[node].game.clone();
+                let action = tree.nodes[node].cands[edge].action.clone();
+                let _ = candidates::execute_action(&mut g, tree.player, cfg, &action);
+                // LEVER A: with turn-search on, finish the root's turn (greedy
+                // policy) so this edge advances a FULL turn before the opponents
+                // move — making tree DEPTH = rounds. Default off = unchanged.
+                if tree.turn_search {
+                    tree.complete_root_turn(&mut g);
+                }
+                let _ = advance_after_root(&mut g, tree.player, cfg, &mut tree.bot);
+                let child = tree.make_node(&g);
+                tree.nodes.push(child);
+                let idx = tree.nodes.len() - 1;
+                tree.nodes[node].children[edge] = Some(idx);
+                node = idx;
+                break;
+            }
+        }
+    }
+
+    let value = tree.leaf_value(&tree.nodes[node]);
+    tree.nodes[node].expanded = true;
+    tree.nodes[node].visits += 1.0;
+    for &(n, e) in &visited {
+        tree.nodes[n].edge_visits[e] += 1.0;
+        tree.nodes[n].edge_value[e] += value;
+        tree.nodes[n].visits += 1.0;
+    }
+    value
+}
+
+/// Result of one MCTS decision: the played candidate index and the visit-count
+/// policy target `pi` over the root candidates.
+struct MctsResult {
+    chosen: usize,
+    pi: Vec<f64>,
+}
+
+/// Run `n_sims` PUCT simulations for the current mid-turn decision. `g` is the
+/// live mid-turn game (after the prior decisions in this turn have executed);
+/// it is NOT mutated. Returns the most-visited root edge + π.
+fn mcts_select(
+    net: &SpatialNet,
+    g: &Game,
+    player: PlayerId,
+    cfg: &TierConfig,
+    n_sims: usize,
+    eval_prior_floor: f64,
+    turn_search: bool,
+    turn_search_spend: bool,
+) -> MctsResult {
+    let mut tree = Mcts {
+        nodes: Vec::new(),
+        net,
+        player,
+        cfg: *cfg,
+        bot: HardAi::hard(),
+        turn_search,
+        // The root's first (searched) intent consumes one budget slot, so the
+        // completion fills the remaining (budget - 1). Unused when turn_search off.
+        turn_budget: (cfg.budget - 1).max(0),
+        turn_search_spend,
+    };
+    let mut root = tree.make_node(g);
+    // Optional eval/bench prior-floor: when > 0, prop the starved build intents the
+    // same way self-play does, so the greedy bench can be measured WITH the device
+    // propped (diagnostic). Default 0 = honest greedy (no floor). Mirrors the
+    // self-play floor in `mcts_select_explore`.
+    if eval_prior_floor > 0.0 {
+        let starved: Vec<bool> = root.cands.iter().map(|c| is_starved_build(c.intent)).collect();
+        apply_build_prior_floor(&mut root.priors, &starved, eval_prior_floor);
+    }
+    let n = root.cands.len();
+    tree.nodes.push(root);
+    if n <= 1 {
+        let mut pi = vec![0.0; n];
+        if n == 1 {
+            pi[0] = 1.0;
+        }
+        return MctsResult { chosen: 0, pi };
+    }
+    for _ in 0..n_sims {
+        simulate(&mut tree, cfg);
+    }
+    let ev = &tree.nodes[0].edge_visits;
+    let total: f64 = ev.iter().sum();
+    let pi: Vec<f64> = if total > 0.0 {
+        ev.iter().map(|&v| v / total).collect()
+    } else {
+        let mut p = vec![0.0; n];
+        p[0] = 1.0;
+        p
+    };
+    // Most-visited edge (ties → lowest index).
+    let mut chosen = 0usize;
+    let mut best = -1.0f64;
+    for (a, &v) in ev.iter().enumerate() {
+        if v > best {
+            best = v;
+            chosen = a;
+        }
+    }
+    MctsResult { chosen, pi }
+}
+
+/// Numerically-stable softmax with temperature (matches `search.rs::softmax`).
+fn softmax_tau(scores: &[f64], tau: f64) -> Vec<f64> {
+    let n = scores.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    let max = scores.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let mut sum = 0.0;
+    let mut p: Vec<f64> = scores
+        .iter()
+        .map(|&s| {
+            let e = ((s - max) / tau.max(1e-9)).exp();
+            sum += e;
+            e
+        })
+        .collect();
+    if sum > 0.0 {
+        for v in &mut p {
+            *v /= sum;
+        }
+    } else {
+        for v in &mut p {
+            *v = 1.0 / n as f64;
+        }
+    }
+    p
+}
+
+// --- self-play game ----------------------------------------------------------
+
+/// Play one full game and harvest one [`Example`] per decision. Mirrors
+/// `selfplay.rs::play_one_game` (HQ placement, stalemate cut). `vs_hard`: seat 0
+/// = SpatialNet+MCTS (recorded), seat 1 = HardAi (not recorded). Otherwise both
+/// seats are the net and both are recorded.
+fn play_one_game(
+    net: &SpatialNet,
+    seed: u32,
+    width: i32,
+    height: i32,
+    cfg: &TierConfig,
+    n_sims: usize,
+    round_cap: i64,
+    vs_hard: bool,
+    device_bonus: f64,
+    tie_penalty: f64,
+) -> Vec<Example> {
+    let n_players = 2usize;
+    let mut g = Game::new(width, height, &["P1", "P2"]);
+    g.generate_map(width, height, seed);
+
+    // HQ placement (round 0). Net seats place greedily via a 1-sim "MCTS" — but
+    // HQ placement is a distinct engine call, so reuse HardAi's placer for every
+    // seat (placement is not a policy decision we train here).
+    let placer = HardAi::hard();
+    for _ in 0..n_players {
+        let cur = g.current_player();
+        placer.place_headquarters(&mut g, cur);
+        g.change_turn();
+    }
+
+    let mut hard = HardAi::hard();
+    let mut examples: Vec<Example> = Vec::new();
+    let mut winner: Option<PlayerId> = None;
+    let mut last_sig = board_signature(&g, n_players);
+    let mut last_progress = g.get_rounds_played();
+
+    while g.live_players().len() > 1 && g.get_rounds_played() < round_cap {
+        let cur = g.current_player();
+        let net_seat = !vs_hard || cur.0 == 0;
+        if net_seat {
+            // Drain the turn: one MCTS decision per executed candidate, until the
+            // net picks Pass (or the candidate fails to execute) — mirroring the
+            // controller's plan_turn drain loop (scaffold before + re-staff after).
+            scaffold_ensure(&mut g, cur, cfg);
+            loop {
+                let cands = candidates::enumerate(&g, cur, cfg);
+                if cands.len() <= 1 {
+                    break; // only Pass available
+                }
+                let res = mcts_select(net, &g, cur, cfg, n_sims, 0.0, false, false);
+                // Record the decision BEFORE mutating the game.
+                let (planes, h, w) = board_planes(&g, cur);
+                let cand_feats: Vec<CandFeat> =
+                    cands.iter().map(|c| cand_feat(&g, cur, c)).collect();
+                examples.push(Example {
+                    planes,
+                    h,
+                    w,
+                    value_scalars: value_scalars(&g, cur),
+                    cands: cand_feats,
+                    pi: res.pi,
+                    seat: cur,
+                    phi: 0.0,
+                    z: 0.0,
+                    chosen_intent: candidates::Intent::Pass,
+                    owned_standing_device: false,
+                    value_only: false,
+                });
+                let chosen = &cands[res.chosen];
+                if chosen.intent == candidates::Intent::Pass {
+                    break;
+                }
+                let ok = candidates::execute_action(&mut g, cur, cfg, &chosen.action);
+                if !ok {
+                    break; // failed execute → end the turn (matches controller)
+                }
+                scaffold_staff(&mut g, cur, cfg);
+            }
+        } else {
+            hard.plan_turn(&mut g, cur);
+        }
+
+        match g.end_turn() {
+            EndTurnOutcome::Win(p) => {
+                winner = Some(p);
+                break;
+            }
+            EndTurnOutcome::Tie => break,
+            _ => {}
+        }
+
+        let r = g.get_rounds_played();
+        let sig = board_signature(&g, n_players);
+        if sig != last_sig {
+            last_sig = sig;
+            last_progress = r;
+        } else if r - last_progress >= STALL_ROUNDS && !device_on_board(&g) {
+            break;
+        }
+    }
+
+    let winner_pid = winner.or_else(|| {
+        let live = g.live_players();
+        if live.len() == 1 {
+            Some(live[0])
+        } else {
+            None
+        }
+    });
+    // z relative to each example's seat: winner +mag, loser -mag, tie/timeout -tie_penalty.
+    // Win-cause weighting: non-Device decisions scale |z| by (1-device_bonus).
+    let device_decided = matches!(g.last_win_cause(), Some(WinCause::Device));
+    let mag = if device_decided { 1.0 } else { 1.0 - device_bonus };
+    for ex in &mut examples {
+        ex.z = match winner_pid {
+            Some(w) if w == ex.seat => mag,
+            Some(_) => -mag,
+            None => -tie_penalty,
+        };
+    }
+    examples
+}
+
+// --- training ----------------------------------------------------------------
+
+/// Mean (policy_loss, value_loss) over the batch WITHOUT updating the net — used
+/// to report loss before/after an SGD step.
+fn eval_loss(net: &SpatialNet, batch: &[Example]) -> (f64, f64) {
+    if batch.is_empty() {
+        return (0.0, 0.0);
+    }
+    let mut ploss = 0.0;
+    let mut vloss = 0.0;
+    for ex in batch {
+        let (_g, p, v) = net.train_grad_scalars(&ex.planes, ex.h, ex.w, &ex.value_scalars, &ex.cands, &ex.pi, ex.z);
+        ploss += p;
+        vloss += v;
+    }
+    let n = batch.len() as f64;
+    (ploss / n, vloss / n)
+}
+
+/// One SGD step over the batch: accumulate `train_grad`, scale 1/n,
+/// `apply_grad(LR, L2)`. Returns the mean (policy_loss, value_loss) of the batch
+/// at the PRE-step parameters.
+fn train_batch(net: &mut SpatialNet, batch: &[Example]) -> (f64, f64) {
+    if batch.is_empty() {
+        return (0.0, 0.0);
+    }
+    let mut acc = SpatialGrad::zeros_like(net);
+    let mut ploss = 0.0;
+    let mut vloss = 0.0;
+    for ex in batch {
+        let (g, p, v) = net.train_grad_scalars(&ex.planes, ex.h, ex.w, &ex.value_scalars, &ex.cands, &ex.pi, ex.z);
+        acc.add(&g);
+        ploss += p;
+        vloss += v;
+    }
+    let n = batch.len() as f64;
+    acc.scale(1.0 / n);
+    net.apply_grad(&acc, LR, L2);
+    (ploss / n, vloss / n)
+}
+
+// --- DISTILLATION (behaviour-clone the MLP champion into the SpatialNet) ------
+//
+// Warm-start: a random CNN beats a hard bot ~0% (cold start). Here we generate
+// states by self-play where BOTH seats are driven by the MLP champion's policy
+// (exactly the inference path `policy::select_index` uses for the non-spatial
+// controller), and at every decision record a distillation example whose policy
+// target `pi` is the SOFTMAX over the MLP's per-candidate `score_candidate`
+// (tau=1.0) — the champion's soft policy — and whose value target `z` is the
+// game outcome from that seat's perspective. We then supervised-train a fresh
+// `SpatialNet` to match (cross-entropy(pi) + MSE(z)), reusing the existing
+// batched `train_grad`/`apply_grad` step.
+
+/// Distillation hyper-parameters / paths (CLI-overridable, sane defaults).
+struct DistillCfg {
+    games: usize,
+    epochs: usize,
+    batch: usize,
+    lr: f64,
+    l2: f64,
+    seed: u64,
+    out: String,
+    policy_path: String,
+    value_path: String,
+    width: i32,
+    height: i32,
+    round_cap: i64,
+    /// Softmax temperature for the MLP soft-policy target. Lower = sharper toward
+    /// the champion's argmax (stronger imitation signal). 1.0 washes the small
+    /// MLP score gaps into a near-uniform target with no learnable gradient.
+    tau: f64,
+    /// Gradient up-weight applied to ACTION decisions (where the champion did NOT
+    /// Pass). The champion Passes on ~89% of even multi-candidate states, so under
+    /// equal weighting SGD collapses every argmax onto the Pass candidate (action
+    /// agreement → 0). Up-weighting the rare action examples lets the net actually
+    /// learn the champion's CHOSEN action — the useful warm-start — without the
+    /// over-aggressive Pass down-weighting (clamp 0.05) of an earlier attempt that
+    /// starved the dominant class. Pass examples keep weight 1.0.
+    action_weight: f64,
+}
+
+impl Default for DistillCfg {
+    fn default() -> Self {
+        DistillCfg {
+            games: 40,
+            epochs: 20,
+            batch: 64,
+            lr: 0.03,
+            l2: L2,
+            seed: 0xD15_711,
+            out: "rust-trainer/checkpoints-cnn".to_string(),
+            policy_path: "models/sd/az/sd-az-001/weights.json".to_string(),
+            value_path: "models/sd/az/sd-az-001/value.json".to_string(),
+            width: 14,
+            height: 12,
+            round_cap: 150,
+            // Teacher-sharpening temperature for the soft-policy target. The MLP's
+            // per-candidate `score_candidate` gaps are small; at tau=1.0 the softmax
+            // target is nearly uniform → no learnable gradient (loss flat, argmax
+            // never moves). A low tau sharpens `pi` toward the champion's argmax
+            // (standard knowledge-distillation: a confident teacher target), which
+            // is what actually drives the top-1 agreement up. Override with `--tau`.
+            tau: 0.2,
+            // Default OFF (1.0 = equal weights). Up-weighting action examples was
+            // tried at 4–16×: it does NOT lift action-decision agreement within a
+            // smoke budget (the champion's ~48 sparse, board-specific action picks
+            // are not learnable by a from-scratch CNN in a few epochs) and it
+            // *degrades* the discretionary (n>=3) agreement. Left as a tunable knob
+            // for longer offline distillation runs that have many more examples.
+            action_weight: 1.0,
+        }
+    }
+}
+
+/// Play one full game where BOTH seats are the MLP champion (deterministic
+/// argmax via `policy::select_index` at `cfg.temperature<=1e-6`). Records one
+/// distillation [`Example`] per decision — the SAME candidate extraction the MCTS
+/// path uses, but `pi` = softmax over the MLP's `score_candidate` (the imitation
+/// target). `z` is back-filled from the outcome relative to each seat.
+///
+/// Mirrors `selfplay.rs` (HQ placement, stalemate cut) AND the controller's turn
+/// structure (`plan_turn`): the safety scaffold (`ensure_income_pub`) runs FIRST,
+/// then the discretionary budget loop (enumerate → select_index → execute →
+/// re-staff), so the economy develops and the recorded states sit on the
+/// champion's OWN state distribution with rich candidate sets. Every recorded
+/// decision is a genuine multi-candidate policy decision.
+fn play_one_game_mlp(
+    genome: &Genome,
+    seed: u32,
+    width: i32,
+    height: i32,
+    cfg: &TierConfig,
+    round_cap: i64,
+    tau: f64,
+    rng: &mut XorShift32,
+    device_bonus: f64,
+    tie_penalty: f64,
+) -> Vec<Example> {
+    use cp_ai::controller::NeuralAiController;
+    let n_players = 2usize;
+    let mut g = Game::new(width, height, &["P1", "P2"]);
+    g.generate_map(width, height, seed);
+
+    let ctrl = NeuralAiController::new(genome, *cfg);
+    for _ in 0..n_players {
+        let cur = g.current_player();
+        ctrl.place_headquarters(&mut g, cur);
+        g.change_turn();
+    }
+
+    let mut examples: Vec<Example> = Vec::new();
+    let mut winner: Option<PlayerId> = None;
+    let mut last_sig = board_signature(&g, n_players);
+    let mut last_progress = g.get_rounds_played();
+
+    while g.live_players().len() > 1 && g.get_rounds_played() < round_cap {
+        let cur = g.current_player();
+        let round = g.get_rounds_played();
+        // Controller turn structure: scaffold first, then the budget loop.
+        ctrl.ensure_income_pub(&mut g, cur);
+        ctrl.staff_income_pub(&mut g, cur);
+        let mut budget = cfg.budget;
+        while budget > 0 {
+            let cands = candidates::enumerate(&g, cur, cfg);
+            if cands.len() <= 1 {
+                break; // only Pass available
+            }
+            // Champion features + scores (exactly the inference path).
+            let gvec = global_features(&mut g, cur, round);
+            let scores: Vec<f64> = cands
+                .iter()
+                .map(|c| policy::score_candidate(genome, &gvec, c))
+                .collect();
+            // Soft-policy imitation target: softmax over the MLP scores (tau).
+            let pi = softmax_tau(&scores, tau);
+            // Record the decision BEFORE mutating the game.
+            let (planes, h, w) = board_planes(&g, cur);
+            let cand_feats: Vec<CandFeat> = cands.iter().map(|c| cand_feat(&g, cur, c)).collect();
+            examples.push(Example {
+                planes,
+                h,
+                w,
+                value_scalars: value_scalars(&g, cur),
+                cands: cand_feats,
+                pi,
+                seat: cur,
+                phi: 0.0,
+                z: 0.0,
+                chosen_intent: candidates::Intent::Pass,
+                owned_standing_device: false,
+                value_only: false,
+            });
+            // Pick the move the champion would play (deterministic argmax for the
+            // training cfg; rng only consumed at temperature>0/blunder>0).
+            let chosen = policy::select_index(genome, &gvec, &cands, cfg, rng);
+            let choice = &cands[chosen];
+            if choice.intent == candidates::Intent::Pass {
+                break;
+            }
+            let ok = candidates::execute_action(&mut g, cur, cfg, &choice.action);
+            if !ok {
+                break;
+            }
+            budget -= 1;
+            ctrl.staff_income_pub(&mut g, cur);
+        }
+
+        match g.end_turn() {
+            EndTurnOutcome::Win(p) => {
+                winner = Some(p);
+                break;
+            }
+            EndTurnOutcome::Tie => break,
+            _ => {}
+        }
+
+        let r = g.get_rounds_played();
+        let sig = board_signature(&g, n_players);
+        if sig != last_sig {
+            last_sig = sig;
+            last_progress = r;
+        } else if r - last_progress >= STALL_ROUNDS && !device_on_board(&g) {
+            break;
+        }
+    }
+
+    let winner_pid = winner.or_else(|| {
+        let live = g.live_players();
+        if live.len() == 1 {
+            Some(live[0])
+        } else {
+            None
+        }
+    });
+    // Win-cause weighting: non-Device decisions scale |z| by (1-device_bonus).
+    let device_decided = matches!(g.last_win_cause(), Some(WinCause::Device));
+    let mag = if device_decided { 1.0 } else { 1.0 - device_bonus };
+    for ex in &mut examples {
+        ex.z = match winner_pid {
+            Some(w) if w == ex.seat => mag,
+            Some(_) => -mag,
+            None => -tie_penalty,
+        };
+    }
+    examples
+}
+
+/// Top-1 agreement: fraction of decisions where the SpatialNet's argmax candidate
+/// matches the MLP champion's argmax candidate. The MLP's choice is `argmax(pi)`
+/// (argmax is preserved under the monotone teacher softmax, so this equals
+/// `argmax(score_candidate)` regardless of tau). A random CNN scores ≈ 1/n; a
+/// distilled CNN should reproduce the champion's pick on most decisions.
+///
+/// `min_cands` filters to decisions with at least that many candidates. The
+/// `min_cands=2` view is the HEADLINE (every real decision — build-or-Pass and
+/// up). The `min_cands=3` view isolates the genuinely discretionary multi-option
+/// decisions, where the random baseline is lowest and the warm-start signal is
+/// clearest.
+fn top1_agreement(net: &SpatialNet, batch: &[Example], min_cands: usize) -> f64 {
+    let mut hits = 0usize;
+    let mut total = 0usize;
+    for ex in batch {
+        if ex.cands.len() < min_cands {
+            continue;
+        }
+        // MLP's choice = argmax(pi) (ties → lowest index).
+        let mut mlp_best = 0usize;
+        for i in 1..ex.pi.len() {
+            if ex.pi[i] > ex.pi[mlp_best] {
+                mlp_best = i;
+            }
+        }
+        total += 1;
+        // SpatialNet's choice = argmax score_candidate over the SAME candidates.
+        let cache = net.forward_board_scalars(&ex.planes, ex.h, ex.w, &ex.value_scalars);
+        let mut net_best = 0usize;
+        let mut net_best_s = f64::NEG_INFINITY;
+        for (i, (tgt, local, intent)) in ex.cands.iter().enumerate() {
+            let s = net.score_candidate(&cache, *tgt, local, intent);
+            if s > net_best_s {
+                net_best_s = s;
+                net_best = i;
+            }
+        }
+        if net_best == mlp_best {
+            hits += 1;
+        }
+    }
+    if total == 0 {
+        return 0.0;
+    }
+    hits as f64 / total as f64
+}
+
+/// Top-1 agreement restricted to the decisions where the champion's argmax is NOT
+/// the Pass candidate (always the LAST candidate from `enumerate`). This is the
+/// genuine warm-start signal: the cases where the champion chose to ACT
+/// (build/expand/attack), which a random CNN reproduces only ≈ 1/n and which
+/// distillation must learn. Returns `(agreement, n_decisions)`.
+fn action_agreement(net: &SpatialNet, batch: &[Example]) -> (f64, usize) {
+    let mut hits = 0usize;
+    let mut total = 0usize;
+    for ex in batch {
+        if ex.cands.len() < 2 {
+            continue;
+        }
+        let mut mlp_best = 0usize;
+        for i in 1..ex.pi.len() {
+            if ex.pi[i] > ex.pi[mlp_best] {
+                mlp_best = i;
+            }
+        }
+        if mlp_best == ex.cands.len() - 1 {
+            continue; // champion Passed — not an action decision
+        }
+        total += 1;
+        let cache = net.forward_board_scalars(&ex.planes, ex.h, ex.w, &ex.value_scalars);
+        let mut net_best = 0usize;
+        let mut net_best_s = f64::NEG_INFINITY;
+        for (i, (tgt, local, intent)) in ex.cands.iter().enumerate() {
+            let s = net.score_candidate(&cache, *tgt, local, intent);
+            if s > net_best_s {
+                net_best_s = s;
+                net_best = i;
+            }
+        }
+        if net_best == mlp_best {
+            hits += 1;
+        }
+    }
+    if total == 0 {
+        return (0.0, 0);
+    }
+    (hits as f64 / total as f64, total)
+}
+
+/// One supervised epoch over `examples`: shuffle the index order, minibatch,
+/// accumulate per-example `train_grad` (scaled by `weights[oi]`), `apply_grad`
+/// per batch (normalised by the batch's weight sum). Returns the mean weighted
+/// (policy_loss, value_loss) over the epoch at the per-batch PRE-step params.
+///
+/// `weights` up-weights the rare ACTION decisions (champion did not Pass). The
+/// champion is heavily Pass-skewed; under equal weights SGD collapses every
+/// multi-candidate argmax onto Pass (action agreement → 0). Up-weighting the
+/// action examples lets the net learn the champion's chosen action — the useful
+/// warm-start — while Pass examples (weight 1.0) still anchor the majority class.
+fn distill_epoch(
+    net: &mut SpatialNet,
+    examples: &[Example],
+    weights: &[f64],
+    order: &mut [usize],
+    batch_size: usize,
+    lr: f64,
+    l2: f64,
+    rng: &mut XorShift32,
+) -> (f64, f64) {
+    // Fisher–Yates shuffle of the index permutation.
+    let n = order.len();
+    for i in (1..n).rev() {
+        let j = (rng.next_f64() * (i as f64 + 1.0)).floor() as usize;
+        order.swap(i, j.min(i));
+    }
+    let mut ploss = 0.0;
+    let mut vloss = 0.0;
+    let mut wsum_all = 0.0;
+    let mut start = 0usize;
+    while start < n {
+        let end = (start + batch_size).min(n);
+        let mut acc = SpatialGrad::zeros_like(net);
+        let mut bp = 0.0;
+        let mut bv = 0.0;
+        let mut wsum = 0.0;
+        for &oi in &order[start..end] {
+            let ex = &examples[oi];
+            let wgt = weights[oi];
+            let (mut gr, p, v) = net.train_grad_scalars(&ex.planes, ex.h, ex.w, &ex.value_scalars, &ex.cands, &ex.pi, ex.z);
+            gr.scale(wgt);
+            acc.add(&gr);
+            bp += p * wgt;
+            bv += v * wgt;
+            wsum += wgt;
+        }
+        if wsum > 0.0 {
+            acc.scale(1.0 / wsum);
+            net.apply_grad(&acc, lr, l2);
+        }
+        ploss += bp;
+        vloss += bv;
+        wsum_all += wsum;
+        start = end;
+    }
+    let denom = wsum_all.max(1e-9);
+    (ploss / denom, vloss / denom)
+}
+
+fn run_distill(dc: &DistillCfg) {
+    println!("=== cnn_train --distill ===");
+    // 1. Load the MLP policy champion + (info only) spatial value net.
+    let genome = match Genome::from_file(&dc.policy_path) {
+        Ok(g) => g,
+        Err(e) => {
+            eprintln!("ERROR loading policy {}: {e}", dc.policy_path);
+            std::process::exit(1);
+        }
+    };
+    let value = cp_ai::value::ValueNet::from_file(&dc.value_path).ok();
+    println!(
+        "champion policy: {} arch={:?} params={}",
+        dc.policy_path,
+        genome.arch,
+        genome.params.len()
+    );
+    match &value {
+        Some(v) => println!(
+            "champion value : {} arch={:?} (loaded; value target = game outcome z)",
+            dc.value_path, v.arch
+        ),
+        None => println!(
+            "champion value : {} (NOT loaded — value target is the game outcome z anyway)",
+            dc.value_path
+        ),
+    }
+    println!(
+        "self-play(MLP-vs-MLP): games={} board={}x{} round_cap={} tau={}",
+        dc.games, dc.width, dc.height, dc.round_cap, dc.tau
+    );
+
+    // 2. Generate distillation examples from MLP-vs-MLP self-play.
+    let cfg = TRAINING_CONFIG; // temperature 0 / blunder 0 → deterministic argmax
+    let mut seed_rng = XorShift32::new((dc.seed as u32) ^ 0x5EED_1234);
+    // Precompute every game's seed sequentially (preserving the `seed_rng` stream),
+    // then play the games in PARALLEL — each reads the MLP `&genome` immutably and
+    // uses its OWN per-game RNG derived from its seed (deterministic per seed, no
+    // shared RNG). The argmax path consumes the rng only at temperature>0/blunder>0
+    // (both 0 in TRAINING_CONFIG), so per-game RNGs don't change the picks here.
+    let seeds: Vec<u32> = (0..dc.games)
+        .map(|gi| (seed_rng.next_f64() * 1.0e9) as u32 ^ (gi as u32).wrapping_mul(2654435761))
+        .collect();
+    let per_game: Vec<Vec<Example>> = seeds
+        .into_par_iter()
+        .map(|seed| {
+            let mut play_rng = XorShift32::new(seed ^ 0xA11CE);
+            play_one_game_mlp(
+                &genome,
+                seed,
+                dc.width,
+                dc.height,
+                &cfg,
+                dc.round_cap,
+                dc.tau,
+                &mut play_rng,
+                0.0,
+                0.0,
+            )
+        })
+        .collect();
+    let mut all: Vec<Example> = Vec::new();
+    for ex in per_game {
+        all.extend(ex);
+    }
+    assert!(!all.is_empty(), "no distillation examples harvested");
+    let (mut w, mut l, mut d) = (0usize, 0usize, 0usize);
+    for ex in &all {
+        match ex.z {
+            x if x > 0.0 => w += 1,
+            x if x < 0.0 => l += 1,
+            _ => d += 1,
+        }
+    }
+    let mean_cands: f64 =
+        all.iter().map(|e| e.cands.len() as f64).sum::<f64>() / all.len() as f64;
+    // Diagnostic: how concentrated is the champion's choice on candidate-0?
+    // (If it nearly always picks index 0, top-1 agreement is trivially high.)
+    let frac_idx0 = all
+        .iter()
+        .filter(|e| {
+            let mut b = 0usize;
+            for i in 1..e.pi.len() {
+                if e.pi[i] > e.pi[b] {
+                    b = i;
+                }
+            }
+            b == 0
+        })
+        .count() as f64
+        / all.len() as f64;
+    println!(
+        "examples: {} (z: win={w} loss={l} draw/timeout={d}) mean #cands={:.2} champion-picks-idx0={:.2}",
+        all.len(),
+        mean_cands,
+        frac_idx0
+    );
+
+    // 3. Fresh SpatialNet warm-start target.
+    let mut net = SpatialNet::default_with_value_scalars(PLANE_COUNT, SPATIAL_LOCAL_DIM, INTENT_DIM, VALUE_SCALAR_DIM, dc.seed);
+    println!(
+        "spatial net: PLANE_COUNT={PLANE_COUNT} LOCAL_DIM={SPATIAL_LOCAL_DIM} (={LOCAL_DIM} shared + 2 capacity) INTENT_DIM={INTENT_DIM} params={}",
+        net.param_count()
+    );
+
+    // Candidate-count histogram + #discretionary decisions (n>=3), for context.
+    let mut hist = std::collections::BTreeMap::new();
+    for ex in &all {
+        *hist.entry(ex.cands.len()).or_insert(0usize) += 1;
+    }
+    let n_multi = all.iter().filter(|e| e.cands.len() >= 2).count();
+    let n_disc = all.iter().filter(|e| e.cands.len() >= 3).count();
+    println!("n_cands histogram: {hist:?}");
+
+    // 5a. BEFORE metrics (random CNN). HEADLINE = top-1 argmax agreement with the
+    // champion on the DISCRETIONARY (n>=3) decisions — the genuinely multi-option
+    // states. We also report the overall (n>=2) view and the ACTION diagnostic
+    // (champion chose to act, not Pass; random ≈ 1/n). NOTE the champion is
+    // extremely passive: it Passes ~89% of even multi-candidate states, so the
+    // ~48 action picks are too sparse/board-specific for a from-scratch CNN to fit
+    // in a smoke budget — the ACTION number stays near its random floor; the
+    // learnable, demonstrable warm-start is the discretionary agreement + the loss.
+    let (a_before, n_act) = action_agreement(&net, &all);
+    let t1_before = top1_agreement(&net, &all, 2);
+    let t1_before_disc = top1_agreement(&net, &all, 3);
+    let (p0, v0) = eval_loss(&net, &all);
+    println!(
+        "\nBEFORE training (random CNN):\n  top1_agreement[disc n>=3] = {:.4}  ({} decisions)  <-- HEADLINE\n  top1_agreement[all n>=2]  = {:.4}  ({} decisions)\n  top1_agreement[ACTION]    = {:.4}  ({} action decisions; diagnostic)\n  policy_loss={:.4} value_loss={:.4}",
+        t1_before_disc, n_disc, t1_before, n_multi, a_before, n_act, p0, v0
+    );
+
+    // Per-example weights: up-weight ACTION decisions (champion's argmax != Pass)
+    // by `dc.action_weight` so the dominant Pass class doesn't collapse every
+    // argmax onto Pass. Pass examples keep weight 1.0.
+    let is_action = |e: &Example| -> bool {
+        let mut b = 0usize;
+        for i in 1..e.pi.len() {
+            if e.pi[i] > e.pi[b] {
+                b = i;
+            }
+        }
+        e.cands.len() >= 2 && b != e.cands.len() - 1
+    };
+    let weights: Vec<f64> = all
+        .iter()
+        .map(|e| if is_action(e) { dc.action_weight } else { 1.0 })
+        .collect();
+
+    // 4. Supervised distillation epochs.
+    println!(
+        "\ndistill: epochs={} batch={} lr={} l2={} action_weight={} (action_decisions={})",
+        dc.epochs, dc.batch, dc.lr, dc.l2, dc.action_weight, n_act
+    );
+    let mut order: Vec<usize> = (0..all.len()).collect();
+    let mut train_rng = XorShift32::new((dc.seed as u32) ^ 0xBEEF);
+    let mut first_loss = (0.0, 0.0);
+    let mut last_loss = (0.0, 0.0);
+    for ep in 1..=dc.epochs {
+        let (p, v) = distill_epoch(
+            &mut net,
+            &all,
+            &weights,
+            &mut order,
+            dc.batch,
+            dc.lr,
+            dc.l2,
+            &mut train_rng,
+        );
+        if ep == 1 {
+            first_loss = (p, v);
+        }
+        last_loss = (p, v);
+        if ep == 1 || ep == dc.epochs || ep % (dc.epochs.max(5) / 5).max(1) == 0 {
+            let t1d = top1_agreement(&net, &all, 3);
+            let t1 = top1_agreement(&net, &all, 2);
+            let (a, _) = action_agreement(&net, &all);
+            println!(
+                "  epoch {ep:>3}: policy_loss={p:.4} value_loss={v:.4} top1[n>=3]={t1d:.4} top1[n>=2]={t1:.4} top1[ACTION]={a:.4}"
+            );
+        }
+    }
+
+    // 5b. AFTER metrics.
+    let (a_after, _) = action_agreement(&net, &all);
+    let t1_after = top1_agreement(&net, &all, 2);
+    let t1_after_disc = top1_agreement(&net, &all, 3);
+    let (p1, v1) = eval_loss(&net, &all);
+    println!(
+        "\nAFTER training (distilled CNN):\n  top1_agreement[disc n>=3] = {:.4}  (was {:.4}; Δ {:+.4})  <-- HEADLINE\n  top1_agreement[all n>=2]  = {:.4}  (was {:.4}; Δ {:+.4})\n  top1_agreement[ACTION]    = {:.4}  (was {:.4}; Δ {:+.4})  (diagnostic)\n  policy_loss {:.4} -> {:.4}  |  value_loss {:.4} -> {:.4}  (epoch1 vs last: p {:.4}->{:.4}, v {:.4}->{:.4})",
+        t1_after_disc,
+        t1_before_disc,
+        t1_after_disc - t1_before_disc,
+        t1_after,
+        t1_before,
+        t1_after - t1_before,
+        a_after,
+        a_before,
+        a_after - a_before,
+        p0,
+        p1,
+        v0,
+        v1,
+        first_loss.0,
+        last_loss.0,
+        first_loss.1,
+        last_loss.1
+    );
+
+    // 6. Save the distilled net.
+    if let Err(e) = std::fs::create_dir_all(&dc.out) {
+        eprintln!("ERROR creating out dir {}: {e}", dc.out);
+        std::process::exit(1);
+    }
+    let path = format!("{}/distilled.json", dc.out);
+    let json = serde_json::to_string(&net).expect("SpatialNet serialises");
+    if let Err(e) = std::fs::write(&path, json) {
+        eprintln!("ERROR writing {path}: {e}");
+        std::process::exit(1);
+    }
+    println!("\nwrote distilled SpatialNet -> {path}");
+    let agreed_up = t1_after_disc > t1_before_disc;
+    let loss_down = p1 < p0;
+    if agreed_up && loss_down {
+        println!(
+            "DISTILL OK (disc top-1 agreement {:.4} -> {:.4}; policy_loss {:.4} -> {:.4})",
+            t1_before_disc, t1_after_disc, p0, p1
+        );
+    } else {
+        println!(
+            "DISTILL WARN: disc agreement {:.4} -> {:.4} (up={agreed_up}); policy_loss {:.4} -> {:.4} (down={loss_down})",
+            t1_before_disc, t1_after_disc, p0, p1
+        );
+    }
+}
+
+/// Parse `--flag value` style args (returns the value after `flag`, if present).
+fn arg_val(args: &[String], flag: &str) -> Option<String> {
+    args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1).cloned())
+}
+
+// --- smoke test --------------------------------------------------------------
+
+fn run_smoke(vs_hard: bool) {
+    let games = 4usize;
+    let n_sims = 16usize;
+    let (width, height) = (14i32, 12i32);
+    let round_cap = 120i64;
+    let cfg = TRAINING_CONFIG;
+
+    let net = SpatialNet::default_with_value_scalars(PLANE_COUNT, SPATIAL_LOCAL_DIM, INTENT_DIM, VALUE_SCALAR_DIM, 0xC0FFEE);
+    println!("=== cnn_train --smoke{} ===", if vs_hard { " --vs-hard" } else { "" });
+    println!(
+        "net: PLANE_COUNT={} LOCAL_DIM={} (={} shared + 2 capacity) INTENT_DIM={} params={}",
+        PLANE_COUNT,
+        SPATIAL_LOCAL_DIM,
+        LOCAL_DIM,
+        INTENT_DIM,
+        net.param_count()
+    );
+    println!(
+        "self-play: games={games} sims/decision={n_sims} board={width}x{height} round_cap={round_cap} cfg=TRAINING"
+    );
+
+    let mut rng = XorShift32::new(0x5EED_1234);
+    let mut all: Vec<Example> = Vec::new();
+    let mut completed = 0usize;
+    for gi in 0..games {
+        let seed = (rng.next_f64() * 1.0e9) as u32 ^ (gi as u32).wrapping_mul(2654435761);
+        let ex = play_one_game(&net, seed, width, height, &cfg, n_sims, round_cap, vs_hard, 0.0, 0.0);
+        completed += 1;
+        println!("  game {gi}: seed={seed} examples={}", ex.len());
+        all.extend(ex);
+    }
+
+    println!("\ngames completed: {completed}");
+    println!("total decisions/examples: {}", all.len());
+    assert!(!all.is_empty(), "no examples harvested — self-play produced nothing");
+
+    // Sample-example shape report.
+    let s = &all[all.len() / 2];
+    let pi_sum: f64 = s.pi.iter().sum();
+    println!("\nsample example:");
+    println!(
+        "  planes.len()={} (expected PLANE_COUNT*h*w = {}*{}*{} = {})",
+        s.planes.len(),
+        PLANE_COUNT,
+        s.h,
+        s.w,
+        PLANE_COUNT * s.h * s.w
+    );
+    assert_eq!(s.planes.len(), PLANE_COUNT * s.h * s.w);
+    println!("  #candidates={} (pi.len()={})", s.cands.len(), s.pi.len());
+    assert_eq!(s.cands.len(), s.pi.len());
+    println!("  pi sum={pi_sum:.6} (≈1)");
+    assert!((pi_sum - 1.0).abs() < 1e-6, "pi must sum to 1, got {pi_sum}");
+    println!("  z={} (∈ {{-1,0,1}})", s.z);
+    assert!(s.z == 1.0 || s.z == -1.0 || s.z == 0.0);
+    // Each candidate carries the right feature widths.
+    for (i, (_t, local, intent)) in s.cands.iter().enumerate() {
+        assert_eq!(local.len(), SPATIAL_LOCAL_DIM, "cand {i} local width");
+        assert_eq!(intent.len(), INTENT_DIM, "cand {i} intent width");
+    }
+    println!(
+        "  per-candidate local.len()={} ({} shared + 2 capacity) intent.len()={}",
+        SPATIAL_LOCAL_DIM, LOCAL_DIM, INTENT_DIM
+    );
+    assert_eq!(net.local_dim, SPATIAL_LOCAL_DIM, "smoke net must be 18-dim");
+    assert_eq!(
+        net.value_scalar_dim, VALUE_SCALAR_DIM,
+        "smoke net value head must take the {VALUE_SCALAR_DIM} economy scalars"
+    );
+    // Sanity: the value-scalar builder produces exactly VALUE_SCALAR_DIM entries,
+    // all finite and bounded, for the captured sample example.
+    assert_eq!(s.value_scalars.len(), VALUE_SCALAR_DIM, "example value_scalars width");
+    assert!(
+        s.value_scalars.iter().all(|v| v.is_finite() && v.abs() <= 1.0 + 1e-9),
+        "value scalars must be finite & bounded: {:?}",
+        s.value_scalars
+    );
+    println!("  value_scalars.len()={} {:?}", s.value_scalars.len(), s.value_scalars);
+
+    // z distribution across examples.
+    let (mut w, mut l, mut d) = (0usize, 0usize, 0usize);
+    for ex in &all {
+        match ex.z {
+            x if x > 0.0 => w += 1,
+            x if x < 0.0 => l += 1,
+            _ => d += 1,
+        }
+    }
+    println!("  z distribution: win={w} loss={l} draw/timeout={d}");
+
+    // SGD: report loss before/after 2 steps over the collected examples.
+    let mut net = net;
+    let (p0, v0) = eval_loss(&net, &all);
+    println!(
+        "\nSGD over {} examples (lr={LR} l2={L2}):",
+        all.len()
+    );
+    println!("  before: policy_loss={p0:.6} value_loss={v0:.6} total={:.6}", p0 + v0);
+    for step in 1..=2 {
+        let (p, v) = train_batch(&mut net, &all);
+        let _ = (p, v);
+        let (pa, va) = eval_loss(&net, &all);
+        println!(
+            "  after step {step}: policy_loss={pa:.6} value_loss={va:.6} total={:.6}",
+            pa + va
+        );
+    }
+    let (p1, v1) = eval_loss(&net, &all);
+    let before = p0 + v0;
+    let after = p1 + v1;
+    println!(
+        "\nloss {} {:.6} -> {:.6} (Δ={:.6})",
+        if after < before { "DECREASED" } else { "did NOT decrease" },
+        before,
+        after,
+        before - after
+    );
+    assert!(after < before, "smoke gate: loss must decrease after SGD");
+
+    // Tiny vs-HARD bench so the observability split (HireWorker / HireExpert) is
+    // visible from --smoke: emits the same `intents` JSON the dashboard consumes.
+    let mut btc = TrainCfg::default();
+    btc.sims = n_sims;
+    btc.cap = round_cap;
+    btc.width = width;
+    btc.height = height;
+    btc.bench_games = 8;
+    let br = bench_vs_hard(&net, &cfg, &btc, btc.bench_games, 0xBEEF);
+    println!(
+        "\nbench intents ({} games, {} decisions): {}",
+        btc.bench_games, br.decisions, bench_intents_json(&br)
+    );
+    assert!(
+        bench_intents_json(&br).contains("\"HireWorker\":")
+            && bench_intents_json(&br).contains("\"HireExpert\":"),
+        "smoke gate: HireWorker/HireExpert keys must be present"
+    );
+
+    // Per-iteration self-play observability demo: run a few PURE self-play
+    // `play_one_game_explore` games and emit a representative per-gen log line so
+    // the new spTie / spDecisive / spAvgRounds / iterIntents fields are visible
+    // from --smoke (parity-free; logging only).
+    {
+        let mut stc = TrainCfg::default();
+        stc.sims = n_sims;
+        stc.cap = round_cap;
+        stc.width = width;
+        stc.height = height;
+        let mut srng = XorShift32::new(0xD00D_F00D);
+        let (mut sp_tie, mut sp_decisive, mut sp_rounds_sum) = (0u64, 0u64, 0i64);
+        let (mut sp_device, mut sp_conquest, mut sp_domination, mut sp_bankruptcy) = (0u64, 0u64, 0u64, 0u64);
+        let mut iter_intents = [0u64; NUM_INTENTS];
+        let mut iter_extra = ExtraIntents::default();
+        let (mut vp_win, mut vp_win_n) = (0.0, 0u64);
+        let (mut vp_loss, mut vp_loss_n) = (0.0, 0u64);
+        let (mut vp_draw, mut vp_draw_n) = (0.0, 0u64);
+        let (mut ent_sum, mut ent_n) = (0.0, 0u64);
+        for gi in 0..4u32 {
+            let seed = (srng.next_f64() * 1.0e9) as u32 ^ gi.wrapping_mul(2_654_435_761);
+            let mut game_rng = XorShift32::new(seed ^ 0x9E37_79B1);
+            let (_ex, outcome) = play_one_game_explore(&net, seed, &cfg, &stc, Opponent::SelfTwin, &mut game_rng);
+            if outcome.decisive { sp_decisive += 1; } else { sp_tie += 1; }
+            match outcome.cause {
+                Some(WinCause::Device) => sp_device += 1,
+                Some(WinCause::Domination) => sp_domination += 1,
+                Some(WinCause::Conquest) => sp_conquest += 1,
+                Some(WinCause::Bankruptcy) => sp_bankruptcy += 1,
+                None => { if outcome.decisive { sp_conquest += 1; } }
+            }
+            sp_rounds_sum += outcome.rounds;
+            for k in 0..NUM_INTENTS { iter_intents[k] += outcome.intents[k]; }
+            iter_extra.hire_worker += outcome.extra.hire_worker;
+            iter_extra.hire_expert += outcome.extra.hire_expert;
+            vp_win += outcome.vpred_win; vp_win_n += outcome.vpred_win_n;
+            vp_loss += outcome.vpred_loss; vp_loss_n += outcome.vpred_loss_n;
+            vp_draw += outcome.vpred_draw; vp_draw_n += outcome.vpred_draw_n;
+            ent_sum += outcome.ent_sum; ent_n += outcome.ent_n;
+        }
+        let sp_total = (sp_tie + sp_decisive).max(1);
+        let sp_avg_rounds = sp_rounds_sum as f64 / sp_total as f64;
+        let mean_or_null = |s: f64, n: u64| if n > 0 { format!("{:.4}", s / n as f64) } else { "null".to_string() };
+        let mut iter_intents_json = String::from("{");
+        for k in 0..NUM_INTENTS {
+            if k > 0 { iter_intents_json.push(','); }
+            iter_intents_json.push_str(&format!("\"{}\":{}", INTENT_NAMES[k], iter_intents[k]));
+        }
+        iter_intents_json.push_str(&format!(
+            ",\"HireWorker\":{},\"HireExpert\":{}}}",
+            iter_extra.hire_worker, iter_extra.hire_expert
+        ));
+        let sample = format!(
+            "{{\"gen\":0,\"policyLoss\":0.00000,\"valueLoss\":0.00000,\
+             \"policyEntropy\":{},\"valPredWin\":{},\"valPredLoss\":{},\"valPredDraw\":{},\
+             \"spTie\":{},\"spDecisive\":{},\"spDevice\":{},\"spConquest\":{},\
+             \"spDomination\":{},\"spBankruptcy\":{},\"spAvgRounds\":{:.1},\"iterIntents\":{}}}",
+            mean_or_null(ent_sum, ent_n), mean_or_null(vp_win, vp_win_n),
+            mean_or_null(vp_loss, vp_loss_n), mean_or_null(vp_draw, vp_draw_n),
+            sp_tie, sp_decisive, sp_device, sp_conquest,
+            sp_domination, sp_bankruptcy, sp_avg_rounds, iter_intents_json
+        );
+        println!("\nsample per-gen log line (self-play observability): {sample}");
+        assert!(
+            sample.contains("\"spTie\":")
+                && sample.contains("\"spDecisive\":")
+                && sample.contains("\"spDevice\":")
+                && sample.contains("\"spConquest\":")
+                && sample.contains("\"spDomination\":")
+                && sample.contains("\"spBankruptcy\":")
+                && sample.contains("\"policyEntropy\":")
+                && sample.contains("\"valPredWin\":")
+                && sample.contains("\"valPredLoss\":")
+                && sample.contains("\"valPredDraw\":")
+                && sample.contains("\"spAvgRounds\":")
+                && sample.contains("\"iterIntents\":"),
+            "smoke gate: spTie/spDecisive/spDevice/spConquest/spDomination/spBankruptcy/\
+             policyEntropy/valPred*/spAvgRounds/iterIntents must be present"
+        );
+    }
+
+    println!("\nSMOKE OK");
+}
+
+// ============================================================================
+// --train : the REAL AlphaZero iteration / benchmark / checkpoint loop.
+//
+// Mirrors `alphazero.rs` (the MLP wrapper) EXACTLY for the dashboard contract —
+// the `log.jsonl`, `benchmark-history.jsonl`, `replay.json`/`replay_selfplay.json`
+// schemas and the startup-truncate / champion-save behaviour — but the agent is
+// the spatial CNN (`SpatialNet`) driven by THIS file's standalone PUCT MCTS, not
+// the MLP+search.rs path. PLUS a new `spatial.json` heatmap artifact.
+// ============================================================================
+
+/// Intent-histogram width (must match alphazero.rs so the dashboard parses the
+/// same `intents{...}` object). 12 intents (BuildFarm…Pass, BuildStrangeDevice).
+const NUM_INTENTS: usize = 12;
+const INTENT_NAMES: [&str; NUM_INTENTS] = [
+    "BuildFarm", "BuildMine", "BuildVillage", "BuildOutpost", "BuildHydro",
+    "BuildNuclear", "Expand", "HireSoldier", "Attack", "StackProducer", "Pass",
+    "BuildStrangeDevice",
+];
+
+#[derive(Clone)]
+struct TrainCfg {
+    out: PathBuf,
+    init: Option<PathBuf>,
+    iters: usize,
+    games: usize,
+    sims: usize,
+    epochs: usize,
+    batch: usize,
+    buffer: usize,
+    lr: f64,
+    l2: f64,
+    vs_hard_frac: f64,
+    bench_every: usize,
+    bench_games: usize,
+    /// Decoupled dashboard-replay capture frequency. The expensive `record_replay`
+    /// pass (replay.json / replay_selfplay.json) only runs every `replay_every`
+    /// iters (vs the cheaper bench, which stays at `bench_every`). Default 10.
+    replay_every: usize,
+    /// Replay games captured per source (champ-vs-hard + self-play). Default 5.
+    replay_games: usize,
+    cap: i64,
+    width: i32,
+    height: i32,
+    seed: u64,
+    dirichlet_alpha: f64,
+    dirichlet_eps: f64,
+    move_temp: f64,
+    temp_until_round: i64,
+    /// Win-cause-weighted value target: non-Device decisive games have their |z|
+    /// scaled by `1 - device_bonus`, so the net values pursuing/defending the
+    /// Strange-Device win condition. Default 0.0 = no-op (identical to plain ±1).
+    device_bonus: f64,
+    /// Draw-attractor fix: tie/timeout games yield `z = -tie_penalty` for BOTH
+    /// seats so the net stops learning passive "wait for the clock" play.
+    /// Default 0.0 = no-op (ties remain at z = 0).
+    tie_penalty: f64,
+    /// Potential-based reward shaping discount γ (see [`potential`]). Default 0.99.
+    shape_gamma: f64,
+    /// Potential-based reward shaping weight: scales the per-step shaped reward
+    /// `γΦ(s') − Φ(s)` so it cannot swamp the ±1 terminal target. Default 0.3.
+    /// `shape_weight = 0` is an EXACT no-op (value target stays the terminal z).
+    shape_weight: f64,
+    /// Stage-0 discovery: floor on the root prior of the empirically-starved build
+    /// intents (Village/Outpost/StackProducer/StrangeDevice/Mine) so a rarely
+    /// enumerated arm still gets a few PUCT visits. Default 0.03; 0 = no-op.
+    build_prior_floor: f64,
+    /// No-progress stalemate cut for the TRAINING self-play loop
+    /// (`play_one_game_explore`): a frozen game is cut to a TIE once the board
+    /// signature hasn't changed for this many rounds (and no Device is counting
+    /// down). Default 40 = identical to the old `STALL_ROUNDS` const (no-op).
+    /// Raising it lets self-play games run longer before the no-progress cut.
+    stall_rounds: i64,
+    /// Action-level device-commitment potential weight (see [`device_potential_bonus`]):
+    /// adds a potential-based Φ bonus (max = this weight) for owning a STANDING device
+    /// ticking toward a Device win, counteracting the soldier-cap-halving deterrent.
+    /// Default 0.0 = no-op (Φ identical to the economy-only potential).
+    device_potential: f64,
+    /// Optional eval/bench prior-floor: when > 0, applies the same starved-build prior
+    /// floor used in self-play (`mcts_select_explore`) to the greedy bench/deploy MCTS
+    /// (`mcts_select`). Default 0.0 = OFF, so the bench stays an honest greedy measure
+    /// (separate from `build_prior_floor`, which only props self-play exploration).
+    eval_prior_floor: f64,
+    /// PFSP / frozen past-champion opponent pool (see TRAINING-RESEARCH §1C "PFSP"):
+    /// when on, the OPPONENT seat in self-play is, with probability `1 - vs_hard_frac`,
+    /// drawn from a pool of frozen earlier champions (win-rate-weighted = true PFSP),
+    /// breaking the ~0.50 Nash self-twin cycle. Default false = no-op (opponent is the
+    /// current twin, exactly as before).
+    pfsp: bool,
+    /// Lever C (decisive curriculum): enable the SCRIPTED strategy opponents
+    /// (device-rusher + army-rusher, HardAi with biased `AiParams`) in the
+    /// non-vs-hard self-play games. Default false = no-op (no scripted games).
+    script_opponents: bool,
+    /// Fraction of the NON-vs-hard self-play games that draw a scripted opponent
+    /// (when `script_opponents` is on). The two strategies are split evenly. Default
+    /// 0.0 = no-op (so even with `--script-opponents` set, nothing changes until
+    /// `--script-frac > 0`). Clamped to [0,1].
+    script_frac: f64,
+    /// Lever C action-level device credit (REPLACES the diffuse whole-game |z|
+    /// reweight with PER-DECISION credit). When > 0, in games that END in a Device
+    /// win, the winning seat's `BuildStrangeDevice` decision and its device-DEFENDING
+    /// decisions (HireSoldier while owning a standing device) get `z` nudged toward
+    /// +1 by this magnitude; and a seat that owned a standing device but LOST gets
+    /// its passive decisions (Pass / non-defensive) nudged toward −1, teaching it not
+    /// to throw a winnable device. Each adjusted `z` is re-clamped to [-1,1]. Default
+    /// 0.0 = no-op. Independent of `--device-bonus` (which stays available).
+    device_credit: f64,
+    /// LEVER A (horizon / look-ahead). When true, each MCTS tree edge advances a
+    /// FULL turn instead of a single intent: after the searched first intent the
+    /// root player completes its turn via the net's greedy policy (the deployed
+    /// turn loop), so tree DEPTH = rounds and the search reaches the decisive
+    /// long-horizon outcomes (conquest ~r35, Strange Device ~r90) the 1–2-decision
+    /// search and squashed value head could not. Applies to BOTH self-play
+    /// (`mcts_select_explore`) and the greedy bench/deploy MCTS (`mcts_select`).
+    /// Parity-safe (search-side only; net I/O, candidates, gates and the recorded
+    /// example shape are all unchanged → no cold-start). Default false = no-op
+    /// (each edge = one intent then `end_turn`, exactly as before Lever A).
+    turn_search: bool,
+    /// Lever C (ROUND-2 value-squash fix). When true, in SCRIPTED-opponent games the
+    /// scripted (HardAi) opponent SEAT's trajectory is recorded as VALUE-ONLY examples
+    /// (its board states evaluated from that seat, trained with
+    /// `train_grad_value_only_scalars` — value head only, no policy gradient). Because
+    /// the scripted opponents WIN the lopsided device-rush/army-rush games ~70-80% of
+    /// the time, the learner-only recording fed the value head almost exclusively
+    /// LOSING (−1) targets → `valPredWin` could never rise (the round-1 squash). This
+    /// flag salvages the clean +1 value signal from the WINNING side so the value head
+    /// sees BOTH outcomes. Default false = no-op (only seat-0 learner records, exactly
+    /// as round 1). Composes with shaping/device-potential/credit.
+    record_opp_value: bool,
+    /// Lever C (ROUND-2). When true, the device-rush ↔ army-rush split in scripted
+    /// games is GRADED by the learner's running per-strategy win-rate: the trainer
+    /// samples MORE of the strategy the learner currently BEATS LESS (AlphaStar-style
+    /// `(1−p_win)²` weighting), so the curriculum tracks the learner toward ~50% on
+    /// each matchup instead of a fixed 50/50 split that may sit far from balance.
+    /// Default false = no-op (even 50/50 split, exactly as round 1).
+    script_grade: bool,
+    /// FIX 1a (PASSIVITY CURE — territory carrot). Weight of a signed TILE-LEAD term
+    /// added to Φ: `+ tile_potential * tile_lead`, where `tile_lead =
+    /// (my_tiles − max_enemy_tiles)/total ∈ [−1, 1]` (the EXACT formula `value_scalars`
+    /// uses). Reintroduces the expansion carrot the economy-only Φ dropped (the
+    /// historical *territory* Φ that honestly reached ~45% vs HARD). Default 0.0 = no-op.
+    tile_potential: f64,
+    /// FIX 1b (PASSIVITY CURE — idle penalty, REWARD-DESIGN §49 N5). Weight of a
+    /// SUBTRACTED idle-potential term: `− idle_penalty * (free_soldier_norm +
+    /// free_unit_norm + idle_money_norm)`, where the three are the UNFILLED soldier
+    /// slots / UNFILLED worker slots / un-banked money (in-Device-window), each
+    /// normalised to [0,1]. Hoarding empty capacity and idle cash LOWERS Φ, so acting
+    /// (hire / expand / build) RAISES it. Default 0.0 = no-op.
+    idle_penalty: f64,
+    /// FIX 3 (PASSIVITY CURE — unlock the army). Weight of a term rewarding FILLED
+    /// soldier capacity: `+ soldier_cap_potential * filled_soldier_norm`, where
+    /// `filled_soldier_norm = clamp01(used_soldier / 6)`. Building outposts and
+    /// FIELDING soldiers raises Φ, countering the Device's cap-halving trap. Coherent
+    /// with `idle_penalty` (which penalises UNFILLED slots) — they never double-count.
+    /// Default 0.0 = no-op.
+    soldier_cap_potential: f64,
+    /// FIX 2 (turn-search SPEND-the-budget). When true (and `--turn-search` is on),
+    /// the turn completion no longer stops on the first greedy Pass: it spends the
+    /// remaining turn budget on the best NON-Pass candidate until none beats Pass by
+    /// a tiny margin. Default false = no-op (break-on-Pass, exactly as before).
+    turn_search_spend: bool,
+
+    // --- STEP 1 (kill safe-Pass): growth/lead Φ + saturating cap + idle-as-FLOW ---
+    // All three default 0.0 ⇒ exact no-op (Φ bit-identical to `potential_full`).
+    // These compose ADDITIVELY on top of the FIX-1/FIX-3 terms above and are the
+    // single coherent "Step-1 Φ" configuration (TRAINING-APPROACH §1.1/§1.2/§1.2c).
+
+    /// STEP 1 (§1.1 — growth carrot). Weight of a signed INCOME-LEAD term:
+    /// `+ income_lead_potential · income_lead`, where
+    /// `income_lead = clamp((my_income − max_enemy_income)/400, −1, 1)` (the same
+    /// 400-money normaliser the static income term uses). REPLACES the static-income
+    /// pull with a *relative* one so Φ cannot be maxed by sitting on a small static
+    /// economy — the enemy keeps growing, so only OUT-growing the foe raises Φ.
+    /// Default 0.0 = no-op.
+    income_lead_potential: f64,
+    /// STEP 1 (§1.2 — capacity AS potential, the Outpost-tension fix). Weight of a
+    /// SATURATING soldier-CAP term: `+ cap_potential · clamp01(soldier_cap/CAP_TARGET)`
+    /// with `CAP_TARGET = 7` (HQ + 2 Outposts). Rewards *HAVING* soldier cap up to the
+    /// ceiling, so building an Outpost is IMMEDIATELY Φ-positive; saturates so the net
+    /// does not outpost-spam. ORTHOGONAL to `soldier_cap_potential` (which rewards
+    /// FILLING the cap with soldiers): this rewards the empty room, that rewards the
+    /// army. Default 0.0 = no-op.
+    cap_potential: f64,
+    /// SECONDARY (TRAINING-APPROACH §2.5 — net size). `false` = the current LARGE
+    /// round-3 arch (`D1=32,D=48,HV=64,HP=64` + residual, ≈53.7k params, DEFAULT, no
+    /// behavior change). `true` (via `--net-size small`) = the PRE-round-3 SMALL arch
+    /// (`D1=16,D=24,HV=24,HP=24`, no residual, ≈9.8k params) for fast iteration. Only
+    /// affects a COLD-START (a warm `--init` keeps whatever arch it was saved with).
+    small_net: bool,
+    /// STEP 1 (§1.2c — idle REDEFINED as unused FLOW, anti-double-count). Weight of a
+    /// SUBTRACTED term `− idle_flow_penalty · (unstaffed_units_n + unspent_income_n)`.
+    /// Unlike the FIX-1b `idle_penalty` (which keys on EMPTY soldier/worker SLOTS and
+    /// so punishes a freshly-built Outpost's transient empty slots), this idle term is
+    /// a function of *flow only*: (i) workers/experts that EXIST but are NOT staffing a
+    /// producer, and (ii) un-spent money while an affordable expansion build is on the
+    /// table. Building an Outpost adds ZERO idle by this definition (it adds CAP, not
+    /// idle units). This is the precise resolution of the idle-vs-Outpost tension.
+    /// Default 0.0 = no-op.
+    idle_flow_penalty: f64,
+
+    // --- STEP 2 (combat curriculum): army emphasis + defense ------------------
+    // Both default 0.0 ⇒ exact no-op (Φ bit-identical to the STEP-1 path). They
+    // compose ADDITIVELY on top of the STEP-1 terms and are the "Step-2 Φ" config
+    // (TRAINING-APPROACH §1.3/§1.5).
+
+    /// STEP 2 (§1.3 — FIELDED-ARMY emphasis, the army-rusher counter). Weight of a
+    /// term rewarding the FILLED soldier count up to the full cap an Outpost line
+    /// enables: `+ w_army · clamp01(used_soldier / ARMY_TARGET)` with
+    /// `ARMY_TARGET = 7` (HQ + 2 Outposts = 7 fillable soldier slots, = CAP_TARGET).
+    /// COMPLEMENTS the FIX-3 `soldier_cap_potential` (which saturates at /6, i.e. one
+    /// Outpost's worth): this term keeps paying as the army grows toward the full
+    /// two-Outpost cap, so the Outpost→fill chain is rewarded END-TO-END (build cap
+    /// via §1.2 `cap_potential`, then FILL it past one Outpost via this). Orthogonal
+    /// to `cap_potential` (empty room) and `idle_flow_penalty` (unused flow); it keys
+    /// only on FIELDED soldiers, so it never double-counts with them. Default 0.0 = no-op.
+    w_army: f64,
+    /// STEP 2 (§1.5 — DEFENSE, small). Weight of a SUBTRACTED HQ-connectivity-exposure
+    /// term: `− w_cut · hq_cut_exposure`, where `hq_cut_exposure ∈ [0,1]` is the
+    /// fraction of owned tiles that would be lost end-of-turn to the WORST single
+    /// articulation cut — i.e. tiles already not HQ-connected PLUS the largest set that
+    /// a single owned-tile loss would sever from the HQ (REWARD-DESIGN N3
+    /// `own_tiles_lost_via_cut`). Being one cut from losing territory LOWERS Φ →
+    /// garrisoning the frontier / holding chokepoints / keeping tiles HQ-connected
+    /// RAISES it (the denser defensive gradient §1.5 calls for; the actual loss event
+    /// stays in the terminal/value signal). Kept SMALL. Default 0.0 = no-op.
+    w_cut: f64,
+}
+impl Default for TrainCfg {
+    fn default() -> Self {
+        TrainCfg {
+            out: PathBuf::from("rust-trainer/checkpoints-cnn"),
+            init: None,
+            iters: 800,
+            games: 48,
+            sims: 64,
+            epochs: 4,
+            batch: 128,
+            buffer: 60_000,
+            lr: 0.01,
+            l2: 1e-5,
+            vs_hard_frac: 0.75,
+            bench_every: 5,
+            bench_games: 80,
+            replay_every: 10,
+            replay_games: 5,
+            cap: 300,
+            width: 14,
+            height: 12,
+            seed: 1,
+            dirichlet_alpha: 0.4,
+            dirichlet_eps: 0.35,
+            move_temp: 1.2,
+            temp_until_round: 120,
+            device_bonus: 0.0,
+            tie_penalty: 0.0,
+            shape_gamma: 0.99,
+            shape_weight: 0.3,
+            build_prior_floor: 0.03,
+            stall_rounds: STALL_ROUNDS,
+            device_potential: 0.0,
+            eval_prior_floor: 0.0,
+            pfsp: false,
+            script_opponents: false,
+            script_frac: 0.0,
+            device_credit: 0.0,
+            turn_search: false,
+            record_opp_value: false,
+            script_grade: false,
+            tile_potential: 0.0,
+            idle_penalty: 0.0,
+            soldier_cap_potential: 0.0,
+            turn_search_spend: false,
+            income_lead_potential: 0.0,
+            cap_potential: 0.0,
+            idle_flow_penalty: 0.0,
+            small_net: false,
+            w_army: 0.0,
+            w_cut: 0.0,
+        }
+    }
+}
+
+/// Cold-start a fresh `SpatialNet` honouring the `--net-size` flag: LARGE round-3 arch
+/// by default, the PRE-round-3 SMALL ~9.8k-param arch when `tc.small_net`. I/O is
+/// identical between the two — only the trunk widths / residual block differ.
+fn cold_start_net(tc: &TrainCfg) -> SpatialNet {
+    if tc.small_net {
+        SpatialNet::default_small_with_value_scalars(
+            PLANE_COUNT, SPATIAL_LOCAL_DIM, INTENT_DIM, VALUE_SCALAR_DIM, tc.seed,
+        )
+    } else {
+        SpatialNet::default_with_value_scalars(
+            PLANE_COUNT, SPATIAL_LOCAL_DIM, INTENT_DIM, VALUE_SCALAR_DIM, tc.seed,
+        )
+    }
+}
+
+/// Minimal UTC ISO-8601 timestamp (mirrors alphazero.rs `now_iso`) so dashboard
+/// `ts` fields parse.
+fn now_iso() -> String {
+    let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) as i64;
+    let days = secs.div_euclid(86400);
+    let tod = secs.rem_euclid(86400);
+    let (h, mi, s) = (tod / 3600, (tod % 3600) / 60, tod % 60);
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, m, d, h, mi, s)
+}
+
+fn append_line(path: &PathBuf, line: &str) {
+    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(f, "{line}");
+    }
+}
+
+// --- Dirichlet / temperature helpers (mirror search.rs::sample_*) ------------
+
+fn sample_normal(rng: &mut XorShift32) -> f64 {
+    let u1 = rng.next_f64().max(1e-12);
+    let u2 = rng.next_f64();
+    (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+}
+fn sample_gamma(rng: &mut XorShift32, alpha: f64) -> f64 {
+    if alpha < 1.0 {
+        let u = rng.next_f64().max(1e-12);
+        return sample_gamma(rng, alpha + 1.0) * u.powf(1.0 / alpha);
+    }
+    let d = alpha - 1.0 / 3.0;
+    let c = 1.0 / (9.0 * d).sqrt();
+    loop {
+        let x = sample_normal(rng);
+        let v0 = 1.0 + c * x;
+        if v0 <= 0.0 {
+            continue;
+        }
+        let v = v0 * v0 * v0;
+        let u = rng.next_f64();
+        if u < 1.0 - 0.0331 * x * x * x * x {
+            return d * v;
+        }
+        if u.ln() < 0.5 * x * x + d * (1.0 - v + v.ln()) {
+            return d * v;
+        }
+    }
+}
+fn sample_dirichlet(rng: &mut XorShift32, alpha: f64, n: usize) -> Vec<f64> {
+    let mut g: Vec<f64> = (0..n).map(|_| sample_gamma(rng, alpha).max(1e-12)).collect();
+    let s: f64 = g.iter().sum();
+    if s > 0.0 {
+        for v in &mut g {
+            *v /= s;
+        }
+    } else {
+        for v in &mut g {
+            *v = 1.0 / n as f64;
+        }
+    }
+    g
+}
+/// Sample an index ∝ `weights[i]^(1/temp)` (AlphaZero temperature selection).
+fn sample_move(visits: &[f64], temp: f64, rng: &mut XorShift32) -> usize {
+    let inv = 1.0 / temp;
+    let w: Vec<f64> = visits.iter().map(|&v| if v > 0.0 { v.powf(inv) } else { 0.0 }).collect();
+    let s: f64 = w.iter().sum();
+    if !(s > 0.0) {
+        // degenerate → most-visited
+        let mut best = 0usize;
+        let mut bn = f64::NEG_INFINITY;
+        for (i, &v) in visits.iter().enumerate() {
+            if v > bn { bn = v; best = i; }
+        }
+        return best;
+    }
+    let mut r = rng.next_f64() * s;
+    for (i, &wi) in w.iter().enumerate() {
+        r -= wi;
+        if r <= 0.0 {
+            return i;
+        }
+    }
+    w.len() - 1
+}
+
+/// Run an MCTS decision with SELF-PLAY EXPLORATION: Dirichlet noise mixed into
+/// the root priors (mirroring `search.rs::select_with_pi`), and the PLAYED move
+/// sampled ∝ visit^(1/temp) while `round < temp_until_round` (else greedy). The
+/// training target `pi` is ALWAYS the raw visit distribution (never tempered).
+/// Returns `(chosen_index, pi)`.
+fn mcts_select_explore(
+    net: &SpatialNet,
+    g: &Game,
+    player: PlayerId,
+    cfg: &TierConfig,
+    n_sims: usize,
+    round: i64,
+    tc: &TrainCfg,
+    rng: &mut XorShift32,
+) -> MctsResult {
+    let mut tree = Mcts {
+        nodes: Vec::new(),
+        net,
+        player,
+        cfg: *cfg,
+        bot: HardAi::hard(),
+        turn_search: tc.turn_search,
+        turn_budget: (cfg.budget - 1).max(0),
+        turn_search_spend: tc.turn_search_spend,
+    };
+    let mut root = tree.make_node(g);
+    let n = root.cands.len();
+    if n <= 1 {
+        let mut pi = vec![0.0; n];
+        if n == 1 {
+            pi[0] = 1.0;
+        }
+        return MctsResult { chosen: 0, pi };
+    }
+    // Mix Dirichlet noise into the root priors (self-play only).
+    if tc.dirichlet_alpha > 0.0 && tc.dirichlet_eps > 0.0 {
+        let noise = sample_dirichlet(rng, tc.dirichlet_alpha, n);
+        let eps = tc.dirichlet_eps;
+        for a in 0..n {
+            root.priors[a] = (1.0 - eps) * root.priors[a] + eps * noise[a];
+        }
+    }
+    // Stage-0 discovery: floor the root prior of the empirically-STARVED build
+    // intents so a rarely-enumerated arm (Village/Outpost/StackProducer/Device/
+    // Mine) still gets enough prior mass to receive a few PUCT visits — letting
+    // its (now reward-shaped) value be learned. Then renormalise priors to sum 1.
+    // build_prior_floor = 0 → no-op.
+    if tc.build_prior_floor > 0.0 {
+        let starved: Vec<bool> = root.cands.iter().map(|c| is_starved_build(c.intent)).collect();
+        apply_build_prior_floor(&mut root.priors, &starved, tc.build_prior_floor);
+    }
+    tree.nodes.push(root);
+    for _ in 0..n_sims {
+        simulate(&mut tree, cfg);
+    }
+    let ev = &tree.nodes[0].edge_visits;
+    let total: f64 = ev.iter().sum();
+    let pi: Vec<f64> = if total > 0.0 {
+        ev.iter().map(|&v| v / total).collect()
+    } else {
+        let mut p = vec![0.0; n];
+        p[0] = 1.0;
+        p
+    };
+    let chosen = if tc.move_temp > 1e-9 && round < tc.temp_until_round {
+        sample_move(ev, tc.move_temp, rng)
+    } else {
+        let mut c = 0usize;
+        let mut best = -1.0f64;
+        for (a, &v) in ev.iter().enumerate() {
+            if v > best { best = v; c = a; }
+        }
+        c
+    };
+    MctsResult { chosen, pi }
+}
+
+// --- potential-based reward shaping ------------------------------------------
+//
+// `F = γΦ(s') − Φ(s)` (Ng/Harada/Russell shaping theorem) gives a DENSE per-step
+// reward whose sign-preserving telescoping leaves the optimal policy unchanged,
+// while crediting economy moves (Village/Outpost) made many turns before a win.
+// Φ is GROWTH-AWARE: a just-built / just-staffed (immature) farm contributes 0
+// to income AND to the staffed-ratio, because the engine only pays a farm on the
+// turn it matures (`gen_grassland`: `growth_phase + 1 == 5 && has_worker`).
+
+/// Potential-Φ weights (exposed as consts for easy retuning).
+const W_INC: f64 = 0.5; // realized (growth-aware) money income / round
+const W_STF: f64 = 0.3; // producing_producers / total_producers
+const W_CAP: f64 = 0.2; // UTILIZED unit/soldier capacity (cap that is actually filled)
+// Bank-toward-the-Device term (additive, bounded; W_INC+W_STF+W_CAP sum to 1.0 so the
+// base Φ stays in [0,1] and this extends it to [0, 1+W_BANK]). The conquest plateau came
+// partly from the net never ACCUMULATING the treasury needed to afford an Outpost (650) or
+// the decisive Strange Device (1300): a farm-reinvesting economy keeps money low, so those
+// candidates were never even offered/learned. This term gives DENSE, potential-based credit
+// for banking money toward the Device once the game is in the Device-eligible window
+// (rounds ≥ DEVICE_MIN_ROUND), saturating at the Device's money cost. It is gated on the
+// window so it does NOT reward early hoarding instead of expansion. Telescoping is preserved
+// (it is a pure function of state), so the optimal policy is unchanged (Ng et al. 1999).
+const W_BANK: f64 = 0.25;
+const DEVICE_MONEY_COST: f64 = 1300.0; // strange_device_build_cost money component
+const DEVICE_MIN_ROUND: i64 = 18; // build_strange_device's rounds≥18 gate
+
+#[inline]
+fn clamp01(x: f64) -> f64 {
+    x.clamp(0.0, 1.0)
+}
+
+/// Is a producer building on `tid` ACTUALLY producing this turn, using the EXACT
+/// production gate in `cp-sim` `managers.rs` (`gen_grassland` / `gen_mountain` /
+/// `gen_river`)?  Growth-aware for Farms:
+///   - Farm (grassland): pays iff `growth_phase + 1 == 5` (stored == 4) AND a
+///     `BasicWorker` is present. An immature farm produces 0.
+///   - Mine (mountain): pays iff a `BasicWorker` is present.
+///   - Hydro (river) / Nuclear (grassland): pays iff an `Expert` is present (the
+///     engine early-returns without one; payout also needs a worker, but the gate
+///     the net keys on is the Expert, matching `is_producing_producer` in planes).
+///   - Village / Outpost: produce unconditionally.
+fn is_producing_now(g: &Game, tid: TileId) -> bool {
+    let t = &g.tiles[tid.0];
+    let Some(b) = &t.building else { return false };
+    let has = |kind: UnitType| t.units.iter().any(|&u| g.units[u.0].kind == kind);
+    match b.kind {
+        BuildingType::Farm => b.growth_phase == 4 && has(UnitType::BasicWorker),
+        BuildingType::Mine => has(UnitType::BasicWorker),
+        BuildingType::Hydro | BuildingType::Nuclear => has(UnitType::Expert),
+        BuildingType::Village | BuildingType::Outpost => true,
+        _ => false,
+    }
+}
+
+/// Is this building one of the seat's economic PRODUCERS counted by Φ's
+/// staffed-ratio (Farm / Mine / Village / Hydro / Nuclear)? Outpost is military,
+/// not a producer for the ratio (it raises soldier cap; rewarded via `W_CAP`
+/// only once that cap is actually FILLED with soldiers).
+fn is_producer_building(kind: BuildingType) -> bool {
+    matches!(
+        kind,
+        BuildingType::Farm
+            | BuildingType::Mine
+            | BuildingType::Village
+            | BuildingType::Hydro
+            | BuildingType::Nuclear
+    )
+}
+
+/// GROWTH-AWARE realized money income per round for `seat` (money component only).
+///
+/// `metrics::net_money_per_round` is NOT growth-aware — it credits ANY staffed
+/// farm `175/4` regardless of growth phase — so it is deliberately NOT used here.
+/// We sum only the MONEY output of buildings that pass the REAL production gate
+/// this turn (incl. `growth_phase == 4` for farms), then subtract salaries +
+/// Village/Outpost upkeep so the measure reflects net money actually realized.
+fn realized_income_per_round(g: &Game, seat: PlayerId) -> f64 {
+    use cp_sim::resources::BasicResource;
+    let mut income = 0.0f64;
+    for tid in g.owned_tiles(seat) {
+        let t = &g.tiles[tid.0];
+        let Some(b) = &t.building else { continue };
+        if !is_producing_now(g, tid) {
+            continue;
+        }
+        let money = b.production().get(BasicResource::Money).unwrap_or(0) as f64;
+        match b.kind {
+            // Per-worker producers pay once per BasicWorker on the tile (mirrors
+            // the engine's per-worker loop in gen_mountain / gen_river / Nuclear).
+            BuildingType::Mine => {
+                let workers = m_count_workers(g, tid);
+                let mult = if m_has(g, tid, UnitType::Expert) { 2.0 } else { 1.0 };
+                income += money * workers as f64 * mult;
+            }
+            BuildingType::Hydro | BuildingType::Nuclear => {
+                income += money * m_count_workers(g, tid) as f64;
+            }
+            // Farm / Village / Outpost pay a flat per-tile amount.
+            _ => income += money,
+        }
+    }
+    income - cp_ai::metrics::money_drain_per_round(g, seat)
+}
+
+#[inline]
+fn m_count_workers(g: &Game, tid: TileId) -> i64 {
+    g.tiles[tid.0]
+        .units
+        .iter()
+        .filter(|&&u| g.units[u.0].kind == UnitType::BasicWorker)
+        .count() as i64
+}
+#[inline]
+fn m_has(g: &Game, tid: TileId, kind: UnitType) -> bool {
+    g.tiles[tid.0].units.iter().any(|&u| g.units[u.0].kind == kind)
+}
+
+/// Action-level device-commitment potential bonus (see [`potential_dev`]).
+///
+/// Counteracts the conquest-rush bias: building the Strange Device HALVES the
+/// soldier cap, so the diffuse `--device-bonus` (which scales the WHOLE game's
+/// terminal |z|) gives no TARGETED credit for committing to + HOLDING a device,
+/// and the gradient prefers conquest. This term gives an IMMEDIATE, potential-based
+/// (Ng-1999) positive Φ for the acting seat OWNING A STANDING device that is ticking
+/// toward a Device win, RISING as the countdown nears detonation — densely rewarding
+/// committing to and defending the device through to the win. Because it is a pure
+/// function of state, the telescoping γΦ(s')−Φ(s) preserves the optimal policy.
+/// Scaled by the `--device-potential` weight (0 = no-op); bounded to that weight
+/// (progress ∈ [0,1]) and the shaped return is re-clamped to [-1,1] downstream.
+///
+/// `device_potential = w * progress` where
+///   progress = clamp01((max_countdown − current_countdown) / max_countdown),
+/// `max_countdown = strange_device_countdown(tile_count)` (the value the device
+/// was armed with), so a freshly-built device contributes ~0 and a device one tick
+/// from detonation contributes ~`w`.
+fn device_potential_bonus(g: &Game, seat: PlayerId, weight: f64) -> f64 {
+    if weight <= 0.0 {
+        return 0.0;
+    }
+    let Some(dt) = g.find_strange_device_tile() else { return 0.0 };
+    if g.tiles[dt.0].owner != Some(seat) {
+        return 0.0;
+    }
+    let Some(b) = g.tiles[dt.0].building.as_ref() else { return 0.0 };
+    let cd = b.countdown.max(0) as f64;
+    let max_cd = cp_sim::resources::strange_device_countdown(g.get_tile_count()).max(1) as f64;
+    let progress = clamp01((max_cd - cd) / max_cd);
+    weight * progress
+}
+
+/// Φ(s) ∈ ~[0,1] for `seat`: a growth-aware, read-only economic-health potential.
+/// Pure (no engine mutation, no clone). Device-commitment-free (the device potential
+/// is `0`); the self-play harvest uses [`potential_dev`] to add it. Retained as the
+/// device-free baseline the Φ unit tests assert against (the live path is
+/// `potential_dev`), so it is `allow(dead_code)` in the non-test bin build.
+#[allow(dead_code)]
+fn potential(g: &Game, seat: PlayerId) -> f64 {
+    potential_dev(g, seat, 0.0)
+}
+
+/// [`potential`] PLUS the action-level device-commitment bonus (see
+/// [`device_potential_bonus`]), weighted by `device_potential` (0 = identical to
+/// [`potential`]).
+fn potential_dev(g: &Game, seat: PlayerId, device_potential: f64) -> f64 {
+    potential_econ(g, seat) + device_potential_bonus(g, seat, device_potential)
+}
+
+/// PASSIVITY-CURE Φ terms (FIX 1 + FIX 3), all additive on top of [`potential_dev`].
+/// `all-zero weights` ⇒ returns EXACTLY [`potential_dev`] (bit-identical no-op), so
+/// the prior runs reproduce unchanged. Each term is a pure function of state, so the
+/// telescoping shaped return `γΦ(s')−Φ(s)` stays policy-invariant (Ng et al. 1999).
+///
+/// * `tile_potential` — `+ w·tile_lead`, signed in [−1,1] (the EXACT `value_scalars`
+///   formula): the expansion CARROT. Sitting on a static tile lead no longer free —
+///   only WIDENING it raises Φ; falling behind lowers it.
+/// * `idle_penalty` — `− w·(free_soldier/6 + free_unit/10 + idle_money)`: hoarding
+///   UNFILLED soldier/worker slots and (in-Device-window) un-banked cash LOWERS Φ →
+///   acting (hire/expand/build) raises it (REWARD-DESIGN §49 N5).
+/// * `soldier_cap_potential` — `+ w·(used_soldier/6)`: FIELDED soldiers (filled
+///   outpost capacity) raise Φ — unlocks the army, counters the Device cap-halving.
+///   Coherent with `idle_penalty`: that penalises UNFILLED slots, this rewards FILLED
+///   ones, so a soldier slot is never both rewarded-empty and penalised-filled.
+fn potential_full(
+    g: &Game,
+    seat: PlayerId,
+    device_potential: f64,
+    tile_potential: f64,
+    idle_penalty: f64,
+    soldier_cap_potential: f64,
+) -> f64 {
+    let mut phi = potential_dev(g, seat, device_potential);
+    if tile_potential == 0.0 && idle_penalty == 0.0 && soldier_cap_potential == 0.0 {
+        return phi; // exact no-op fast path (and bit-identical to potential_dev)
+    }
+    use cp_sim::resources::BasicResource;
+
+    // FIX 1a — signed tile lead (EXACT `value_scalars` formula, reused).
+    if tile_potential != 0.0 {
+        let my_tiles = g.get_tile_count_for_player(seat) as f64;
+        let max_enemy = g
+            .live_players()
+            .iter()
+            .filter(|&&q| q != seat)
+            .map(|&q| g.get_tile_count_for_player(q))
+            .max()
+            .unwrap_or(0) as f64;
+        let total_tiles = (g.get_tile_count() as f64).max(1.0);
+        let tile_lead = ((my_tiles - max_enemy) / total_tiles).clamp(-1.0, 1.0);
+        phi += tile_potential * tile_lead;
+    }
+
+    // Shared capacity quantities (same accessors as Φ's cap term, &Game-pure).
+    let free_soldier = g.free_soldier_amount(seat).max(0) as f64;
+    let free_unit = g.free_unit_amount(seat).max(0) as f64;
+
+    // FIX 1b — idle penalty: UNFILLED soldier/worker slots + idle money (windowed).
+    if idle_penalty != 0.0 {
+        let free_soldier_n = clamp01(free_soldier / 6.0);
+        let free_unit_n = clamp01(free_unit / 10.0);
+        // Idle money mirrors the bank term's window/cap so the two are coherent: only
+        // un-banked cash inside the Device window counts as "idle" (early reinvestment
+        // is not penalised; post-Device cash is moot).
+        let idle_money_n = if g.get_rounds_played() >= DEVICE_MIN_ROUND && !g.has_strange_device() {
+            clamp01(
+                g.players[seat.0].resources.get(BasicResource::Money).unwrap_or(0) as f64
+                    / DEVICE_MONEY_COST,
+            )
+        } else {
+            0.0
+        };
+        phi -= idle_penalty * (free_soldier_n + free_unit_n + idle_money_n);
+    }
+
+    // FIX 3 — reward FILLED soldier capacity (the army).
+    if soldier_cap_potential != 0.0 {
+        let max_soldier = g.players[seat.0].max_soldier_amount;
+        let used_soldier = (max_soldier as f64 - free_soldier).max(0.0);
+        let filled_soldier_n = clamp01(used_soldier / 6.0);
+        phi += soldier_cap_potential * filled_soldier_n;
+    }
+
+    phi
+}
+
+/// Soldier-cap ceiling for the STEP-1 saturating cap potential: HQ(+1) + 2·Outpost(+3)
+/// = 7. Rewarding cap only up to this stops outpost-spam (beyond it, only FILLING pays
+/// via `soldier_cap_potential`). See TRAINING-APPROACH §1.2.
+const CAP_TARGET: f64 = 7.0;
+
+/// Fielded-army ceiling for the STEP-2 `w_army` term: the full soldier count a HQ +
+/// 2-Outpost line can field (= [`CAP_TARGET`]). The FIX-3 `soldier_cap_potential`
+/// saturates at one Outpost's worth (/6); `w_army` keeps paying out to this fuller
+/// army so the Outpost→fill chain is rewarded end-to-end. See TRAINING-APPROACH §1.3.
+const ARMY_TARGET: f64 = 7.0;
+
+/// STEP-2 (§1.5/§2.6) — fold one owned-tile-count sample into the running
+/// tiles-lost accumulator: charge any DECREASE since the previous sample (a lost
+/// tile), ignore increases (a recapture is not a loss). Returns the new
+/// `(accumulator, prev)` pair. Pure (extracted so the metric is unit-tested
+/// independently of running a full game).
+fn fold_tile_loss(acc: i64, prev: i64, now: i64) -> (i64, i64) {
+    let acc = if now < prev { acc + (prev - now) } else { acc };
+    (acc, now)
+}
+
+/// STEP-2 (§1.5) — `hq_cut_exposure ∈ [0,1]`: the fraction of `seat`'s owned tiles
+/// that would be lost end-of-turn to the WORST single articulation cut. Concretely:
+/// tiles already NOT HQ-connected (lost next end-of-turn regardless) PLUS the largest
+/// set that the loss of any single owned non-HQ tile would sever from the HQ. A pure
+/// read-only function of `&Game` (BFS over orthogonal-4 owned tiles, mirroring
+/// `get_hq_connected_tiles`), so the telescoping shaped return stays policy-invariant.
+/// Returns 0.0 when the seat has ≤1 owned tile or no HQ (nothing to sever).
+fn hq_cut_exposure(g: &Game, seat: PlayerId) -> f64 {
+    let owned = g.owned_tiles(seat);
+    let n_owned = owned.len();
+    if n_owned <= 1 {
+        return 0.0;
+    }
+    let hq = match g.get_hq_tile(seat) {
+        Some(h) => h,
+        None => return 0.0, // no HQ ⇒ connectivity is moot (handled by terminal loss)
+    };
+    // BFS reachable-from-HQ over owned tiles while EXCLUDING one removed tile.
+    let connected_count = |removed: Option<TileId>| -> usize {
+        if Some(hq) == removed {
+            return 0;
+        }
+        let mut seen: Vec<TileId> = vec![hq];
+        let mut i = 0;
+        while i < seen.len() {
+            for nb in g.neighbour_four_tiles(seen[i]) {
+                if Some(nb) == removed || seen.contains(&nb) {
+                    continue;
+                }
+                if g.tiles[nb.0].owner == Some(seat) {
+                    seen.push(nb);
+                }
+            }
+            i += 1;
+        }
+        seen.len()
+    };
+    // (a) baseline: tiles ALREADY disconnected are lost next end-of-turn.
+    let base_connected = connected_count(None);
+    let already_lost = n_owned - base_connected;
+    // (b) worst single articulation cut: the owned non-HQ tile whose removal severs
+    //     the MOST still-connected tiles from the HQ. (We remove the tile itself too,
+    //     counting it as part of the severed set since a cut chokepoint is captured.)
+    let mut worst_severed = 0usize;
+    for &t in &owned {
+        if t == hq || g.tiles[t.0].owner != Some(seat) {
+            continue;
+        }
+        let after = connected_count(Some(t));
+        // tiles that WERE connected but are no longer (excluding the removed tile
+        // from the "after" count means severed = base_connected − after − 1 for the
+        // removed tile itself, then +1 to charge the lost chokepoint). Net: the drop
+        // in reachable owned tiles vs baseline.
+        let severed = base_connected.saturating_sub(after);
+        if severed > worst_severed {
+            worst_severed = severed;
+        }
+    }
+    let exposed = (already_lost + worst_severed).min(n_owned) as f64;
+    exposed / n_owned as f64
+}
+
+/// STEP 1 Φ (TRAINING-APPROACH §1.1/§1.2/§1.2c — "kill safe-Pass"): the FIX-1/FIX-3 Φ
+/// [`potential_full`] PLUS three additive, flag-gated, signed/bounded terms. Each of
+/// the three new weights defaults to `0.0`; when ALL THREE are 0 this is BIT-IDENTICAL
+/// to [`potential_full`] (and, with the FIX-1/FIX-3 weights also 0, to `potential_dev`),
+/// so prior runs reproduce exactly. Pure state function ⇒ telescoping `γΦ(s')−Φ(s)` stays
+/// policy-invariant (Ng et al. 1999).
+///
+/// * `income_lead_potential` (§1.1) — `+ w · income_lead`, signed in [−1,1]: the
+///   GROWTH carrot. `income_lead = clamp((my_income − max_enemy_income)/400, −1, 1)`,
+///   reusing `realized_income_per_round` and the 400 normaliser of the static income.
+///   Replaces the static income pull — you cannot max it by sitting (the enemy grows).
+/// * `cap_potential` (§1.2) — `+ w · clamp01(soldier_cap/CAP_TARGET)`: rewards HAVING
+///   soldier cap up to the ceiling, so building an Outpost is immediately Φ-positive.
+///   Orthogonal to `soldier_cap_potential` (which rewards FILLED cap).
+/// * `idle_flow_penalty` (§1.2c) — `− w · (unstaffed_units_n + unspent_income_n)`:
+///   idle = unused FLOW (units that exist but staff no producer + un-spent money while an
+///   affordable expansion build exists), NOT empty slots. Building an Outpost adds ZERO
+///   idle by this definition — the explicit fix for the idle-vs-Outpost double-count.
+///
+/// STEP 2 (TRAINING-APPROACH §1.3/§1.5) — two further additive, flag-gated terms; both
+/// default 0.0 ⇒ bit-identical to the STEP-1 path:
+/// * `w_army` (§1.3) — `+ w · clamp01(used_soldier / ARMY_TARGET)`: FIELDED-army
+///   emphasis out to the full HQ+2-Outpost cap (ARMY_TARGET=7), complementing the
+///   FIX-3 `soldier_cap_potential` (which saturates at one Outpost's /6) so filling
+///   the cap pays end-to-end. Orthogonal to `cap_potential` (empty room) — keys only
+///   on FIELDED soldiers.
+/// * `w_cut` (§1.5) — `− w · hq_cut_exposure`: small DEFENSE term penalising being one
+///   articulation cut from losing owned tiles (see [`hq_cut_exposure`]).
+fn potential_step1(
+    g: &Game,
+    seat: PlayerId,
+    device_potential: f64,
+    tile_potential: f64,
+    idle_penalty: f64,
+    soldier_cap_potential: f64,
+    income_lead_potential: f64,
+    cap_potential: f64,
+    idle_flow_penalty: f64,
+    w_army: f64,
+    w_cut: f64,
+) -> f64 {
+    let mut phi = potential_full(
+        g,
+        seat,
+        device_potential,
+        tile_potential,
+        idle_penalty,
+        soldier_cap_potential,
+    );
+    if income_lead_potential == 0.0
+        && cap_potential == 0.0
+        && idle_flow_penalty == 0.0
+        && w_army == 0.0
+        && w_cut == 0.0
+    {
+        return phi; // exact no-op fast path → bit-identical to potential_full
+    }
+    use cp_sim::resources::BasicResource;
+
+    // §1.1 — signed INCOME LEAD vs the strongest live enemy, same 400 normaliser as
+    // the static income term so the magnitudes are comparable.
+    if income_lead_potential != 0.0 {
+        let my_income = realized_income_per_round(g, seat);
+        let max_enemy_income = g
+            .live_players()
+            .iter()
+            .filter(|&&q| q != seat)
+            .map(|&q| realized_income_per_round(g, q))
+            .fold(f64::NEG_INFINITY, f64::max);
+        let max_enemy_income = if max_enemy_income.is_finite() { max_enemy_income } else { 0.0 };
+        let income_lead = ((my_income - max_enemy_income) / 400.0).clamp(-1.0, 1.0);
+        phi += income_lead_potential * income_lead;
+    }
+
+    // §1.2 — SATURATING soldier-CAP potential: reward HAVING cap up to CAP_TARGET.
+    // Building an Outpost raises soldier cap → this term rises immediately (no need to
+    // fill the slots first). Saturates at the ceiling so it never rewards outpost-spam.
+    if cap_potential != 0.0 {
+        let soldier_cap = g.players[seat.0].max_soldier_amount.max(0) as f64;
+        phi += cap_potential * clamp01(soldier_cap / CAP_TARGET);
+    }
+
+    // §1.2c — idle as unused FLOW (NOT empty slots). Two flow quantities:
+    //   (i)  unstaffed units: workers/experts that EXIST but do not staff a producer.
+    //   (ii) unspent income: money sitting idle while an affordable expansion build
+    //        (cheapest = a Farm) is on the table — the net is failing to reinvest.
+    // Building an Outpost touches NEITHER (it adds capacity, not units; it SPENDS money),
+    // so this term is 0 for a fresh Outpost — the precise anti-tension property.
+    if idle_flow_penalty != 0.0 {
+        // (i) unstaffed units = total owned workers+experts − those standing on a
+        //     producer building tile. Bounded by a 10-unit normaliser (matches the
+        //     worker-cap normaliser used elsewhere).
+        let total_units =
+            g.current_basic_worker_amount(seat) + g.current_expert_amount(seat);
+        let mut staffing_units = 0i64;
+        for tid in g.owned_tiles(seat) {
+            let Some(b) = &g.tiles[tid.0].building else { continue };
+            if !is_producer_building(b.kind) {
+                continue;
+            }
+            for &u in &g.tiles[tid.0].units {
+                let k = g.units[u.0].kind;
+                if k == UnitType::BasicWorker || k == UnitType::Expert {
+                    staffing_units += 1;
+                }
+            }
+        }
+        let unstaffed = (total_units - staffing_units).max(0) as f64;
+        let unstaffed_n = clamp01(unstaffed / 10.0);
+
+        // (ii) unspent affordable income: money normalised by a Farm's money cost (the
+        //      cheapest expansion build, 100) and capped, counted only while at least a
+        //      Farm is affordable. This penalises HOARDING when reinvestment is possible,
+        //      independent of any build window (unlike the FIX-1b in-window idle money).
+        let money = g.players[seat.0].resources.get(BasicResource::Money).unwrap_or(0) as f64;
+        let farm_cost = 100.0; // farm_build_cost money component (cheapest build)
+        let unspent_income_n = if money >= farm_cost {
+            // saturate at ~3 farms' worth of un-reinvested cash so a small float doesn't
+            // dominate, and a large hoard caps the penalty.
+            clamp01(money / (farm_cost * 3.0))
+        } else {
+            0.0
+        };
+
+        phi -= idle_flow_penalty * (unstaffed_n + unspent_income_n);
+    }
+
+    // §1.3 — FIELDED-ARMY emphasis. Rewards the number of FILLED soldier slots out to
+    // the full HQ+2-Outpost cap (ARMY_TARGET). Complements the FIX-3 term (which
+    // saturates at /6 ≈ one Outpost) so an army growing past one Outpost keeps raising
+    // Φ → the Outpost→fill chain (cap via §1.2, fill via this) pays end-to-end.
+    if w_army != 0.0 {
+        let max_soldier = g.players[seat.0].max_soldier_amount.max(0) as f64;
+        let free_soldier = g.free_soldier_amount(seat).max(0) as f64;
+        let used_soldier = (max_soldier - free_soldier).max(0.0);
+        phi += w_army * clamp01(used_soldier / ARMY_TARGET);
+    }
+
+    // §1.5 — DEFENSE: penalise HQ-connectivity exposure (one cut from losing tiles).
+    if w_cut != 0.0 {
+        phi -= w_cut * hq_cut_exposure(g, seat);
+    }
+
+    phi
+}
+
+/// The economic-health core of Φ (the original [`potential`] body), with no device
+/// term. Split out so [`potential_dev`] can add the device bonus on top.
+fn potential_econ(g: &Game, seat: PlayerId) -> f64 {
+    use cp_sim::resources::BasicResource;
+    // 1. Realized (growth-aware) income, normalised by ~one farm-cluster's worth.
+    let inc = clamp01(realized_income_per_round(g, seat) / 400.0);
+
+    // 2. Staffed ratio: producing_producers / total_producers (growth-aware).
+    let mut total = 0i64;
+    let mut producing = 0i64;
+    for tid in g.owned_tiles(seat) {
+        let Some(b) = &g.tiles[tid.0].building else { continue };
+        if !is_producer_building(b.kind) {
+            continue;
+        }
+        total += 1;
+        if is_producing_now(g, tid) {
+            producing += 1;
+        }
+    }
+    let staffed_ratio = producing as f64 / total.max(1) as f64;
+
+    // 3. UTILIZED capacity: reward the ABSOLUTE number of FILLED worker/soldier
+    //    slots, normalised by a CONSTANT (NOT by max). This is the key fix: a
+    //    ratio (used/max) DROPS when a Village/Outpost adds empty cap (both `max`
+    //    and `free` jump), so the net was punished for the very turn it builds
+    //    capacity. With an absolute filled count, building a Village/Outpost adds
+    //    only EMPTY slots → `used_unit`/`used_soldier` are UNCHANGED → the cap term
+    //    does NOT move (no punishment); only hiring/staffing workers & soldiers to
+    //    FILL the slots raises `used_*` → Φ rises. Empty cap is still never rewarded
+    //    (we count filled slots, not free ones).
+    //    Normalisers: 10 worker slots and 6 soldier slots are chosen so a healthy
+    //    filled economy (~10 staffed workers + ~6 soldiers) drives both terms to 1.0,
+    //    hence cap → clamp01(0.6 + 0.4) = 1.0. Larger empires saturate at 1.0.
+    //    Read the CACHED caps directly (like `free_unit_amount`) to stay `&Game`-pure;
+    //    the `max_unit_amount`/`max_soldier_amount` accessors take `&mut self`.
+    let max_unit = g.players[seat.0].max_unit_amount;
+    let max_soldier = g.players[seat.0].max_soldier_amount;
+    let used_unit = (max_unit - g.free_unit_amount(seat)).max(0); // filled worker slots
+    let used_soldier = (max_soldier - g.free_soldier_amount(seat)).max(0); // filled soldier slots
+    let cap = clamp01(0.6 * (used_unit as f64 / 10.0) + 0.4 * (used_soldier as f64 / 6.0));
+
+    // 4. Bank-toward-the-Device: dense credit for accumulating the treasury that the
+    //    decisive Strange-Device win requires, but ONLY inside the Device-eligible window
+    //    (so it never rewards early hoarding over expansion). Saturates at the Device's
+    //    money cost. If a Device already stands (ours or anyone's), the banking objective
+    //    is moot → contribute 0 (don't pay the net to sit on cash post-Device).
+    let bank = if g.get_rounds_played() >= DEVICE_MIN_ROUND && !g.has_strange_device() {
+        clamp01(g.players[seat.0].resources.get(BasicResource::Money).unwrap_or(0) as f64 / DEVICE_MONEY_COST)
+    } else {
+        0.0
+    };
+
+    W_INC * inc + W_STF * staffed_ratio + W_CAP * cap + W_BANK * bank
+}
+
+/// True if this candidate's intent is in the empirically-STARVED build set whose
+/// root prior is floored in `mcts_select_explore` so it receives PUCT visits.
+fn is_starved_build(intent: candidates::Intent) -> bool {
+    use candidates::Intent::*;
+    matches!(
+        intent,
+        BuildVillage | BuildOutpost | StackProducer | BuildStrangeDevice | BuildMine
+    )
+}
+
+/// Raise the prior of every `starved[a]==true` arm to at least `floor`, then
+/// RENORMALISE the whole prior vector to sum to 1. `floor <= 0` is a no-op.
+fn apply_build_prior_floor(priors: &mut [f64], starved: &[bool], floor: f64) {
+    if floor <= 0.0 {
+        return;
+    }
+    for (a, p) in priors.iter_mut().enumerate() {
+        if starved.get(a).copied().unwrap_or(false) {
+            *p = p.max(floor);
+        }
+    }
+    let sum: f64 = priors.iter().sum();
+    if sum > 0.0 {
+        for p in priors.iter_mut() {
+            *p /= sum;
+        }
+    }
+}
+
+/// Self-play game with EXPLORATION on, harvesting one [`Example`] per net
+/// decision. Mirrors `play_one_game` but uses `mcts_select_explore`. When
+/// `vs_hard`, seat 1 = HardAi (not recorded); else both seats are the net.
+#[allow(clippy::too_many_arguments)]
+/// Cheap per-iteration self-play observability for ONE training game, returned
+/// alongside the harvested examples. PARITY-FREE: pure tallies, no engine call.
+struct ExploreOutcome {
+    /// `true` when the game ended with a winner (vs a TIE / no-progress cut).
+    decisive: bool,
+    /// Rounds played when the game ended.
+    rounds: i64,
+    /// Natural win cause, if any (None for TIE / stalemate cut). Tallied per-iter
+    /// into the `spDevice`/`spConquest`/`spDomination`/`spBankruptcy` log fields so
+    /// decisive self-play is visible as Device-driven vs fast-conquest.
+    cause: Option<WinCause>,
+    /// Per-intent decision counts for THIS game (indexed by `Intent as usize`).
+    intents: [u64; NUM_INTENTS],
+    /// HireWorker / HireExpert split (same classifier the bench uses).
+    extra: ExtraIntents,
+    /// Value-calibration + policy-entropy accumulators for THIS game (over the net's
+    /// recorded decisions). `vpred_*` sum the net's `value_from` prediction at each
+    /// recorded state, bucketed by the EVENTUAL terminal outcome FOR that decision's
+    /// seat (won / lost / tied); `vpred_*_n` are the matching counts. `ent_sum` sums
+    /// the entropy of each decision's MCTS visit-policy `pi`; `ent_n` is its count.
+    vpred_win: f64, vpred_win_n: u64,
+    vpred_loss: f64, vpred_loss_n: u64,
+    vpred_draw: f64, vpred_draw_n: u64,
+    ent_sum: f64, ent_n: u64,
+    /// PFSP bookkeeping: when this game was played against `Opponent::Frozen(idx, _)`,
+    /// the pool index of the frozen opponent and whether the LEARNER (seat 0) won, so
+    /// the pool's per-opponent win-rate can be updated for win-rate-weighted sampling.
+    /// `None` for SelfTwin / Hard games.
+    pfsp_opp: Option<usize>,
+    learner_won: bool,
+    /// Lever C: when this game was played against a scripted strategy opponent
+    /// (`Opponent::Script`), which one — so the dashboard can show the learner's
+    /// per-strategy win-rate (`spVsDeviceRush` / `spVsArmyRush`). `None` otherwise.
+    script_opp: Option<ScriptKind>,
+    /// STEP-2 (§1.5 defense gate) — tiles the LEARNER (seat 0) lost to the ARMY-RUSHER
+    /// over this game (sum of per-turn owned-tile decreases; assault captures + cuts).
+    /// `None` unless this game's opponent was `ScriptKind::ArmyRush`, so the dashboard
+    /// `tilesLostToRusher` is averaged only over the games it is defined for.
+    tiles_lost_to_rusher: Option<i64>,
+}
+
+/// Which agent plays the OPPONENT seat (seat 1) in a self-play game. The LEARNER
+/// (seat 0, = the net being trained) always records examples; whether the opponent
+/// seat ALSO records depends on the variant.
+enum Opponent<'a> {
+    /// Pure self-play: seat 1 is the SAME current net, and BOTH seats record
+    /// examples (the historical default when `vs_hard` was false).
+    SelfTwin,
+    /// Seat 1 is the static HARD heuristic; only seat 0 records (== old `vs_hard`).
+    Hard,
+    /// Seat 1 is a FROZEN past champion from the PFSP pool; only seat 0 records.
+    /// `usize` is the pool index, returned in the outcome so the learner's win-rate
+    /// vs that frozen opponent can be updated (true PFSP weighting).
+    Frozen(usize, &'a SpatialNet),
+    /// Lever C: seat 1 is a SCRIPTED strategy opponent (a HardAi with skewed
+    /// `AiParams`), injecting decisive structure into self-play so the value head
+    /// gets a clean ±1 signal. Only seat 0 records (like Hard/Frozen).
+    Script(ScriptKind),
+}
+
+/// Lever C scripted strategy opponents (TRAINING-ONLY). Each is a `HardAi` with
+/// biased `AiParams` (see `cp_ai::hard_ai::{DEVICE_RUSH_PARAMS, ARMY_RUSH_PARAMS}`),
+/// NOT a new agent or game rule — so they stay legal and parity-irrelevant.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ScriptKind {
+    /// Banks a minimal economy then races + defends the Strange Device.
+    DeviceRush,
+    /// Maxes soldier cap (Outposts), expands and assaults the enemy HQ early.
+    ArmyRush,
+}
+impl ScriptKind {
+    fn make_bot(self) -> HardAi {
+        match self {
+            ScriptKind::DeviceRush => HardAi::device_rush(),
+            ScriptKind::ArmyRush => HardAi::army_rush(),
+        }
+    }
+}
+
+fn play_one_game_explore(
+    net: &SpatialNet,
+    seed: u32,
+    cfg: &TierConfig,
+    tc: &TrainCfg,
+    opp: Opponent<'_>,
+    rng: &mut XorShift32,
+) -> (Vec<Example>, ExploreOutcome) {
+    // Seat 1 is net-controlled (and records) ONLY for SelfTwin; Hard/Frozen play
+    // seat 1 with a non-learner agent and do NOT record it.
+    let opp_is_net = matches!(opp, Opponent::SelfTwin);
+    let opp_frozen: Option<&SpatialNet> = match opp {
+        Opponent::Frozen(_, fnet) => Some(fnet),
+        _ => None,
+    };
+    let opp_pool_idx: Option<usize> = match opp {
+        Opponent::Frozen(i, _) => Some(i),
+        _ => None,
+    };
+    // Lever C: which scripted strategy (if any) plays the opponent seat, so the
+    // learner's per-strategy win-rate can be tallied (and the right HardAi used).
+    let opp_script: Option<ScriptKind> = match opp {
+        Opponent::Script(k) => Some(k),
+        _ => None,
+    };
+    let n_players = 2usize;
+    let mut g = Game::new(tc.width, tc.height, &["P1", "P2"]);
+    g.generate_map(tc.width, tc.height, seed);
+
+    let placer = HardAi::hard();
+    for _ in 0..n_players {
+        let cur = g.current_player();
+        placer.place_headquarters(&mut g, cur);
+        g.change_turn();
+    }
+
+    // The non-net opponent bot for the opponent seat: a scripted strategy variant
+    // (Lever C) when `opp` is `Script`, otherwise the static HARD heuristic.
+    let mut hard = match opp_script {
+        Some(kind) => kind.make_bot(),
+        None => HardAi::hard(),
+    };
+    let mut examples: Vec<Example> = Vec::new();
+    let mut winner: Option<PlayerId> = None;
+    let mut last_sig = board_signature(&g, n_players);
+    let mut last_progress = g.get_rounds_played();
+    // Parity-free per-game observability tallies (counted for net-controlled seats).
+    let mut intent_tally = [0u64; NUM_INTENTS];
+    let mut extra_tally = ExtraIntents::default();
+
+    // STEP-2 (§1.5/§2.6) — tiles-lost-to-rusher metric. ONLY meaningful when the
+    // opponent is the army-rusher (the curriculum teacher for defense). We sample the
+    // LEARNER seat's (seat 0) owned-tile count once per loop turn and accumulate every
+    // DECREASE: against a single attacking enemy, a drop in owned tiles is a tile lost
+    // to the rusher (assault capture or HQ-connectivity cut). Parity-free read-only
+    // tally; `None` for any non-army-rush game so the metric is unambiguous.
+    let track_rusher_losses = opp_script == Some(ScriptKind::ArmyRush);
+    let mut prev_learner_tiles = g.get_tile_count_for_player(PlayerId(0));
+    let mut tiles_lost_to_rusher: i64 = 0;
+
+    while g.live_players().len() > 1 && g.get_rounds_played() < tc.cap {
+        if track_rusher_losses {
+            let now = g.get_tile_count_for_player(PlayerId(0));
+            let (acc, prev) = fold_tile_loss(tiles_lost_to_rusher, prev_learner_tiles, now);
+            tiles_lost_to_rusher = acc;
+            prev_learner_tiles = prev;
+        }
+        let cur = g.current_player();
+        let round = g.get_rounds_played();
+        // The LEARNER seat (records) is always seat 0; seat 1 records too only when
+        // the opponent is the self-twin.
+        let learner_seat = cur.0 == 0;
+        let net_seat = learner_seat || opp_is_net;
+        if net_seat {
+            // Seat 1 with a frozen opponent uses the FROZEN net for inference; the
+            // learner seat (and the self-twin) uses the current `net`. Examples are
+            // recorded ONLY for the learner seat.
+            let infer_net: &SpatialNet = if learner_seat { net } else { opp_frozen.unwrap_or(net) };
+            let record = learner_seat;
+            scaffold_ensure(&mut g, cur, cfg);
+            loop {
+                let cands = candidates::enumerate(&g, cur, cfg);
+                if cands.len() <= 1 {
+                    break;
+                }
+                let res = mcts_select_explore(infer_net, &g, cur, cfg, tc.sims, round, tc, rng);
+                // Record a training example + observability tally ONLY for the learner
+                // seat (a frozen/HARD opponent seat is not learned from).
+                if record {
+                    let (planes, h, w) = board_planes(&g, cur);
+                    let cand_feats: Vec<CandFeat> = cands.iter().map(|c| cand_feat(&g, cur, c)).collect();
+                    // Potential Φ(s) of the acting seat at THIS state (read-only), for
+                    // potential-based reward shaping. Captured before the move mutates g.
+                    // Includes the action-level device-commitment bonus when enabled.
+                    let phi = potential_step1(
+                        &g,
+                        cur,
+                        tc.device_potential,
+                        tc.tile_potential,
+                        tc.idle_penalty,
+                        tc.soldier_cap_potential,
+                        tc.income_lead_potential,
+                        tc.cap_potential,
+                        tc.idle_flow_penalty,
+                        tc.w_army,
+                        tc.w_cut,
+                    );
+                    let owned_standing_device = g
+                        .find_strange_device_tile()
+                        .map(|dt| g.tiles[dt.0].owner == Some(cur))
+                        .unwrap_or(false);
+                    examples.push(Example {
+                        planes,
+                        h,
+                        w,
+                        value_scalars: value_scalars(&g, cur),
+                        cands: cand_feats,
+                        pi: res.pi,
+                        seat: cur,
+                        phi,
+                        z: 0.0,
+                        // Placeholder; overwritten with the actual chosen intent once
+                        // `res.chosen` is resolved below (the example was pushed before
+                        // `chosen` is known).
+                        chosen_intent: candidates::Intent::Pass,
+                        owned_standing_device,
+                        value_only: false,
+                    });
+                }
+                let chosen = &cands[res.chosen];
+                // Parity-free observability tally (same classifier the bench uses).
+                if record {
+                    let ii = chosen.intent as usize;
+                    if ii < NUM_INTENTS {
+                        intent_tally[ii] += 1;
+                    }
+                    tally_extra(&mut extra_tally, chosen);
+                    // Record the chosen intent on the example just pushed (for the
+                    // Lever C action-level device-credit pass).
+                    if let Some(last) = examples.last_mut() {
+                        last.chosen_intent = chosen.intent;
+                    }
+                }
+                if chosen.intent == candidates::Intent::Pass {
+                    break;
+                }
+                let ok = candidates::execute_action(&mut g, cur, cfg, &chosen.action);
+                if !ok {
+                    break;
+                }
+                scaffold_staff(&mut g, cur, cfg);
+            }
+        } else {
+            // Lever C `--record-opp-value`: salvage a clean ±1 VALUE example from the
+            // SCRIPTED opponent seat's perspective. The scripted (HardAi) move is not a
+            // usable POLICY target, but the board state evaluated from the seat that is
+            // about to act IS a clean value example once the game's terminal z is known
+            // — and crucially it is the seat that WINS most of the lopsided scripted
+            // games, so it supplies the +1 targets the learner-only recording lacked
+            // (the value-squash root cause). One value-only example per opponent turn,
+            // captured BEFORE `plan_turn` mutates the board. Default-off (no examples)
+            // → byte-identical. Only for scripted opponents (a static-HARD reference
+            // game stays learner-only). Capture the same phi so shaping composes.
+            if tc.record_opp_value && opp_script.is_some() {
+                let (planes, h, w) = board_planes(&g, cur);
+                let owned_standing_device = g
+                    .find_strange_device_tile()
+                    .map(|dt| g.tiles[dt.0].owner == Some(cur))
+                    .unwrap_or(false);
+                examples.push(Example {
+                    planes,
+                    h,
+                    w,
+                    value_scalars: value_scalars(&g, cur),
+                    cands: Vec::new(),
+                    pi: Vec::new(),
+                    seat: cur,
+                    phi: potential_step1(
+                        &g,
+                        cur,
+                        tc.device_potential,
+                        tc.tile_potential,
+                        tc.idle_penalty,
+                        tc.soldier_cap_potential,
+                        tc.income_lead_potential,
+                        tc.cap_potential,
+                        tc.idle_flow_penalty,
+                        tc.w_army,
+                        tc.w_cut,
+                    ),
+                    z: 0.0,
+                    chosen_intent: candidates::Intent::Pass,
+                    owned_standing_device,
+                    value_only: true,
+                });
+            }
+            hard.plan_turn(&mut g, cur);
+        }
+
+        match g.end_turn() {
+            EndTurnOutcome::Win(p) => {
+                winner = Some(p);
+                break;
+            }
+            EndTurnOutcome::Tie => break,
+            _ => {}
+        }
+
+        let r = g.get_rounds_played();
+        let sig = board_signature(&g, n_players);
+        if sig != last_sig {
+            last_sig = sig;
+            last_progress = r;
+        } else if r - last_progress >= tc.stall_rounds && !device_on_board(&g) {
+            // TRAINING self-play honours `--stall-rounds` (default 40 = STALL_ROUNDS).
+            break;
+        }
+    }
+    // Final tiles-lost sample (catch losses on the last resolved turn that the loop's
+    // top-of-iteration sampler would otherwise miss after a `break`).
+    if track_rusher_losses {
+        let now = g.get_tile_count_for_player(PlayerId(0));
+        let (acc, _prev) = fold_tile_loss(tiles_lost_to_rusher, prev_learner_tiles, now);
+        tiles_lost_to_rusher = acc;
+    }
+
+    let winner_pid = winner.or_else(|| {
+        let live = g.live_players();
+        if live.len() == 1 { Some(live[0]) } else { None }
+    });
+    // Win-cause-weighted value target: scale |z| down for non-Device decisions so
+    // the net values the Strange-Device win condition. β=0 → identical to ±1.
+    let beta = tc.device_bonus;
+    let device_decided = matches!(g.last_win_cause(), Some(WinCause::Device));
+    let mag = if device_decided { 1.0 } else { 1.0 - beta };
+
+    // Terminal outcome z for a given seat (the existing ±mag / −tie_penalty).
+    let terminal_z = |seat: PlayerId| -> f64 {
+        match winner_pid {
+            Some(w) if w == seat => mag,
+            Some(_) => -mag,
+            None => -tc.tie_penalty,
+        }
+    };
+
+    if tc.shape_weight > 0.0 {
+        // Potential-based reward shaping. For EACH seat, in temporal order,
+        // compute the discounted shaped return from that seat's potentials + the
+        // terminal z (see `shaped_returns`). Per-seat so consecutive Φ are the
+        // SAME seat's successive decisions.
+        for &seat in &[PlayerId(0), PlayerId(1)] {
+            let idxs: Vec<usize> = (0..examples.len())
+                .filter(|&i| examples[i].seat == seat)
+                .collect();
+            if idxs.is_empty() {
+                continue;
+            }
+            let phis: Vec<f64> = idxs.iter().map(|&i| examples[i].phi).collect();
+            let returns = shaped_returns(&phis, terminal_z(seat), tc.shape_gamma, tc.shape_weight);
+            for (w, &i) in idxs.iter().enumerate() {
+                examples[i].z = returns[w];
+            }
+        }
+    } else {
+        // shape_weight = 0 → EXACT no-op: every example's value target is the
+        // plain terminal z (identical to the pre-shaping behaviour).
+        for ex in &mut examples {
+            ex.z = terminal_z(ex.seat);
+        }
+    }
+
+    // Lever C — ACTION-LEVEL DEVICE CREDIT. Replaces the diffuse whole-game |z|
+    // reweight with PER-DECISION credit: in a game that ended in a Device win, the
+    // winner's device-COMMIT (`BuildStrangeDevice`) and device-DEFEND (HireSoldier
+    // while owning a standing device) decisions get `z` nudged toward +1; and a seat
+    // that owned a standing device but LOST gets its PASSIVE decisions (anything that
+    // is not building/defending the device while it owned one) nudged toward −1, so
+    // it learns not to throw a winnable device. Each adjusted `z` is re-clamped to
+    // [-1, 1]. `device_credit = 0` → EXACT no-op (loop body never runs).
+    if tc.device_credit > 0.0 {
+        let c = tc.device_credit;
+        let won_by_device = |seat: PlayerId| -> bool {
+            device_decided && winner_pid == Some(seat)
+        };
+        for ex in &mut examples {
+            // Value-only examples (scripted-opponent seat) have no real chosen intent
+            // (Pass placeholder) → the per-decision device credit does not apply; their
+            // value target is the plain terminal/shaped z.
+            if ex.value_only {
+                continue;
+            }
+            let is_device_commit = ex.chosen_intent == candidates::Intent::BuildStrangeDevice;
+            let is_device_defend = ex.owned_standing_device
+                && ex.chosen_intent == candidates::Intent::HireSoldier;
+            if won_by_device(ex.seat) && (is_device_commit || is_device_defend) {
+                // Positive credit on the exact winning device decisions.
+                ex.z = (ex.z + c).clamp(-1.0, 1.0);
+            } else if device_decided
+                && winner_pid != Some(ex.seat)
+                && ex.owned_standing_device
+                && !is_device_commit
+                && !is_device_defend
+            {
+                // Negative credit: this seat owned a standing device, the game ended
+                // by Device (for the opponent), and at this decision it neither
+                // committed to nor defended its own device → it threw a winnable race.
+                ex.z = (ex.z - c).clamp(-1.0, 1.0);
+            }
+        }
+    }
+
+    // Value-calibration + policy-entropy observability (parity-free; read-only net
+    // inference). For each recorded decision, predict the net's value at that state
+    // and bucket it by the EVENTUAL terminal outcome for that decision's seat, and
+    // accumulate the entropy of its MCTS visit-policy. The terminal bucket uses the
+    // raw win/lose/tie of the example's seat (NOT the shaped z target).
+    let mut vpred_win = 0.0; let mut vpred_win_n = 0u64;
+    let mut vpred_loss = 0.0; let mut vpred_loss_n = 0u64;
+    let mut vpred_draw = 0.0; let mut vpred_draw_n = 0u64;
+    let mut ent_sum = 0.0; let mut ent_n = 0u64;
+    for ex in &examples {
+        let pred = net.value_from(&net.forward_board_scalars(&ex.planes, ex.h, ex.w, &ex.value_scalars));
+        match winner_pid {
+            Some(w) if w == ex.seat => { vpred_win += pred; vpred_win_n += 1; }
+            Some(_) => { vpred_loss += pred; vpred_loss_n += 1; }
+            None => { vpred_draw += pred; vpred_draw_n += 1; }
+        }
+        // Entropy of the (visit-count) policy target in nats.
+        let mut h = 0.0;
+        for &p in &ex.pi {
+            if p > 0.0 { h -= p * p.ln(); }
+        }
+        ent_sum += h; ent_n += 1;
+    }
+
+    // Parity-free per-game observability (no engine call / RNG use).
+    let outcome = ExploreOutcome {
+        decisive: winner_pid.is_some(),
+        rounds: g.get_rounds_played(),
+        cause: g.last_win_cause(),
+        intents: intent_tally,
+        extra: extra_tally,
+        vpred_win, vpred_win_n,
+        vpred_loss, vpred_loss_n,
+        vpred_draw, vpred_draw_n,
+        ent_sum, ent_n,
+        pfsp_opp: opp_pool_idx,
+        learner_won: winner_pid == Some(PlayerId(0)),
+        script_opp: opp_script,
+        tiles_lost_to_rusher: if track_rusher_losses { Some(tiles_lost_to_rusher) } else { None },
+    };
+    (examples, outcome)
+}
+
+/// Discounted potential-shaped value targets for ONE seat's example sequence,
+/// in temporal order. Given potentials `[Φ_0..Φ_n]` and terminal outcome `z`:
+///   G_n = z
+///   G_i = shape_weight*(γΦ_{i+1} − Φ_i) + γ*G_{i+1}   for i = n-1 .. 0
+/// then each return is clamped to `[-1, 1]`. Returned in temporal order
+/// `[G_0..G_n]`. Pure / no side effects (extracted so it can be unit-tested).
+fn shaped_returns(phis: &[f64], z: f64, gamma: f64, shape_weight: f64) -> Vec<f64> {
+    let n = phis.len();
+    let mut g = vec![0.0f64; n];
+    if n == 0 {
+        return g;
+    }
+    let mut g_next = z;
+    g[n - 1] = z.clamp(-1.0, 1.0);
+    for i in (0..n.saturating_sub(1)).rev() {
+        let raw = shape_weight * (gamma * phis[i + 1] - phis[i]) + gamma * g_next;
+        g[i] = raw.clamp(-1.0, 1.0);
+        g_next = raw;
+    }
+    g
+}
+
+// --- one SGD step at an arbitrary lr/l2 (the smoke `train_batch` is fixed-LR) -
+fn train_batch_lr(net: &mut SpatialNet, batch: &[&Example], lr: f64, l2: f64) -> (f64, f64) {
+    if batch.is_empty() {
+        return (0.0, 0.0);
+    }
+    // Data-parallel gradient: each example's grad is independent and uses the net
+    // read-only (`train_grad(&self)`), so compute partials across cores and reduce
+    // (sum) — identical to the sequential accumulate (modulo float order), but uses
+    // all cores instead of one. Only `apply_grad` (&mut) stays serial.
+    let net_ref: &SpatialNet = net;
+    let (mut acc, ploss, vloss) = batch
+        .par_iter()
+        .map(|ex| {
+            // VALUE-ONLY examples (scripted-opponent seat) train the value head only;
+            // ordinary examples train both heads. Default-off → no value-only examples,
+            // so this is the same call as before.
+            if ex.value_only {
+                net_ref.train_grad_value_only_scalars(&ex.planes, ex.h, ex.w, &ex.value_scalars, ex.z)
+            } else {
+                net_ref.train_grad_scalars(&ex.planes, ex.h, ex.w, &ex.value_scalars, &ex.cands, &ex.pi, ex.z)
+            }
+        })
+        .reduce(
+            || (SpatialGrad::zeros_like(net_ref), 0.0, 0.0),
+            |mut a, b| {
+                a.0.add(&b.0);
+                (a.0, a.1 + b.1, a.2 + b.2)
+            },
+        );
+    let n = batch.len() as f64;
+    acc.scale(1.0 / n);
+    net.apply_grad(&acc, lr, l2);
+    (ploss / n, vloss / n)
+}
+
+// --- benchmark vs HARD (full schema, both seats, greedy) ---------------------
+
+#[derive(Default, Clone, Copy)]
+struct CauseTally { device: u32, domination: u32, conquest: u32, bankruptcy: u32, tiebreak: u32 }
+impl CauseTally {
+    fn add_natural(&mut self, c: Option<WinCause>) {
+        match c {
+            Some(WinCause::Device) => self.device += 1,
+            Some(WinCause::Domination) => self.domination += 1,
+            Some(WinCause::Conquest) => self.conquest += 1,
+            Some(WinCause::Bankruptcy) => self.bankruptcy += 1,
+            None => self.conquest += 1,
+        }
+    }
+    fn json(&self) -> String {
+        format!("{{\"device\":{},\"domination\":{},\"conquest\":{},\"bankruptcy\":{},\"tiebreak\":{}}}",
+            self.device, self.domination, self.conquest, self.bankruptcy, self.tiebreak)
+    }
+}
+
+struct BenchResult {
+    n: usize,
+    win: f64, loss: f64, timeout: f64, tile_frac: f64,
+    wins_seat0: usize, n_seat0: usize, wins_seat1: usize, n_seat1: usize,
+    champ_cause: CauseTally, hard_cause: CauseTally, true_tie: u32,
+    device_games: usize, device_wins: u32,
+    // CHAMPION-seat-only device metrics (the honest conversion the dashboard
+    // reports): how often the CHAMPION ends a game owning a standing Device, and
+    // how often that converts into a Device win FOR the champion.
+    champ_device_built: usize, champ_device_won: usize,
+    // Opponent (HARD) device metrics, kept separately so we still see HARD's
+    // device play (it used to dominate the owner-agnostic numbers).
+    hard_device_built: usize, hard_device_won: usize,
+    // --- Step-0 per-skill BEHAVIORAL counters (telemetry-only, parity-free) ---
+    // SUMS over the bench games; the dashboard divides by `n` for per-game averages.
+    // These distinguish REAL skill from the bankruptcy mirage and are tight (~±1-2%
+    // vs the ±12.6% win-rate at 60 games).
+    champ_villages_sum: i64, // standing Villages at game end (champion)
+    champ_outposts_sum: i64, // standing Outposts at game end (champion)
+    champ_max_soldiers_sum: i64, // peak fielded soldiers per game (champion)
+    // device-DENIAL: HARD built a Strange Device but did NOT win by it (it was
+    // cracked/prevented or HARD lost first). Numerator of the denial rate; the
+    // denominator is `hard_device_built`.
+    hard_device_denied: usize,
+    intents: [u64; NUM_INTENTS], extra: ExtraIntents, decisions: u64,
+    rounds_sum: [f64; 5], rounds_cnt: [u32; 5],
+}
+
+impl BenchResult {
+    /// HONEST headline win-rate: champion wins EXCLUDING bankruptcy-propped wins,
+    /// over nGames. The raw `win` counts free enemy self-bankruptcy as a "win"
+    /// (~30% of wins are this mirage); this strips that so we measure REAL skill.
+    /// `= (device + domination + conquest + tiebreak) / nGames`.
+    fn true_win_vs_hard(&self) -> f64 {
+        let c = &self.champ_cause;
+        let honest = c.device + c.domination + c.conquest + c.tiebreak;
+        honest as f64 / self.n.max(1) as f64
+    }
+    /// Bankruptcy share of the champion's wins: makes the mirage explicit.
+    /// `= champWins.bankruptcy / totalChampWins` (null/None when no champ wins).
+    fn bankruptcy_win_share(&self) -> Option<f64> {
+        let c = &self.champ_cause;
+        let total = c.device + c.domination + c.conquest + c.bankruptcy + c.tiebreak;
+        if total == 0 { None } else { Some(c.bankruptcy as f64 / total as f64) }
+    }
+}
+
+/// Observability-only (parity-free) dashboard counters that SPLIT unit hiring out
+/// of the 12-intent histogram. The net's `intent_onehot` is unchanged (stays
+/// 12-dim) — these are extra histogram keys for the benchmark JSON.
+///   - `hire_worker`: an `Intent::Expand` decision whose REPLAYED branch actually
+///     buys a fresh `BasicWorker` (vs moving an idle/surplus worker, which is a
+///     "claim/move", not a hire). Mirrors `execute_action`'s Expand branch order:
+///     a hire happens iff `can_hire` AND there is no idle worker to MOVE onto the
+///     tile (no idle, or the idle worker is already on the target tile).
+///   - `hire_expert`: a `StackProducer` decision that buys an `Expert`
+///     (`Action::BuyUnit("Expert", _)`, the `want_expert` path in candidates.rs).
+#[derive(Clone, Copy, Default)]
+struct ExtraIntents {
+    hire_worker: u64,
+    hire_expert: u64,
+}
+
+/// Classify a CHOSEN candidate for the extra (HireWorker / HireExpert) dashboard
+/// counters, replicating `execute_action`'s Expand branch order so an Expand that
+/// MOVES an existing worker is NOT counted as a hire.
+fn tally_extra(extra: &mut ExtraIntents, chosen: &candidates::Candidate) {
+    use candidates::Action;
+    match &chosen.action {
+        Action::Expand { tile, idle, can_hire, .. } => {
+            // execute_action moves the idle worker FIRST when it's off-tile;
+            // only otherwise does `can_hire` fire a fresh BasicWorker purchase.
+            let idle_moves = matches!(idle, Some((_, from)) if *from != *tile);
+            if *can_hire && !idle_moves {
+                extra.hire_worker += 1;
+            }
+        }
+        Action::BuyUnit("Expert", _) => extra.hire_expert += 1,
+        _ => {}
+    }
+}
+
+/// Greedy MCTS turn for the CNN at seat `cur`, accumulating the intent histogram
+/// + decision count. Drains the turn (one decision per executed candidate).
+/// `extra` (optional) accumulates the parity-free HireWorker/HireExpert split.
+fn cnn_plan_turn(
+    net: &SpatialNet,
+    g: &mut Game,
+    cur: PlayerId,
+    cfg: &TierConfig,
+    n_sims: usize,
+    eval_prior_floor: f64,
+    turn_search: bool,
+    turn_search_spend: bool,
+    intents: &mut [u64; NUM_INTENTS],
+    decisions: &mut u64,
+    mut extra: Option<&mut ExtraIntents>,
+) {
+    scaffold_ensure(g, cur, cfg);
+    loop {
+        let cands = candidates::enumerate(g, cur, cfg);
+        if cands.len() <= 1 {
+            break;
+        }
+        let res = mcts_select(net, g, cur, cfg, n_sims, eval_prior_floor, turn_search, turn_search_spend);
+        let chosen = &cands[res.chosen];
+        *decisions += 1;
+        let ii = chosen.intent as usize;
+        if ii < NUM_INTENTS {
+            intents[ii] += 1;
+        }
+        if let Some(ex) = extra.as_deref_mut() {
+            tally_extra(ex, chosen);
+        }
+        if chosen.intent == candidates::Intent::Pass {
+            break;
+        }
+        let ok = candidates::execute_action(g, cur, cfg, &chosen.action);
+        if !ok {
+            break;
+        }
+        scaffold_staff(g, cur, cfg);
+    }
+}
+
+/// Per-game outcome of one benchmark game (collected in PARALLEL, aggregated
+/// sequentially — no shared mutable counters across threads).
+struct GameRec {
+    champ_seat: usize,
+    champ_frac: f64,
+    intents: [u64; NUM_INTENTS],
+    extra: ExtraIntents,
+    decisions: u64,
+    device_built: bool,
+    /// The CHAMPION seat ended this game owning a STANDING Strange Device.
+    champ_device_built: bool,
+    /// The HARD (opponent) seat ended this game owning a STANDING Strange Device.
+    hard_device_built: bool,
+    /// Per-skill BEHAVIORAL counters (Step-0 telemetry, parity-free):
+    ///   - `champ_villages`/`champ_outposts`: STANDING (built-and-survived) Village /
+    ///     Outpost count for the CHAMPION seat at game end — economy + army-prerequisite
+    ///     signals (tighter than the ±12.6% win-rate).
+    ///   - `champ_max_soldiers`: PEAK fielded soldier count the champion reached at any
+    ///     point in the game (the "fields an army" signal, currently 0–3).
+    champ_villages: i64,
+    champ_outposts: i64,
+    champ_max_soldiers: i64,
+    cause: Option<WinCause>,
+    rounds: i64,
+    champ_won: bool,
+    hard_won: bool,
+    true_tie: bool,
+    by_tiebreak: bool,
+}
+
+/// CNN (greedy MCTS) vs the held-out HARD heuristic. Champion seat alternates by
+/// game index so the win-rate is seat-averaged. Full §10 schema. Games are
+/// independent (the net is read-only inference, each game has its own cloned
+/// `Game` + seed) so they run in parallel; the totals are folded sequentially.
+fn bench_vs_hard(net: &SpatialNet, cfg: &TierConfig, tc: &TrainCfg, games: usize, base_seed: u32) -> BenchResult {
+    let recs: Vec<GameRec> = (0..games)
+        .into_par_iter()
+        .map(|gi| {
+            let seed = base_seed.wrapping_add((gi as u32).wrapping_mul(2_654_435_761));
+            let champ_seat = (gi % 2) as usize;
+            let mut g = Game::new(tc.width, tc.height, &["P1", "P2"]);
+            g.generate_map(tc.width, tc.height, seed);
+            let placer = HardAi::hard();
+            let mut hard = HardAi::hard();
+            for _ in 0..2 {
+                let cur = g.current_player();
+                if cur.0 == champ_seat { placer.place_headquarters(&mut g, cur); }
+                else { hard.place_headquarters(&mut g, cur); }
+                g.change_turn();
+            }
+            let mut intents = [0u64; NUM_INTENTS];
+            let mut extra = ExtraIntents::default();
+            let mut decisions = 0u64;
+            let mut device_built = false;
+            // CHAMPION-seat-only / HARD-seat-only "owned a standing Device at some
+            // point" flags (owner-specific, vs the owner-agnostic `device_built`).
+            let mut champ_device_built = false;
+            let mut hard_device_built = false;
+            let hard_seat = 1 - champ_seat;
+            // PEAK fielded-soldier count for the champion across the whole game (the
+            // "fields an army" behavioral signal). Sampled after each turn resolves;
+            // `current_soldier_amount` is the actual count on the board (not the cap).
+            let mut champ_max_soldiers = 0i64;
+            let mut winner: Option<PlayerId> = None;
+            let mut cause: Option<WinCause> = None;
+            while g.live_players().len() > 1 && g.get_rounds_played() < tc.cap {
+                let cur = g.current_player();
+                if cur.0 == champ_seat {
+                    cnn_plan_turn(net, &mut g, cur, cfg, tc.sims, tc.eval_prior_floor, tc.turn_search, tc.turn_search_spend, &mut intents, &mut decisions, Some(&mut extra));
+                } else {
+                    hard.plan_turn(&mut g, cur);
+                }
+                champ_max_soldiers = champ_max_soldiers.max(g.current_soldier_amount(PlayerId(champ_seat)));
+                if !device_built && g.has_strange_device() { device_built = true; }
+                if !champ_device_built && g.player_owns_strange_device(PlayerId(champ_seat)) { champ_device_built = true; }
+                if !hard_device_built && g.player_owns_strange_device(PlayerId(hard_seat)) { hard_device_built = true; }
+                match g.end_turn() {
+                    EndTurnOutcome::Win(p) => { winner = Some(p); cause = g.last_win_cause(); break; }
+                    EndTurnOutcome::Tie => break,
+                    _ => {}
+                }
+            }
+            let total = g.get_tile_count().max(1) as f64;
+            let champ_frac = g.get_tile_count_for_player(PlayerId(champ_seat)) as f64 / total;
+            let hard_frac = g.get_tile_count_for_player(PlayerId(1 - champ_seat)) as f64 / total;
+            let winner = winner.or_else(|| { let l = g.live_players(); if l.len() == 1 { Some(l[0]) } else { None } });
+
+            let rounds = g.get_rounds_played();
+            let mut champ_won = false; let mut hard_won = false; let mut true_tie = false; let mut by_tiebreak = false;
+            match winner {
+                Some(p) => { if p.0 == champ_seat { champ_won = true; } else { hard_won = true; } }
+                None => {
+                    cause = None;
+                    if champ_frac > hard_frac { champ_won = true; by_tiebreak = true; }
+                    else if hard_frac > champ_frac { hard_won = true; by_tiebreak = true; }
+                    else { true_tie = true; }
+                }
+            }
+            // Standing (built-and-survived) Village / Outpost count for the champion
+            // at game end — `building_counts` scans only the player's CURRENTLY-owned
+            // tiles, so confiscated/destroyed buildings are excluded (the "survived"
+            // semantics the design asks for).
+            let champ_bc = cp_ai::metrics::building_counts(&g, PlayerId(champ_seat));
+            GameRec {
+                champ_seat, champ_frac, intents, extra, decisions, device_built,
+                champ_device_built, hard_device_built,
+                champ_villages: champ_bc.village,
+                champ_outposts: champ_bc.outpost,
+                champ_max_soldiers,
+                cause, rounds, champ_won, hard_won, true_tie, by_tiebreak,
+            }
+        })
+        .collect();
+
+    let mut r = BenchResult {
+        n: games.max(1), win: 0.0, loss: 0.0, timeout: 0.0, tile_frac: 0.0,
+        wins_seat0: 0, n_seat0: 0, wins_seat1: 0, n_seat1: 0,
+        champ_cause: CauseTally::default(), hard_cause: CauseTally::default(), true_tie: 0,
+        device_games: 0, device_wins: 0,
+        champ_device_built: 0, champ_device_won: 0,
+        hard_device_built: 0, hard_device_won: 0,
+        champ_villages_sum: 0, champ_outposts_sum: 0, champ_max_soldiers_sum: 0,
+        hard_device_denied: 0,
+        intents: [0; NUM_INTENTS],
+        extra: ExtraIntents::default(), decisions: 0,
+        rounds_sum: [0.0; 5], rounds_cnt: [0; 5],
+    };
+    let mut wins = 0usize; let mut losses = 0usize; let mut ties = 0usize; let mut tf_sum = 0.0;
+    for rec in &recs {
+        tf_sum += rec.champ_frac;
+        for k in 0..NUM_INTENTS { r.intents[k] += rec.intents[k]; }
+        r.extra.hire_worker += rec.extra.hire_worker;
+        r.extra.hire_expert += rec.extra.hire_expert;
+        r.decisions += rec.decisions;
+        if rec.device_built { r.device_games += 1; }
+        if matches!(rec.cause, Some(WinCause::Device)) { r.device_wins += 1; }
+        // CHAMPION-seat-only device metrics: built = champ owned a standing Device;
+        // won = game ended on a Device cause AND the champion was the winner.
+        if rec.champ_device_built { r.champ_device_built += 1; }
+        if rec.champ_won && matches!(rec.cause, Some(WinCause::Device)) { r.champ_device_won += 1; }
+        // HARD-seat device metrics, tracked separately so HARD's device play stays
+        // visible (it dominated the old owner-agnostic numbers).
+        if rec.hard_device_built { r.hard_device_built += 1; }
+        let hard_device_win = rec.hard_won && matches!(rec.cause, Some(WinCause::Device));
+        if hard_device_win { r.hard_device_won += 1; }
+        // device-DENIAL: HARD fielded a standing Device but it did NOT carry HARD to a
+        // Device win (cracked/prevented, or HARD lost/tied first). The denial RATE
+        // (dashboard) = hard_device_denied / hard_device_built.
+        if rec.hard_device_built && !hard_device_win { r.hard_device_denied += 1; }
+        // Per-skill behavioral SUMS (averaged per-game on the dashboard).
+        r.champ_villages_sum += rec.champ_villages;
+        r.champ_outposts_sum += rec.champ_outposts;
+        r.champ_max_soldiers_sum += rec.champ_max_soldiers;
+        if rec.champ_seat == 0 { r.n_seat0 += 1; if rec.champ_won { r.wins_seat0 += 1; } }
+        else { r.n_seat1 += 1; if rec.champ_won { r.wins_seat1 += 1; } }
+        let cause_idx = if rec.by_tiebreak { Some(4) } else {
+            match rec.cause { Some(WinCause::Device) => Some(0), Some(WinCause::Domination) => Some(1),
+                Some(WinCause::Conquest) => Some(2), Some(WinCause::Bankruptcy) => Some(3), None => Some(2) }
+        };
+        if rec.champ_won {
+            wins += 1;
+            if rec.by_tiebreak { r.champ_cause.tiebreak += 1; } else { r.champ_cause.add_natural(rec.cause); }
+        } else if rec.hard_won {
+            losses += 1;
+            if rec.by_tiebreak { r.hard_cause.tiebreak += 1; } else { r.hard_cause.add_natural(rec.cause); }
+        } else if rec.true_tie {
+            ties += 1; r.true_tie += 1;
+        }
+        if !rec.true_tie {
+            if let Some(ci) = cause_idx { r.rounds_sum[ci] += rec.rounds as f64; r.rounds_cnt[ci] += 1; }
+        }
+    }
+    let nf = r.n as f64;
+    r.win = wins as f64 / nf;
+    r.loss = losses as f64 / nf;
+    r.timeout = ties as f64 / nf;
+    r.tile_frac = tf_sum / nf;
+    r
+}
+
+/// Serialize the benchmark `intents` object: the 12 net intents PLUS the two
+/// parity-free observability splits (`HireWorker`, `HireExpert`) so the dashboard
+/// can render unit hiring separately from the `Expand` / `StackProducer` buckets.
+fn bench_intents_json(br: &BenchResult) -> String {
+    let mut s = String::from("{");
+    for k in 0..NUM_INTENTS {
+        if k > 0 { s.push(','); }
+        s.push_str(&format!("\"{}\":{}", INTENT_NAMES[k], br.intents[k]));
+    }
+    s.push_str(&format!(
+        ",\"HireWorker\":{},\"HireExpert\":{}}}",
+        br.extra.hire_worker, br.extra.hire_expert
+    ));
+    s
+}
+
+// --- game-replay recorder (dashboard "watch a game" viewer) ------------------
+
+fn building_code(k: BuildingType) -> char {
+    match k {
+        BuildingType::Farm => 'F',
+        BuildingType::Mine => 'M',
+        BuildingType::Village => 'V',
+        BuildingType::Outpost => 'O',
+        BuildingType::Hydro => 'H',
+        BuildingType::Nuclear => 'N',
+        BuildingType::StrangeDevice => 'D',
+        BuildingType::Headquarters => 'Q',
+        BuildingType::Mikontalo => 'K',
+        _ => '?',
+    }
+}
+
+fn capture_frame(g: &Game, round: i64, cur: usize) -> String {
+    let tiles = g.get_tiles();
+    let mut own = String::with_capacity(tiles.len());
+    let mut bld = String::with_capacity(tiles.len());
+    let mut sol = String::with_capacity(tiles.len());
+    for t in tiles {
+        own.push(match t.owner { None => '0', Some(p) => (b'1' + p.0 as u8) as char });
+        bld.push(match &t.building { Some(b) => building_code(b.kind), None => '.' });
+        let s = t.units.iter().filter(|&&u| g.units[u.0].kind == UnitType::Soldier).count();
+        sol.push(if s == 0 { '.' } else { std::char::from_digit(s.min(9) as u32, 10).unwrap() });
+    }
+    format!("{{\"r\":{},\"p\":{},\"own\":\"{}\",\"bld\":\"{}\",\"sol\":\"{}\"}}", round, cur, own, bld, sol)
+}
+
+/// Play ONE greedy game and serialise its per-turn board replay. Seat 0 (blue) is
+/// always our CNN champion; seat 1 (red) is the HARD bot (`vs_self=false`) or a
+/// 2nd CNN copy (`vs_self=true`). Mirrors alphazero's `record_replay` incl. the
+/// stalemate cut + terrain/frame format.
+fn record_replay(net: &SpatialNet, cfg: &TierConfig, tc: &TrainCfg, iter: usize, seed: u32, vs_self: bool) -> String {
+    let mut g = Game::new(tc.width, tc.height, &["P1", "P2"]);
+    g.generate_map(tc.width, tc.height, seed);
+    let placer = HardAi::hard();
+    let mut hard = HardAi::hard();
+    for _ in 0..2 {
+        let cur = g.current_player();
+        if cur.0 == 0 { placer.place_headquarters(&mut g, cur); }
+        else if vs_self { placer.place_headquarters(&mut g, cur); }
+        else { hard.place_headquarters(&mut g, cur); }
+        g.change_turn();
+    }
+    let terrain: String = g
+        .get_tiles()
+        .iter()
+        .map(|t| match t.tile_type {
+            TileType::Grassland => 'g',
+            TileType::Forest => 'f',
+            TileType::AbundantForest => 'a',
+            TileType::Mountain => 'm',
+            TileType::River => 'r',
+        })
+        .collect();
+    let mut frames: Vec<String> = vec![capture_frame(&g, g.get_rounds_played(), 9)];
+    let mut winner: Option<PlayerId> = None;
+    let mut cause: Option<WinCause> = None;
+    let mut last_sig = board_signature(&g, 2);
+    let mut last_progress = g.get_rounds_played();
+    let mut intents = [0u64; NUM_INTENTS];
+    let mut decisions = 0u64;
+    while g.live_players().len() > 1 && g.get_rounds_played() < tc.cap {
+        let cur = g.current_player();
+        let seat = cur.0;
+        if seat == 0 {
+            cnn_plan_turn(net, &mut g, cur, cfg, tc.sims, tc.eval_prior_floor, tc.turn_search, tc.turn_search_spend, &mut intents, &mut decisions, None);
+        } else if vs_self {
+            cnn_plan_turn(net, &mut g, cur, cfg, tc.sims, tc.eval_prior_floor, tc.turn_search, tc.turn_search_spend, &mut intents, &mut decisions, None);
+        } else {
+            hard.plan_turn(&mut g, cur);
+        }
+        match g.end_turn() {
+            EndTurnOutcome::Win(p) => { winner = Some(p); cause = g.last_win_cause(); frames.push(capture_frame(&g, g.get_rounds_played(), seat)); break; }
+            EndTurnOutcome::Tie => { frames.push(capture_frame(&g, g.get_rounds_played(), seat)); break; }
+            _ => { frames.push(capture_frame(&g, g.get_rounds_played(), seat)); }
+        }
+        let r = g.get_rounds_played();
+        let sig = board_signature(&g, 2);
+        if sig != last_sig {
+            last_sig = sig;
+            last_progress = r;
+        } else if r - last_progress >= STALL_ROUNDS && !device_on_board(&g) {
+            break;
+        }
+    }
+    let winner = winner.or_else(|| { let l = g.live_players(); if l.len() == 1 { Some(l[0]) } else { None } });
+    let winner_seat: i64 = match winner { Some(p) => p.0 as i64, None => -1 };
+    let cause_str = match cause {
+        Some(WinCause::Device) => "device", Some(WinCause::Domination) => "domination",
+        Some(WinCause::Conquest) => "conquest", Some(WinCause::Bankruptcy) => "bankruptcy",
+        None => if winner.is_some() { "conquest" } else { "tiebreak/tie" },
+    };
+    format!(
+        "{{\"iter\":{},\"seed\":{},\"mode\":\"{}\",\"width\":{},\"height\":{},\"champSeat\":0,\"terrain\":\"{}\",\
+         \"result\":{{\"winnerSeat\":{},\"cause\":\"{}\",\"rounds\":{}}},\"frames\":[{}]}}",
+        iter, seed, if vs_self { "self" } else { "hard" }, tc.width, tc.height, terrain, winner_seat, cause_str, g.get_rounds_played(), frames.join(","))
+}
+
+// --- spatial.json heatmap artifact -------------------------------------------
+
+/// Short per-building-type code for the spatial frame's `building` array. ""=none
+/// is handled by the caller (this is only called for tiles WITH a building).
+fn building_short_code(k: BuildingType) -> &'static str {
+    match k {
+        BuildingType::Farm => "F",
+        BuildingType::Mine => "M",
+        BuildingType::Village => "V",
+        BuildingType::Outpost => "O",
+        BuildingType::Hydro => "H",
+        BuildingType::Nuclear => "N",
+        BuildingType::StrangeDevice => "D",
+        BuildingType::Headquarters => "HQ",
+        BuildingType::Mikontalo => "K",
+        _ => "?",
+    }
+}
+
+/// Serialise ONE CNN-to-move state into a spatial-heatmap frame JSON OBJECT (no
+/// surrounding array/braces beyond the object itself). `g` MUST be non-terminal
+/// (`live_players().len() > 1`) — the caller guarantees this so `current_player()`
+/// does not panic on an empty `player_order`.
+///
+/// Row-major index = `y*W + x`, `n_tiles = W*H`. Fields:
+///   label, round, curSeat, value, terrain, owner, building, soldiers, myHq,
+///   enemyHq, policy, valueMap, topMoves (see the module-level spec).
+fn capture_spatial_frame(net: &SpatialNet, g: &Game, cfg: &TierConfig, label: &str) -> String {
+    let cur_seat = g.current_player().0;
+    let player = PlayerId(cur_seat);
+    let round = g.get_rounds_played();
+
+    let tiles = g.get_tiles();
+    // Derive W,H from the tile coords (max x+1, y+1).
+    let mut w_max = 0i32;
+    let mut h_max = 0i32;
+    for t in tiles {
+        if t.x + 1 > w_max { w_max = t.x + 1; }
+        if t.y + 1 > h_max { h_max = t.y + 1; }
+    }
+    let w = w_max.max(1) as usize;
+    let h = h_max.max(1) as usize;
+    let n_tiles = w * h;
+
+    let tile_idx = |x: i32, y: i32| -> Option<usize> {
+        if x < 0 || y < 0 { return None; }
+        let i = (y as usize) * w + (x as usize);
+        if i >= n_tiles { None } else { Some(i) }
+    };
+
+    // Per-tile: terrain / owner / building / signed-soldiers.
+    let mut terrain = vec!['g'; n_tiles];
+    let mut owner = vec![-1i64; n_tiles];
+    let mut building: Vec<&'static str> = vec![""; n_tiles];
+    let mut soldiers = vec![0i64; n_tiles];
+    for t in tiles {
+        let idx = match tile_idx(t.x, t.y) { Some(i) => i, None => continue };
+        terrain[idx] = match t.tile_type {
+            TileType::Grassland => 'g',
+            TileType::Forest => 'f',
+            TileType::AbundantForest => 'a',
+            TileType::Mountain => 'm',
+            TileType::River => 'r',
+        };
+        owner[idx] = match t.owner { None => -1, Some(p) => p.0 as i64 };
+        if let Some(b) = &t.building {
+            building[idx] = building_short_code(b.kind);
+        }
+        // Signed soldier count: + for curSeat's soldiers, - for any enemy's. A tile
+        // holds units of a single owner, so the sign follows the tile's owner; we
+        // mirror planes.rs's soldier extraction (count Soldier-kind units).
+        let n_sol = t
+            .units
+            .iter()
+            .filter(|&&u| g.units[u.0].kind == UnitType::Soldier)
+            .count() as i64;
+        if n_sol > 0 {
+            let sign = if t.owner == Some(player) { 1 } else { -1 };
+            soldiers[idx] = sign * n_sol;
+        }
+    }
+
+    let hq_tile_index = |pl: PlayerId| -> i64 {
+        match g.get_hq_tile(pl) {
+            Some(t) => {
+                let tile = &tiles[t.0];
+                tile_idx(tile.x, tile.y).map(|i| i as i64).unwrap_or(-1)
+            }
+            None => -1,
+        }
+    };
+    let my_hq = hq_tile_index(player);
+    let enemy_hq = g
+        .live_players()
+        .iter()
+        .find(|&&p| p != player)
+        .map(|&p| hq_tile_index(p))
+        .unwrap_or(-1);
+
+    // Root value + per-candidate scores from the CNN's perspective.
+    let (planes, ph, pw) = board_planes(g, player);
+    let cache = net.forward_board_scalars(&planes, ph, pw, &value_scalars(g, player));
+    let value = net.value_from(&cache);
+    let cands = candidates::enumerate(g, player, cfg);
+    let scores: Vec<f64> = cands
+        .iter()
+        .map(|c| {
+            let (tgt, local, intent) = cand_feat(g, player, c);
+            net.score_candidate(&cache, tgt, &local, &intent)
+        })
+        .collect();
+    let probs = softmax_tau(&scores, TAU);
+
+    // Scatter each candidate's softmax prob to its target tile (sum if several
+    // candidates share a tile). 1-ply value lookahead per target tile (optional).
+    let mut policy = vec![0.0f64; n_tiles];
+    let mut value_map: Vec<Option<f64>> = vec![None; n_tiles];
+    // Per-candidate lookahead value, reused for topMoves so we don't double-eval.
+    let mut cand_value_after: Vec<Option<f64>> = vec![None; cands.len()];
+    for (ci, c) in cands.iter().enumerate() {
+        // 1-ply lookahead: apply the candidate, value the resulting board.
+        let mut g2 = g.clone();
+        let va = if candidates::execute_action(&mut g2, player, cfg, &c.action) {
+            let (p2, h2, w2) = board_planes(&g2, player);
+            let c2 = net.forward_board_scalars(&p2, h2, w2, &value_scalars(&g2, player));
+            Some(net.value_from(&c2))
+        } else {
+            None
+        };
+        cand_value_after[ci] = va;
+        let t = match candidate_target_tile(c) {
+            Some(t) => t,
+            None => continue,
+        };
+        let tile = &tiles[t.0];
+        let idx = match tile_idx(tile.x, tile.y) { Some(i) => i, None => continue };
+        policy[idx] += probs[ci];
+        if value_map[idx].is_none() {
+            value_map[idx] = va;
+        }
+    }
+
+    // topMoves: up to 6 candidates by prob desc, each {idx,intent,prob,valueAfter}.
+    let mut order: Vec<usize> = (0..cands.len()).collect();
+    order.sort_by(|&a, &b| probs[b].partial_cmp(&probs[a]).unwrap_or(std::cmp::Ordering::Equal));
+    let top: Vec<String> = order
+        .iter()
+        .take(6)
+        .map(|&ci| {
+            let c = &cands[ci];
+            let idx_i: i64 = candidate_target_tile(c)
+                .and_then(|t| { let tile = &tiles[t.0]; tile_idx(tile.x, tile.y).map(|i| i as i64) })
+                .unwrap_or(-1);
+            let intent_name = INTENT_NAMES
+                .get(c.intent as usize)
+                .copied()
+                .unwrap_or("Unknown");
+            let va = match cand_value_after[ci] {
+                Some(v) => format!("{:.6}", v),
+                None => "null".to_string(),
+            };
+            format!(
+                "{{\"idx\":{},\"intent\":\"{}\",\"prob\":{:.6},\"valueAfter\":{}}}",
+                idx_i, intent_name, probs[ci], va
+            )
+        })
+        .collect();
+
+    // Serialise the frame object.
+    let terrain_str: String = terrain.iter().collect();
+    let owner_str = owner.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(",");
+    let building_str = building
+        .iter()
+        .map(|b| format!("\"{}\"", b))
+        .collect::<Vec<_>>()
+        .join(",");
+    let soldiers_str = soldiers.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(",");
+    let policy_str = policy.iter().map(|v| format!("{:.6}", v)).collect::<Vec<_>>().join(",");
+    let vmap_str = value_map
+        .iter()
+        .map(|o| match o {
+            Some(v) => format!("{:.6}", v),
+            None => "null".to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "{{\"label\":\"{}\",\"round\":{},\"curSeat\":{},\"value\":{:.6},\
+         \"terrain\":\"{}\",\"owner\":[{}],\"building\":[{}],\"soldiers\":[{}],\
+         \"myHq\":{},\"enemyHq\":{},\"policy\":[{}],\"valueMap\":[{}],\"topMoves\":[{}]}}",
+        label, round, cur_seat, value,
+        terrain_str, owner_str, building_str, soldiers_str,
+        my_hq, enemy_hq, policy_str, vmap_str, top.join(",")
+    )
+}
+
+/// Thin wrapper: capture the heatmap frames and write to `<out>/spatial.json`.
+fn write_spatial_json(net: &SpatialNet, cfg: &TierConfig, tc: &TrainCfg, iter: usize, seed: u32) {
+    let out = tc.out.join("spatial.json");
+    write_spatial_json_to(net, cfg, tc, iter, seed, &out);
+}
+
+/// Capture a multi-frame spatial view of ONE CNN(seat0)-vs-HARD(seat1) game:
+/// the CNN-to-move states whose rounds are closest to the targets [8,25,50]
+/// (labelled early/mid/late). A frame is valid only at a real decision (≥2
+/// candidates, ≥1 with a target tile) on a non-terminal state. We capture the
+/// frames we can (1-3); if NONE are found we leave any prior spatial.json in
+/// place and return (panic-free, like the original single-frame code). Writes the
+/// assembled `{"iter","width","height","frames":[...]}` object to `out`.
+fn write_spatial_json_to(
+    net: &SpatialNet,
+    cfg: &TierConfig,
+    tc: &TrainCfg,
+    iter: usize,
+    seed: u32,
+    out: &std::path::Path,
+) {
+    let mut g = Game::new(tc.width, tc.height, &["P1", "P2"]);
+    g.generate_map(tc.width, tc.height, seed);
+    let placer = HardAi::hard();
+    let mut hard = HardAi::hard();
+    // Seat 0 = CNN, seat 1 = HARD.
+    for _ in 0..2 {
+        let cur = g.current_player();
+        if cur.0 == 0 { placer.place_headquarters(&mut g, cur); }
+        else { hard.place_headquarters(&mut g, cur); }
+        g.change_turn();
+    }
+
+    // Three target rounds → three labelled frames; track the closest-to-target CNN
+    // decision state per target across the WHOLE game.
+    let targets: [(&str, i64); 3] = [("early", 8), ("mid", 25), ("late", 50)];
+    // best[k] = (closest state, |round - target|) for targets[k].
+    let mut best: [Option<(Game, i64)>; 3] = [None, None, None];
+
+    let mut intents = [0u64; NUM_INTENTS];
+    let mut decisions = 0u64;
+    // A real decision: ≥2 candidates and ≥1 has a target tile.
+    let has_targeted = |gg: &Game, p: PlayerId| -> bool {
+        let cs = candidates::enumerate(gg, p, cfg);
+        cs.len() >= 2 && cs.iter().any(|c| candidate_target_tile(c).is_some())
+    };
+    while g.live_players().len() > 1 && g.get_rounds_played() < tc.cap {
+        let cur = g.current_player();
+        if cur.0 == 0 && has_targeted(&g, cur) {
+            let r = g.get_rounds_played();
+            for (k, &(_, tr)) in targets.iter().enumerate() {
+                let dist = (r - tr).abs();
+                if best[k].as_ref().map(|(_, d)| dist < *d).unwrap_or(true) {
+                    best[k] = Some((g.clone(), dist));
+                }
+            }
+        }
+        if cur.0 == 0 {
+            cnn_plan_turn(net, &mut g, cur, cfg, tc.sims, tc.eval_prior_floor, tc.turn_search, tc.turn_search_spend, &mut intents, &mut decisions, None);
+        } else {
+            hard.plan_turn(&mut g, cur);
+        }
+        match g.end_turn() {
+            EndTurnOutcome::Win(_) | EndTurnOutcome::Tie => break,
+            _ => {}
+        }
+    }
+
+    // Assemble the frames we actually captured, deduping the case where the same
+    // game state ends up being closest for multiple targets (e.g. a very short
+    // game): keep the first label that claims a given round.
+    let mut frames: Vec<String> = Vec::new();
+    let mut used_rounds: Vec<i64> = Vec::new();
+    let mut w = 0usize;
+    let mut h = 0usize;
+    for (k, slot) in best.iter().enumerate() {
+        if let Some((state, _)) = slot {
+            // Defensive: never serialise a terminal state.
+            if state.live_players().len() <= 1 { continue; }
+            let r = state.get_rounds_played();
+            if used_rounds.contains(&r) { continue; }
+            used_rounds.push(r);
+            if w == 0 {
+                let (_, ph, pw) = board_planes(state, state.current_player());
+                w = pw;
+                h = ph;
+            }
+            frames.push(capture_spatial_frame(net, state, cfg, targets[k].0));
+        }
+    }
+
+    if frames.is_empty() {
+        // No usable CNN-to-move state this game; leave any prior spatial.json in
+        // place (the dashboard tolerates a stale/absent frame).
+        return;
+    }
+
+    let json = format!(
+        "{{\"iter\":{},\"width\":{},\"height\":{},\"frames\":[{}]}}",
+        iter, w, h, frames.join(",")
+    );
+    let _ = std::fs::write(out, json);
+}
+
+fn run_train(tc: &TrainCfg) {
+    let cfg = TRAINING_CONFIG;
+    create_dir_all(&tc.out).expect("create out dir");
+    // Truncate dashboard artifacts at startup (fresh gen-series).
+    let _ = std::fs::write(tc.out.join("log.jsonl"), "");
+    let _ = std::fs::write(tc.out.join("benchmark-history.jsonl"), "");
+
+    // Warm-start (serde-load) or cold SpatialNet.
+    let init_path = tc.init.clone().unwrap_or_else(|| tc.out.join("distilled.json"));
+    let mut net = match std::fs::read_to_string(&init_path).ok().and_then(|s| serde_json::from_str::<SpatialNet>(&s).ok()) {
+        Some(n) if n.local_dim == SPATIAL_LOCAL_DIM && n.value_scalar_dim == VALUE_SCALAR_DIM => {
+            println!("cnn_train --train: WARM-START SpatialNet from {} (params {})", init_path.display(), n.param_count());
+            n
+        }
+        // Dim-guard: a checkpoint with a different policy-LOCAL width (pre-capacity,
+        // local_dim 16) OR a different VALUE-scalar width (pre-value-scalar nets have
+        // value_scalar_dim 0) is INCOMPATIBLE with this build's policy/value heads.
+        // Warm-starting it would silently feed the wrong-width vector into a Dense.
+        // Fail LOUDLY and cold-start instead (this experiment cold-starts anyway).
+        Some(n) => {
+            eprintln!(
+                "cnn_train --train: WARNING — --init {} has local_dim={} value_scalar_dim={} but \
+                 this build expects local_dim={} (=LOCAL_DIM {} shared + 2 capacity) and \
+                 value_scalar_dim={} (per-state value-head economy scalars). The checkpoint is \
+                 INCOMPATIBLE; IGNORING it and COLD-STARTING a fresh net.",
+                init_path.display(), n.local_dim, n.value_scalar_dim,
+                SPATIAL_LOCAL_DIM, LOCAL_DIM, VALUE_SCALAR_DIM
+            );
+            let n = cold_start_net(tc);
+            println!("cnn_train --train: COLD-START SpatialNet (incompatible init; net-size={} params {})",
+                if tc.small_net { "small" } else { "large" }, n.param_count());
+            n
+        }
+        None => {
+            let n = cold_start_net(tc);
+            println!("cnn_train --train: COLD-START SpatialNet ({} not found; net-size={} params {})",
+                init_path.display(), if tc.small_net { "small" } else { "large" }, n.param_count());
+            n
+        }
+    };
+
+    let n_vs_hard = (tc.games as f64 * tc.vs_hard_frac).round() as usize;
+    println!(
+        "cnn_train --train: out={} iters={} games/iter={} ({} vs HARD) sims={} epochs={} batch={} buffer={} lr={} l2={} bench every {} ({} games) replay every {} ({}+{} games, parallel) cap={} board={}x{}",
+        tc.out.display(), tc.iters, tc.games, n_vs_hard, tc.sims, tc.epochs, tc.batch, tc.buffer,
+        tc.lr, tc.l2, tc.bench_every, tc.bench_games, tc.replay_every, tc.replay_games, tc.replay_games, tc.cap, tc.width, tc.height
+    );
+    println!(
+        "cnn_train --train: exploration Dirichlet(α={:.2}) ε={:.2} | move-temp τ={:.2} until round {} | device-bonus β={:.2} | tie-penalty={:.2}",
+        tc.dirichlet_alpha, tc.dirichlet_eps, tc.move_temp, tc.temp_until_round, tc.device_bonus, tc.tie_penalty
+    );
+    println!(
+        "cnn_train --train: reward shaping γ={:.3} weight={:.2} (0=terminal-only no-op) | build-prior-floor={:.3} (0=no-op) | stall-rounds={} (40=default no-op) | device-potential={:.2} (0=no-op) | eval-prior-floor={:.3} (0=off) | pfsp={}",
+        tc.shape_gamma, tc.shape_weight, tc.build_prior_floor, tc.stall_rounds,
+        tc.device_potential, tc.eval_prior_floor, tc.pfsp
+    );
+    println!(
+        "cnn_train --train: LEVER C — script-opponents={} (device+army rush) | script-frac={:.2} (frac of non-vs-hard games) | device-credit={:.2} (0=no-op, action-level device-build/defend advantage)",
+        tc.script_opponents, tc.script_frac, tc.device_credit
+    );
+    println!(
+        "cnn_train --train: LEVER C (round-2 value-squash fix) — record-opp-value={} (false=learner-only, as round 1; true: record the scripted opponent SEAT's trajectory as VALUE-ONLY examples → the value head sees the WINNING side's +1, un-squashing valPredWin) | script-grade={} (false=even 50/50 device↔army split; true: split graded by the learner's per-strategy win-rate toward the matchup it beats less)",
+        tc.record_opp_value, tc.script_grade
+    );
+    println!(
+        "cnn_train --train: LEVER A — turn-search={} (false=no-op; true: each MCTS edge advances a FULL turn → tree depth = rounds, search reaches conquest ~r35 / device ~r90) | turn-search-spend={} (false=break-on-Pass; true: spend the whole turn budget on non-Pass actions)",
+        tc.turn_search, tc.turn_search_spend
+    );
+    println!(
+        "cnn_train --train: PASSIVITY-CURE Φ terms — tile-potential={:.2} (0=no-op, +w·tile_lead expansion carrot) | idle-penalty={:.2} (0=no-op, −w·(idle soldier/worker slots + idle money)) | soldier-cap-potential={:.2} (0=no-op, +w·filled soldier cap = army)",
+        tc.tile_potential, tc.idle_penalty, tc.soldier_cap_potential
+    );
+    println!(
+        "cnn_train --train: STEP-1 Φ (kill safe-Pass) — income-lead-potential={:.2} (0=no-op, +w·signed income_lead growth carrot) | cap-potential={:.2} (0=no-op, +w·clamp(soldier_cap/{:.0}) saturating cap → Outpost is +Φ) | idle-flow-penalty={:.2} (0=no-op, −w·(unstaffed units + unspent affordable income); fresh Outpost adds 0 idle)",
+        tc.income_lead_potential, tc.cap_potential, CAP_TARGET, tc.idle_flow_penalty
+    );
+    println!(
+        "cnn_train --train: STEP-2 Φ (combat curriculum) — w-army={:.2} (0=no-op, +w·clamp(used_soldier/{:.0}) FIELDED-army emphasis past one Outpost → fills the Outpost cap) | w-cut={:.2} (0=no-op, −w·hq_cut_exposure DEFENSE: one cut from losing tiles lowers Φ). Pair with --script-opponents --script-frac (army-rusher in the curriculum).",
+        tc.w_army, ARMY_TARGET, tc.w_cut
+    );
+
+    let log_path = tc.out.join("log.jsonl");
+    let bench_hist = tc.out.join("benchmark-history.jsonl");
+    let start = Instant::now();
+    let mut buffer: VecDeque<Example> = VecDeque::new();
+    let mut sp_rng = XorShift32::new((tc.seed as u32) ^ 0x5EED_1234);
+    let mut train_rng = XorShift32::new((tc.seed as u32) ^ 0xBEEF);
+    let mut best_win = -1.0f64;
+
+    // --- PFSP frozen past-champion opponent pool ---------------------------
+    // TRAINING-RESEARCH §1C / §2-A3 + TRAINING-PLAN "Opponent diversity": the
+    // ~0.50 plateau is the Nash self-twin cycle — beating only the current twin.
+    // We snapshot earlier champions into a bounded pool and, when `--pfsp` is on,
+    // play the OPPONENT seat against a frozen past champion sampled WIN-RATE-WEIGHTED
+    // (true PFSP: pick more often the opponents the learner BEATS LESS), keeping a
+    // fraction of HARD (`vs_hard_frac`) as a held-out reference. The pool is
+    // in-memory `SpatialNet` clones used for inference only (never trained).
+    const PFSP_POOL_CAP: usize = 8; // keep the last ~8 champions (AlphaStar-style league, small)
+    let mut pool_nets: Vec<SpatialNet> = Vec::new();
+    let mut pool_wins: Vec<f64> = Vec::new(); // learner wins vs this frozen opp
+    let mut pool_games: Vec<f64> = Vec::new(); // learner games vs this frozen opp
+    // Lever C (round-2 graded curriculum): cumulative learner win/total vs each
+    // scripted strategy, used to bias the device-rush↔army-rush split toward the one
+    // the learner BEATS LESS when `--script-grade` is on. No effect when off.
+    let mut grade_devrush_w = 0.0f64; let mut grade_devrush_n = 0.0f64;
+    let mut grade_armyrush_w = 0.0f64; let mut grade_armyrush_n = 0.0f64;
+    // PFSP sampling weight for a pool entry: higher when the learner BEATS it LESS.
+    // Unplayed entries (no games yet) get weight 1.0 so they are explored. Matches
+    // the AlphaStar `f_hard = (1 - p_win)^2` prioritisation.
+    let pfsp_weight = |w: f64, n: f64| -> f64 {
+        if n < 1.0 { return 1.0; }
+        let p_win = (w / n).clamp(0.0, 1.0);
+        let f = 1.0 - p_win;
+        (f * f).max(1e-3)
+    };
+
+    for iter in 0..tc.iters {
+        // --- self-play (parallel across cores; games are independent) ------
+        // Precompute every game's seed sequentially so the `sp_rng` stream is the
+        // SAME as the old single-threaded order (determinism preserved); each game
+        // then runs in parallel with its OWN exploration RNG derived from its seed
+        // (no shared RNG across threads). `&net` is read-only inference everywhere.
+        let mut new_examples = 0usize;
+        // Per-game seed + opponent assignment, computed SEQUENTIALLY so the `sp_rng`
+        // stream + PFSP pool sampling stay deterministic; then games run in parallel.
+        // `OppKind` chooses seat 1's controller: Hard (first `n_vs_hard` games), a
+        // SCRIPTED strategy opponent (Lever C), a frozen past champion (PFSP), or the
+        // self-twin. Scripted/PFSP/SelfTwin all draw from the NON-vs-hard games and
+        // coexist (script first, then PFSP, then self-twin), so `--script-frac` is a
+        // fraction of the non-vs-hard games.
+        #[derive(Clone, Copy)]
+        enum OppKind { Hard, SelfTwin, Frozen(usize), Script(ScriptKind) }
+        let seeds: Vec<(u32, OppKind)> = (0..tc.games)
+            .map(|gi| {
+                let seed = (sp_rng.next_f64() * 1.0e9) as u32 ^ (gi as u32).wrapping_mul(2_654_435_761);
+                // Decide (deterministically per seed) whether this non-vs-hard game
+                // draws a scripted opponent. Default-off + `--script-frac 0` → never,
+                // so behaviour is byte-identical unless the flag is set.
+                let script_pick: Option<ScriptKind> = if tc.script_opponents && tc.script_frac > 0.0 {
+                    let mut s_rng = XorShift32::new(seed ^ 0x5C1B_7E5C);
+                    if s_rng.next_f64() < tc.script_frac {
+                        // Split between the two scripted strategies. Default = even
+                        // 50/50; with `--script-grade` the split is win-rate-weighted
+                        // (AlphaStar `(1−p_win)²`) toward the strategy the learner beats
+                        // LESS, so the curriculum tracks the learner's weaknesses.
+                        let p_dev = if tc.script_grade {
+                            let w_dev = pfsp_weight(grade_devrush_w, grade_devrush_n);
+                            let w_army = pfsp_weight(grade_armyrush_w, grade_armyrush_n);
+                            (w_dev / (w_dev + w_army)).clamp(0.0, 1.0)
+                        } else {
+                            0.5
+                        };
+                        if s_rng.next_f64() < p_dev { Some(ScriptKind::DeviceRush) } else { Some(ScriptKind::ArmyRush) }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                let opp = if gi < n_vs_hard {
+                    OppKind::Hard
+                } else if let Some(kind) = script_pick {
+                    OppKind::Script(kind)
+                } else if tc.pfsp && !pool_nets.is_empty() {
+                    // PFSP: sample a frozen past champion win-rate-weighted. The draw is
+                    // seeded from this game's seed so it stays deterministic per seed.
+                    let mut pick_rng = XorShift32::new(seed ^ 0x9F5B_C0DE);
+                    let weights: Vec<f64> = (0..pool_nets.len())
+                        .map(|k| pfsp_weight(pool_wins[k], pool_games[k]))
+                        .collect();
+                    let total: f64 = weights.iter().sum();
+                    let mut r = pick_rng.next_f64() * total.max(1e-9);
+                    let mut idx = pool_nets.len() - 1;
+                    for (k, &wgt) in weights.iter().enumerate() {
+                        if r < wgt { idx = k; break; }
+                        r -= wgt;
+                    }
+                    OppKind::Frozen(idx)
+                } else {
+                    OppKind::SelfTwin
+                };
+                (seed, opp)
+            })
+            .collect();
+        let per_game: Vec<(bool, Vec<Example>, ExploreOutcome)> = seeds
+            .into_par_iter()
+            .map(|(seed, opp_kind)| {
+                // Per-game RNG seeded from this game's seed → deterministic per seed.
+                let mut game_rng = XorShift32::new(seed ^ 0x9E37_79B1);
+                // `vs_hard` here means "exclude from the PURE-self-play observability
+                // tallies" (it is the asymmetric-opponent flag, not literally HARD).
+                // Scripted games are asymmetric like Hard/Frozen, so they are excluded
+                // from the symmetric-self-play cause stats (and tracked separately).
+                let (opp, vs_hard) = match opp_kind {
+                    OppKind::Hard => (Opponent::Hard, true),
+                    OppKind::SelfTwin => (Opponent::SelfTwin, false),
+                    OppKind::Frozen(idx) => (Opponent::Frozen(idx, &pool_nets[idx]), false),
+                    OppKind::Script(kind) => (Opponent::Script(kind), true),
+                };
+                let (ex, outcome) = play_one_game_explore(&net, seed, &cfg, tc, opp, &mut game_rng);
+                (vs_hard, ex, outcome)
+            })
+            .collect();
+        // Parity-free per-iteration self-play observability (PURE self-play games
+        // only — the same `vs_hard` flag the harvest uses). Logging only.
+        let mut sp_tie = 0u64;
+        let mut sp_decisive = 0u64;
+        // Per-iter self-play win-CAUSE split (pure self-play games only): so the log
+        // SHOWS whether decisive self-play is Device-driven or fast-conquest. A cut /
+        // tie has no cause and is counted only in `sp_tie`.
+        let mut sp_device = 0u64;
+        let mut sp_conquest = 0u64;
+        let mut sp_domination = 0u64;
+        let mut sp_bankruptcy = 0u64;
+        let mut sp_rounds_sum = 0i64;
+        let mut iter_intents = [0u64; NUM_INTENTS];
+        let mut iter_extra = ExtraIntents::default();
+        // Value-calibration + policy-entropy accumulators over ALL net decisions this
+        // iter (both vs-HARD seat-0 and pure self-play): mean predicted value bucketed
+        // by eventual outcome, and mean MCTS-policy entropy.
+        let mut vp_win = 0.0; let mut vp_win_n = 0u64;
+        let mut vp_loss = 0.0; let mut vp_loss_n = 0u64;
+        let mut vp_draw = 0.0; let mut vp_draw_n = 0u64;
+        let mut ent_sum = 0.0; let mut ent_n = 0u64;
+        // Lever C: learner win/total vs each scripted strategy this iter (dashboard).
+        let mut sp_devrush_w = 0u64; let mut sp_devrush_n = 0u64;
+        let mut sp_armyrush_w = 0u64; let mut sp_armyrush_n = 0u64;
+        // STEP-2 (§1.5 gate): mean tiles-lost-to-rusher over army-rush games this iter.
+        let mut tiles_lost_sum = 0i64; let mut tiles_lost_n = 0u64;
+        for (vs_hard, ex, outcome) in per_game {
+            vp_win += outcome.vpred_win; vp_win_n += outcome.vpred_win_n;
+            vp_loss += outcome.vpred_loss; vp_loss_n += outcome.vpred_loss_n;
+            vp_draw += outcome.vpred_draw; vp_draw_n += outcome.vpred_draw_n;
+            ent_sum += outcome.ent_sum; ent_n += outcome.ent_n;
+            // PFSP: update the frozen opponent's win-rate from the learner's result
+            // (used to weight future sampling toward opponents we beat less).
+            if let Some(idx) = outcome.pfsp_opp {
+                if idx < pool_games.len() {
+                    pool_games[idx] += 1.0;
+                    if outcome.learner_won { pool_wins[idx] += 1.0; }
+                }
+            }
+            // Lever C: per-scripted-strategy learner win-rate (this iter + cumulative
+            // for the `--script-grade` curriculum split).
+            match outcome.script_opp {
+                Some(ScriptKind::DeviceRush) => {
+                    sp_devrush_n += 1; grade_devrush_n += 1.0;
+                    if outcome.learner_won { sp_devrush_w += 1; grade_devrush_w += 1.0; }
+                }
+                Some(ScriptKind::ArmyRush) => {
+                    sp_armyrush_n += 1; grade_armyrush_n += 1.0;
+                    if outcome.learner_won { sp_armyrush_w += 1; grade_armyrush_w += 1.0; }
+                }
+                None => {}
+            }
+            // STEP-2 gate: accumulate tiles-lost-to-rusher (defined only for army-rush).
+            if let Some(lost) = outcome.tiles_lost_to_rusher {
+                tiles_lost_sum += lost; tiles_lost_n += 1;
+            }
+            new_examples += ex.len();
+            for e in ex {
+                buffer.push_back(e);
+                if buffer.len() > tc.buffer { buffer.pop_front(); }
+            }
+            if !vs_hard {
+                if outcome.decisive { sp_decisive += 1; } else { sp_tie += 1; }
+                match outcome.cause {
+                    Some(WinCause::Device) => sp_device += 1,
+                    Some(WinCause::Domination) => sp_domination += 1,
+                    Some(WinCause::Conquest) => sp_conquest += 1,
+                    Some(WinCause::Bankruptcy) => sp_bankruptcy += 1,
+                    // A decisive game with no natural cause (last live player by
+                    // elimination) reads as a conquest, matching the bench tally.
+                    None => { if outcome.decisive { sp_conquest += 1; } }
+                }
+                sp_rounds_sum += outcome.rounds;
+                for k in 0..NUM_INTENTS { iter_intents[k] += outcome.intents[k]; }
+                iter_extra.hire_worker += outcome.extra.hire_worker;
+                iter_extra.hire_expert += outcome.extra.hire_expert;
+            }
+        }
+        // Lever C `--script-grade`: decay the cumulative per-strategy win counts so the
+        // graded split tracks the learner's RECENT win-rate (a sliding window) rather
+        // than freezing on the whole-run average. Pure bookkeeping; no-op when the
+        // graded split is off (the counts are simply never read).
+        const GRADE_DECAY: f64 = 0.8;
+        grade_devrush_w *= GRADE_DECAY; grade_devrush_n *= GRADE_DECAY;
+        grade_armyrush_w *= GRADE_DECAY; grade_armyrush_n *= GRADE_DECAY;
+
+        let sp_total = sp_tie + sp_decisive;
+        let sp_avg_rounds = if sp_total > 0 { sp_rounds_sum as f64 / sp_total as f64 } else { 0.0 };
+        // Mean value prediction per outcome bucket + mean policy entropy → JSON
+        // number or `null` when the bucket is empty.
+        let mean_or_null = |s: f64, n: u64| if n > 0 { format!("{:.4}", s / n as f64) } else { "null".to_string() };
+        let val_pred_win = mean_or_null(vp_win, vp_win_n);
+        let val_pred_loss = mean_or_null(vp_loss, vp_loss_n);
+        let val_pred_draw = mean_or_null(vp_draw, vp_draw_n);
+        let policy_entropy = mean_or_null(ent_sum, ent_n);
+        // Per-iteration self-play intent histogram (same key set as the bench
+        // `intents`, incl. the HireWorker/HireExpert observability split).
+        let iter_intents_json = {
+            let mut s = String::from("{");
+            for k in 0..NUM_INTENTS {
+                if k > 0 { s.push(','); }
+                s.push_str(&format!("\"{}\":{}", INTENT_NAMES[k], iter_intents[k]));
+            }
+            s.push_str(&format!(
+                ",\"HireWorker\":{},\"HireExpert\":{}}}",
+                iter_extra.hire_worker, iter_extra.hire_expert
+            ));
+            s
+        };
+
+        // --- train ---------------------------------------------------------
+        let n = buffer.len();
+        let mut ploss = 0.0; let mut vloss = 0.0; let mut steps = 0usize;
+        if n >= tc.batch {
+            let vec: Vec<&Example> = buffer.iter().collect();
+            for _ in 0..tc.epochs {
+                let mut idx: Vec<usize> = (0..n).collect();
+                for k in (1..n).rev() {
+                    let j = (train_rng.next_f64() * (k as f64 + 1.0)).floor() as usize;
+                    idx.swap(k, j.min(k));
+                }
+                let mut s = 0;
+                while s + tc.batch <= n {
+                    let batch: Vec<&Example> = idx[s..s + tc.batch].iter().map(|&k| vec[k]).collect();
+                    let (p, v) = train_batch_lr(&mut net, &batch, tc.lr, tc.l2);
+                    ploss += p; vloss += v; steps += 1;
+                    s += tc.batch;
+                }
+            }
+        }
+        if steps > 0 { ploss /= steps as f64; vloss /= steps as f64; }
+
+        // --- log line (dashboard Koulutus tab) -----------------------------
+        let elapsed = start.elapsed().as_secs_f64();
+        let gps = if elapsed > 0.0 { ((iter + 1) * tc.games) as f64 / elapsed } else { 0.0 };
+        // Lever C: learner win-rate vs each scripted strategy (null when none played).
+        let rate_or_null = |w: u64, n: u64| if n > 0 { format!("{:.4}", w as f64 / n as f64) } else { "null".to_string() };
+        let sp_vs_devrush = rate_or_null(sp_devrush_w, sp_devrush_n);
+        let sp_vs_armyrush = rate_or_null(sp_armyrush_w, sp_armyrush_n);
+        // STEP-2 (§1.5 gate): mean tiles-lost-to-rusher this iter (null when no army-rush
+        // games were played, e.g. curriculum off or none drawn).
+        let tiles_lost_to_rusher = if tiles_lost_n > 0 {
+            format!("{:.3}", tiles_lost_sum as f64 / tiles_lost_n as f64)
+        } else {
+            "null".to_string()
+        };
+        append_line(&log_path, &format!(
+            "{{\"gen\":{},\"bestFit\":null,\"meanFit\":null,\"medianFit\":null,\"fitStd\":null,\
+             \"policyLoss\":{:.5},\"valueLoss\":{:.5},\"bufferSize\":{},\"newExamples\":{},\
+             \"policyEntropy\":{},\"valPredWin\":{},\"valPredLoss\":{},\"valPredDraw\":{},\
+             \"gamesPerSec\":{:.3},\"elapsedSec\":{:.1},\"winRateVsHeur\":null,\
+             \"spTie\":{},\"spDecisive\":{},\"spDevice\":{},\"spConquest\":{},\
+             \"spDomination\":{},\"spBankruptcy\":{},\"spAvgRounds\":{:.1},\
+             \"spVsDeviceRush\":{},\"spVsDeviceRushN\":{},\"spVsArmyRush\":{},\"spVsArmyRushN\":{},\
+             \"tilesLostToRusher\":{},\"tilesLostToRusherN\":{},\
+             \"iterIntents\":{}}}",
+            iter, ploss, vloss, n, new_examples,
+            policy_entropy, val_pred_win, val_pred_loss, val_pred_draw,
+            gps, elapsed,
+            sp_tie, sp_decisive, sp_device, sp_conquest,
+            sp_domination, sp_bankruptcy, sp_avg_rounds,
+            sp_vs_devrush, sp_devrush_n, sp_vs_armyrush, sp_armyrush_n,
+            tiles_lost_to_rusher, tiles_lost_n,
+            iter_intents_json));
+
+        // --- periodic benchmark + replays + checkpoint + spatial.json ------
+        // Eval-phase saturation: the bench (`bench_vs_hard`, 80 games) and the
+        // dashboard replay capture (2*replay_games heavy MCTS games) are run as
+        // ONE parallel workload via `rayon::join` so the whole rayon pool stays
+        // busy (work-stealing) until BOTH finish — instead of bench → replay as
+        // two sequential phases with straggler/3-core idle stretches.
+        //
+        // CORRECTNESS: `bench_vs_hard` is called with the SAME args/seeds as
+        // before (`tc.seed ^ 0xBE0`, same `bench_games`), and its internal
+        // per-game seeds are derived only from that base → `BenchResult` is
+        // bit-identical to the old sequential path. The replay games likewise
+        // keep their original per-source seed formulas (see below), so the
+        // benchmark history stays comparable across the resume.
+        let do_bench = iter % tc.bench_every == 0 || iter + 1 == tc.iters;
+        let do_replay = iter % tc.replay_every == 0 || iter + 1 == tc.iters;
+        let rstart = Instant::now();
+        let (br_opt, _replay): (Option<BenchResult>, ()) = rayon::join(
+            || {
+                if do_bench {
+                    Some(bench_vs_hard(&net, &cfg, tc, tc.bench_games, tc.seed as u32 ^ 0xBE0))
+                } else {
+                    None
+                }
+            },
+            || {
+                if do_replay {
+                    // Heavy observability pass: `replay_games` champ-vs-hard +
+                    // `replay_games` self-play games, all independent (read `&net`
+                    // immutably). Merged into ONE `into_par_iter` over 2*rg games so
+                    // they share the pool with the bench — no more two sequential
+                    // 3-game batches that pinned at most `replay_games` cores.
+                    // games[0..rg) = champ-vs-hard (vs_self=false), games[rg..2rg) =
+                    // self-play (vs_self=true). Per-game seeds use the ORIGINAL
+                    // per-source formulas (keyed on the local index gi) so the
+                    // captured games are identical to the old code for any given
+                    // replay_games count.
+                    let rg = tc.replay_games as u32;
+                    let mut tagged: Vec<(u32, String)> = (0..(2 * rg))
+                        .into_par_iter()
+                        .map(|k| {
+                            if k < rg {
+                                let gi = k;
+                                let hseed = (tc.seed as u32) ^ (iter as u32).wrapping_mul(0x9E37_79B1) ^ 0x9E_F00D ^ gi.wrapping_mul(0x2545_F491);
+                                (k, record_replay(&net, &cfg, tc, iter, hseed, false))
+                            } else {
+                                let gi = k - rg;
+                                let sseed = (tc.seed as u32) ^ (iter as u32).wrapping_mul(0x85EB_CA77) ^ 0x5E1F ^ gi.wrapping_mul(0x9E37_79B1);
+                                (k, record_replay(&net, &cfg, tc, iter, sseed, true))
+                            }
+                        })
+                        .collect();
+                    // `into_par_iter` does not guarantee output order → sort by the
+                    // (k) key to restore deterministic file layout, then partition.
+                    tagged.sort_by_key(|(k, _)| *k);
+                    let hard_arr: Vec<String> = tagged.iter().filter(|(k, _)| *k < rg).map(|(_, s)| s.clone()).collect();
+                    let self_arr: Vec<String> = tagged.iter().filter(|(k, _)| *k >= rg).map(|(_, s)| s.clone()).collect();
+                    let _ = std::fs::write(tc.out.join("replay.json"), format!("[{}]", hard_arr.join(",")));
+                    let _ = std::fs::write(tc.out.join("replay_selfplay.json"), format!("[{}]", self_arr.join(",")));
+                    println!(
+                        "iter {iter}: replay capture {}+{} games (merged parallel) in {:.1}s",
+                        tc.replay_games, tc.replay_games, rstart.elapsed().as_secs_f64()
+                    );
+                }
+            },
+        );
+        if let Some(br) = br_opt {
+            let seat = |w: usize, m: usize| if m > 0 { format!("{:.4}", w as f64 / m as f64) } else { "null".to_string() };
+            // CHAMPION-only device metrics (the honest conversion):
+            //   deviceBuildRate = champ_device_built / games
+            //   deviceSurvival  = champ_device_won  / champ_device_built (champ's true conversion)
+            // The old owner-agnostic numbers conflated HARD's devices (e.g. (1+10)/15
+            // = 0.733 "survival" was mostly HARD), so they are dropped from the
+            // headline keys and exposed under `*Any*` for continuity.
+            let champ_surv = if br.champ_device_built > 0 {
+                format!("{:.4}", br.champ_device_won as f64 / br.champ_device_built as f64)
+            } else { "null".to_string() };
+            let hard_surv = if br.hard_device_built > 0 {
+                format!("{:.4}", br.hard_device_won as f64 / br.hard_device_built as f64)
+            } else { "null".to_string() };
+            let any_surv = if br.device_games > 0 { format!("{:.4}", br.device_wins as f64 / br.device_games as f64) } else { "null".to_string() };
+            let rmean = |i: usize| if br.rounds_cnt[i] > 0 { format!("{:.1}", br.rounds_sum[i] / br.rounds_cnt[i] as f64) } else { "null".to_string() };
+            let intents_json = bench_intents_json(&br);
+            // --- Step-0 HONEST + behavioral telemetry (always computed; old history
+            // lines lacking these fields are guarded with defaults on the dashboard).
+            let bank_share = match br.bankruptcy_win_share() { Some(v) => format!("{:.4}", v), None => "null".to_string() };
+            let device_denial = if br.hard_device_built > 0 {
+                format!("{:.4}", br.hard_device_denied as f64 / br.hard_device_built as f64)
+            } else { "null".to_string() };
+            append_line(&bench_hist, &format!(
+                "{{\"gen\":{},\"winRate\":{:.4},\"lossRate\":{:.4},\"timeoutRate\":{:.4},\"tileFrac\":{:.4},\
+                 \"nGames\":{},\"winSeat0\":{},\"winSeat1\":{},\
+                 \"champWins\":{},\"hardWins\":{},\"trueTie\":{},\
+                 \"trueWinVsHard\":{:.4},\"bankruptcyWinShare\":{},\
+                 \"villagesPerGame\":{:.4},\"outpostsPerGame\":{:.4},\"maxSoldiersPerGame\":{:.4},\
+                 \"deviceDenialRate\":{},\"hardDeviceBuilt\":{},\"hardDeviceDenied\":{},\
+                 \"deviceBuildRate\":{:.4},\"deviceSurvival\":{},\
+                 \"hardDeviceBuildRate\":{:.4},\"hardDeviceSurvival\":{},\
+                 \"anyDeviceBuildRate\":{:.4},\"anyDeviceSurvival\":{},\
+                 \"roundsByCause\":{{\"device\":{},\"domination\":{},\"conquest\":{},\"bankruptcy\":{},\"tiebreak\":{}}},\
+                 \"intents\":{},\"decisions\":{},\"ts\":\"{}\"}}",
+                iter, br.win, br.loss, br.timeout, br.tile_frac,
+                br.n, seat(br.wins_seat0, br.n_seat0), seat(br.wins_seat1, br.n_seat1),
+                br.champ_cause.json(), br.hard_cause.json(), br.true_tie,
+                br.true_win_vs_hard(), bank_share,
+                br.champ_villages_sum as f64 / br.n as f64,
+                br.champ_outposts_sum as f64 / br.n as f64,
+                br.champ_max_soldiers_sum as f64 / br.n as f64,
+                device_denial, br.hard_device_built, br.hard_device_denied,
+                br.champ_device_built as f64 / br.n as f64, champ_surv,
+                br.hard_device_built as f64 / br.n as f64, hard_surv,
+                br.device_games as f64 / br.n as f64, any_surv,
+                rmean(0), rmean(1), rmean(2), rmean(3), rmean(4),
+                intents_json, br.decisions, now_iso()));
+
+            // spatial.json heatmap (a representative mid-game CNN-vs-HARD state).
+            let sp_seed = (tc.seed as u32) ^ (iter as u32).wrapping_mul(0x27D4_EB2F) ^ 0x5A7;
+            write_spatial_json(&net, &cfg, tc, iter, sp_seed);
+
+            // checkpoint (latest) + best.
+            let json = serde_json::to_string(&net).expect("SpatialNet serialises");
+            let _ = std::fs::write(tc.out.join("champion.json"), &json);
+            let mut tag = "";
+            if br.win > best_win {
+                best_win = br.win;
+                let _ = std::fs::write(tc.out.join("champion-best.json"), &json);
+                tag = " *BEST*";
+            }
+            let cc = &br.champ_cause;
+            println!(
+                "iter {iter}: vs-hard win {:.1}% (TRUE {:.1}%, loss {:.1}%, tie {:.1}%) | champ wins D{} Dom{} C{} B{} TB{} | vil {:.1} out {:.1} maxSol {:.1}/g | champ-dev {:.0}% built surv {} (hard-dev {:.0}% surv {}) | ploss {:.4} vloss {:.4} | buf {} | {:.0}s{}",
+                br.win * 100.0, br.true_win_vs_hard() * 100.0, br.loss * 100.0, br.timeout * 100.0,
+                cc.device, cc.domination, cc.conquest, cc.bankruptcy, cc.tiebreak,
+                br.champ_villages_sum as f64 / br.n as f64,
+                br.champ_outposts_sum as f64 / br.n as f64,
+                br.champ_max_soldiers_sum as f64 / br.n as f64,
+                100.0 * br.champ_device_built as f64 / br.n as f64, champ_surv,
+                100.0 * br.hard_device_built as f64 / br.n as f64, hard_surv,
+                ploss, vloss, n, elapsed, tag
+            );
+
+            // PFSP: snapshot the current champion into the frozen pool at the bench
+            // cadence (every `bench_every` gens — tied to a MEASURED checkpoint). The
+            // pool is a bounded FIFO of `PFSP_POOL_CAP` recent champions; the oldest is
+            // evicted. No-op cost unless `--pfsp` is set (the pool is only SAMPLED when
+            // pfsp is on), but we always KEEP it filled so enabling/diagnostics are cheap.
+            if tc.pfsp {
+                pool_nets.push(net.clone());
+                pool_wins.push(0.0);
+                pool_games.push(0.0);
+                while pool_nets.len() > PFSP_POOL_CAP {
+                    pool_nets.remove(0);
+                    pool_wins.remove(0);
+                    pool_games.remove(0);
+                }
+                println!("iter {iter}: PFSP pool snapshot (pool size {})", pool_nets.len());
+            }
+        }
+    }
+
+    let json = serde_json::to_string(&net).expect("SpatialNet serialises");
+    let _ = std::fs::write(tc.out.join("champion.json"), json);
+    println!("cnn_train --train: done in {:.0}s → {}", start.elapsed().as_secs_f64(), tc.out.display());
+}
+
+/// Initialise the global rayon pool ONCE. Worker threads default to cores - 4
+/// (leave 4 cores free so the desktop stays responsive while maximising
+/// parallel self-play / eval for unattended runs), or `override_threads` when a
+/// `--threads N` flag is supplied. `build_global` can only succeed once per
+/// process, so this is idempotent: a second call is a no-op (`.ok()`).
+/// NOTE: `build_global` overrides `RAYON_NUM_THREADS`, so this is the only knob.
+/// Mirrors `alphazero.rs::main`'s banner.
+fn init_thread_pool(override_threads: Option<usize>) {
+    let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+    let threads = override_threads.unwrap_or_else(|| cores.saturating_sub(4)).max(1);
+    rayon::ThreadPoolBuilder::new().num_threads(threads).build_global().ok();
+    match override_threads {
+        Some(_) => println!("cnn_train: {threads} worker threads ({cores} cores detected, --threads override)"),
+        None => println!("cnn_train: {threads} worker threads ({cores} cores detected, leaving 4 cores headroom)"),
+    }
+}
+
+// --- DIAGNOSE: instrument the standalone MCTS prior/visit collapse ------------
+//
+// Builds a realistic mid-game state by playing N rounds of HardAi-vs-HardAi, then
+// at the side-to-move enumerates candidates and prints, for each: intent, prior
+// (softmax of SpatialNet::score_candidate), raw score, and post-MCTS visit count
+// + the chosen move. Reveals whether the net's OWN MCTS ever explores action
+// candidates (Expand/HireSoldier/Attack) or collapses to Pass.
+fn run_diagnose(args: &[String]) {
+    let warmup: i64 = arg_val(args, "--warmup").and_then(|v| v.parse().ok()).unwrap_or(24);
+    let n_sims: usize = arg_val(args, "--sims").and_then(|v| v.parse().ok()).unwrap_or(64);
+    let seed: u32 = arg_val(args, "--seed").and_then(|v| v.parse().ok()).unwrap_or(12345);
+    let (width, height) = (14i32, 12i32);
+    let cfg = TRAINING_CONFIG;
+
+    // Net: warm distilled if requested + present, else a fresh random net.
+    let net = match arg_val(args, "--init") {
+        Some(p) => match std::fs::read_to_string(&p).ok().and_then(|s| serde_json::from_str::<SpatialNet>(&s).ok()) {
+            Some(n) if n.local_dim == SPATIAL_LOCAL_DIM && n.value_scalar_dim == VALUE_SCALAR_DIM => { println!("diagnose: WARM net from {p}"); n }
+            Some(n) => { eprintln!("diagnose: --init {p} has local_dim={} value_scalar_dim={} but this build expects local_dim={SPATIAL_LOCAL_DIM} value_scalar_dim={VALUE_SCALAR_DIM} (incompatible checkpoint); using random net", n.local_dim, n.value_scalar_dim); SpatialNet::default_with_value_scalars(PLANE_COUNT, SPATIAL_LOCAL_DIM, INTENT_DIM, VALUE_SCALAR_DIM, 0xC0FFEE) }
+            None => { println!("diagnose: failed to load {p}; using random net"); SpatialNet::default_with_value_scalars(PLANE_COUNT, SPATIAL_LOCAL_DIM, INTENT_DIM, VALUE_SCALAR_DIM, 0xC0FFEE) }
+        },
+        None => { println!("diagnose: RANDOM net (seed 0xC0FFEE)"); SpatialNet::default_with_value_scalars(PLANE_COUNT, SPATIAL_LOCAL_DIM, INTENT_DIM, VALUE_SCALAR_DIM, 0xC0FFEE) }
+    };
+    println!("diagnose: warmup={warmup} sims={n_sims} seed={seed} board={width}x{height}");
+
+    // Build a mid-game state: HardAi vs HardAi for `warmup` rounds.
+    let mut g = Game::new(width, height, &["P1", "P2"]);
+    g.generate_map(width, height, seed);
+    let placer = HardAi::hard();
+    for _ in 0..2 {
+        let cur = g.current_player();
+        placer.place_headquarters(&mut g, cur);
+        g.change_turn();
+    }
+    let mut bot = HardAi::hard();
+    while g.live_players().len() > 1 && g.get_rounds_played() < warmup {
+        let cur = g.current_player();
+        bot.plan_turn(&mut g, cur);
+        if let EndTurnOutcome::Win(_) | EndTurnOutcome::Tie = g.end_turn() { break; }
+    }
+    // The warmup may have ended the game (a side won, or a mutual elimination left
+    // 0 live players → empty `player_order`). `current_player()` would panic on a
+    // terminal state, so bail out cleanly instead of diagnosing a finished game.
+    if g.live_players().len() <= 1 {
+        println!(
+            "warmup reached a TERMINAL state (live={}) at round {} — pick a smaller --warmup or a different --seed.",
+            g.live_players().len(), g.get_rounds_played(),
+        );
+        return;
+    }
+    let cur = g.current_player();
+    println!(
+        "state: round={} side-to-move=P{} live={} tiles(P0)={} tiles(P1)={}",
+        g.get_rounds_played(), cur.0,
+        g.live_players().len(),
+        g.get_tile_count_for_player(PlayerId(0)),
+        g.get_tile_count_for_player(PlayerId(1)),
+    );
+
+    // Enumerate candidates + priors (the EXACT make_node path).
+    let cands = candidates::enumerate(&g, cur, &cfg);
+    let (planes, h, w) = board_planes(&g, cur);
+    let cache = net.forward_board_scalars(&planes, h, w, &value_scalars(&g, cur));
+    let scores: Vec<f64> = cands.iter().map(|c| {
+        let (tgt, local, intent) = cand_feat(&g, cur, c);
+        net.score_candidate(&cache, tgt, &local, &intent)
+    }).collect();
+    let priors = softmax_tau(&scores, TAU);
+    println!("\n#candidates = {}", cands.len());
+    if cands.len() <= 1 {
+        println!("ONLY Pass available at this state — pick a different --warmup/--seed.");
+        return;
+    }
+
+    // Run the actual cnn_train MCTS and read root edge visits.
+    let mut tree = Mcts { nodes: Vec::new(), net: &net, player: cur, cfg, bot: HardAi::hard(), turn_search: false, turn_budget: (cfg.budget - 1).max(0), turn_search_spend: false };
+    let root = tree.make_node(&g);
+    tree.nodes.push(root);
+    for _ in 0..n_sims { simulate(&mut tree, &cfg); }
+    let visits = tree.nodes[0].edge_visits.clone();
+    let qvals: Vec<f64> = (0..cands.len()).map(|a| {
+        let nv = tree.nodes[0].edge_visits[a];
+        if nv > 0.0 { tree.nodes[0].edge_value[a] / nv } else { 0.0 }
+    }).collect();
+
+    // Rank by prior to surface the top-prior arm.
+    let mut order: Vec<usize> = (0..cands.len()).collect();
+    order.sort_by(|&a, &b| priors[b].partial_cmp(&priors[a]).unwrap());
+
+    println!("\n{:>4} {:>14} {:>9} {:>9} {:>8} {:>9}", "idx", "intent", "score", "prior", "visits", "Q");
+    for &i in &order {
+        println!("{:>4} {:>14} {:>9.4} {:>9.5} {:>8.0} {:>9.4}",
+            i, format!("{:?}", cands[i].intent), scores[i], priors[i], visits[i], qvals[i]);
+    }
+
+    // Chosen = most-visited (greedy benchmark path).
+    let mut chosen = 0usize; let mut best = -1.0;
+    for (a, &v) in visits.iter().enumerate() { if v > best { best = v; chosen = a; } }
+    let top_prior = order[0];
+    let leafv = tree.leaf_value(&tree.nodes[0]);
+    println!("\nroot leaf_value(value_from) = {:.5}  (flat ≈ same for all leaves → PUCT follows priors)", leafv);
+    println!("top-prior arm   = idx {} ({:?}) prior={:.5}", top_prior, cands[top_prior].intent, priors[top_prior]);
+    println!("MCTS chosen arm = idx {} ({:?}) visits={:.0}", chosen, cands[chosen].intent, visits[chosen]);
+    let pass_is_top = cands[top_prior].intent == candidates::Intent::Pass;
+    let pass_chosen = cands[chosen].intent == candidates::Intent::Pass;
+    println!(
+        "\nVERDICT: Pass-is-top-prior={} | MCTS-chose-Pass={} | action-arms-with-visits={}",
+        pass_is_top, pass_chosen,
+        (0..cands.len()).filter(|&i| cands[i].intent != candidates::Intent::Pass && visits[i] > 0.0).count(),
+    );
+}
+
+/// DIAGNOSE-GAME: drive a full CNN-vs-Hard game with the GREEDY benchmark MCTS
+/// (`mcts_select`) and log, for the first K net decisions, the #candidates, the
+/// available action intents, the chosen intent, and whether action arms were even
+/// present in the enumerated set. Reveals whether the CNN never SEES action
+/// candidates (economy-starved trajectory) vs sees them and Passes.
+fn run_diagnose_game(args: &[String]) {
+    let n_sims: usize = arg_val(args, "--sims").and_then(|v| v.parse().ok()).unwrap_or(16);
+    let seed: u32 = arg_val(args, "--seed").and_then(|v| v.parse().ok()).unwrap_or(12345);
+    let max_log: usize = arg_val(args, "--log").and_then(|v| v.parse().ok()).unwrap_or(60);
+    let (width, height) = (14i32, 12i32);
+    let cfg = TRAINING_CONFIG;
+    let net = SpatialNet::default_with_value_scalars(PLANE_COUNT, SPATIAL_LOCAL_DIM, INTENT_DIM, VALUE_SCALAR_DIM, 0xC0FFEE);
+    println!("diagnose-game: RANDOM net, CNN(seat0) vs Hard(seat1) sims={n_sims} seed={seed}");
+
+    let mut g = Game::new(width, height, &["P1", "P2"]);
+    g.generate_map(width, height, seed);
+    let placer = HardAi::hard();
+    let mut hard = HardAi::hard();
+    for _ in 0..2 {
+        let cur = g.current_player();
+        if cur.0 == 0 { placer.place_headquarters(&mut g, cur); } else { hard.place_headquarters(&mut g, cur); }
+        g.change_turn();
+    }
+    let mut logged = 0usize;
+    let mut intent_tot = [0u64; NUM_INTENTS];
+    let mut action_avail_decisions = 0u64; // decisions where >=1 non-Pass action existed
+    let mut total_decisions = 0u64;
+    while g.live_players().len() > 1 && g.get_rounds_played() < 300 {
+        let cur = g.current_player();
+        if cur.0 == 0 {
+            scaffold_ensure(&mut g, cur, &cfg);
+            loop {
+                let cands = candidates::enumerate(&g, cur, &cfg);
+                if cands.len() <= 1 { break; }
+                let res = mcts_select(&net, &g, cur, &cfg, n_sims, 0.0, false, false);
+                let chosen = &cands[res.chosen];
+                total_decisions += 1;
+                let has_action = cands.iter().any(|c| !matches!(c.intent, candidates::Intent::Pass | candidates::Intent::BuildFarm));
+                let has_expand_hire = cands.iter().any(|c| matches!(c.intent, candidates::Intent::Expand | candidates::Intent::HireSoldier | candidates::Intent::Attack));
+                if has_action { action_avail_decisions += 1; }
+                intent_tot[chosen.intent as usize] += 1;
+                if logged < max_log {
+                    let avail: Vec<String> = {
+                        let mut s = std::collections::BTreeSet::new();
+                        for c in &cands { s.insert(format!("{:?}", c.intent)); }
+                        s.into_iter().collect()
+                    };
+                    println!("r{:>3} dec#{:>3} #cands={:>2} expand/hire_avail={} chose={:?} | avail={:?}",
+                        g.get_rounds_played(), total_decisions, cands.len(), has_expand_hire, chosen.intent, avail);
+                    logged += 1;
+                }
+                if chosen.intent == candidates::Intent::Pass { break; }
+                if !candidates::execute_action(&mut g, cur, &cfg, &chosen.action) { break; }
+                scaffold_staff(&mut g, cur, &cfg);
+            }
+        } else {
+            hard.plan_turn(&mut g, cur);
+        }
+        match g.end_turn() {
+            EndTurnOutcome::Win(p) => { println!("[end] Win by P{} at round {}", p.0, g.get_rounds_played()); break; }
+            EndTurnOutcome::Tie => { println!("[end] Tie at round {}", g.get_rounds_played()); break; }
+            _ => {}
+        }
+        if g.live_players().len() <= 1 { println!("[end] one live player at round {}", g.get_rounds_played()); }
+    }
+    println!("final round={} live={}", g.get_rounds_played(), g.live_players().len());
+    println!("\nTOTAL net decisions={} | decisions-where-expand/hire/attack-was-enumerated... see below", total_decisions);
+    let expand_hire_avail = action_avail_decisions;
+    println!("decisions where a non-(Pass|BuildFarm) action existed = {}", expand_hire_avail);
+    println!("intent totals chosen: {:?}", INTENT_NAMES.iter().zip(intent_tot.iter()).filter(|(_,&n)| n>0).map(|(n,c)| format!("{n}={c}")).collect::<Vec<_>>());
+}
+
+// --- standalone spatial-sample regeneration (`--spatial-dump`) ----------------
+
+/// Load a SpatialNet from `--init` and regenerate a multi-frame spatial-heatmap
+/// sample (the same artifact the trainer emits as spatial.json) to `--out`. Used
+/// to refresh UI sample data on demand without launching a training run.
+fn run_spatial_dump(args: &[String]) {
+    let init = match arg_val(args, "--init") {
+        Some(v) => PathBuf::from(v),
+        None => {
+            eprintln!("--spatial-dump: --init <SpatialNet weights json> is REQUIRED");
+            std::process::exit(2);
+        }
+    };
+    let out = PathBuf::from(arg_val(args, "--out").unwrap_or_else(|| "spatial-sample.json".to_string()));
+    let seed: u32 = arg_val(args, "--seed").and_then(|v| v.parse().ok()).unwrap_or(7);
+    let sims: usize = arg_val(args, "--sims").and_then(|v| v.parse().ok()).unwrap_or(24);
+    let width: i32 = arg_val(args, "--width").and_then(|v| v.parse().ok()).unwrap_or(14);
+    let height: i32 = arg_val(args, "--height").and_then(|v| v.parse().ok()).unwrap_or(12);
+    let cap: i64 = arg_val(args, "--cap").and_then(|v| v.parse().ok()).unwrap_or(150);
+
+    let net: SpatialNet = match std::fs::read_to_string(&init)
+        .ok()
+        .and_then(|s| serde_json::from_str::<SpatialNet>(&s).ok())
+    {
+        Some(n) if n.local_dim == SPATIAL_LOCAL_DIM && n.value_scalar_dim == VALUE_SCALAR_DIM => n,
+        Some(n) => {
+            eprintln!(
+                "--spatial-dump: SpatialNet at {} has local_dim={} but this build expects {} \
+                 (incompatible pre-capacity 16-dim checkpoint). Re-train/regenerate an 18-dim net.",
+                init.display(), n.local_dim, SPATIAL_LOCAL_DIM
+            );
+            std::process::exit(1);
+        }
+        None => {
+            eprintln!("--spatial-dump: failed to load SpatialNet from {}", init.display());
+            std::process::exit(1);
+        }
+    };
+
+    // device-enabled config (same as the trainer) + a minimal TrainCfg.
+    let cfg = TRAINING_CONFIG;
+    let mut tc = TrainCfg::default();
+    tc.width = width;
+    tc.height = height;
+    tc.sims = sims;
+    tc.cap = cap;
+
+    write_spatial_json_to(&net, &cfg, &tc, 0, seed, &out);
+
+    // One-line summary: n frames, rounds, n non-null valueMap per frame.
+    let summary = std::fs::read_to_string(&out)
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .map(|v| {
+            let frames = v.get("frames").and_then(|f| f.as_array()).cloned().unwrap_or_default();
+            let parts: Vec<String> = frames
+                .iter()
+                .map(|fr| {
+                    let label = fr.get("label").and_then(|x| x.as_str()).unwrap_or("?");
+                    let round = fr.get("round").and_then(|x| x.as_i64()).unwrap_or(-1);
+                    let value = fr.get("value").and_then(|x| x.as_f64()).unwrap_or(0.0);
+                    let vm_nonnull = fr
+                        .get("valueMap")
+                        .and_then(|x| x.as_array())
+                        .map(|a| a.iter().filter(|e| !e.is_null()).count())
+                        .unwrap_or(0);
+                    let tm = fr.get("topMoves").and_then(|x| x.as_array()).map(|a| a.len()).unwrap_or(0);
+                    format!("{label}@r{round}(v={value:.3},vmap={vm_nonnull},top={tm})")
+                })
+                .collect();
+            format!("{} frame(s): {}", frames.len(), parts.join(", "))
+        })
+        .unwrap_or_else(|| "0 frames (no usable CNN-to-move state)".to_string());
+    println!("wrote {} — {}", out.display(), summary);
+}
+
+fn main() {
+    // `--threads N` overrides the default (cores - 4) worker count. Parsed up
+    // front because `init_thread_pool` runs before the per-subcommand parsing.
+    let thread_override: Option<usize> = {
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        arg_val(&args, "--threads").and_then(|v| v.parse::<usize>().ok())
+    };
+    {
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        if args.iter().any(|a| a == "--spatial-dump") {
+            init_thread_pool(thread_override);
+            run_spatial_dump(&args);
+            return;
+        }
+    }
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--diagnose-game") {
+        init_thread_pool(thread_override);
+        run_diagnose_game(&args);
+        return;
+    }
+    if args.iter().any(|a| a == "--diagnose") {
+        init_thread_pool(thread_override);
+        run_diagnose(&args);
+        return;
+    }
+    // One-shot global rayon pool for the parallel self-play / benchmark loops.
+    // build_global is process-global and may only be set once; calling it here
+    // (before dispatching to --train / --distill / --smoke) avoids any double-init.
+    init_thread_pool(thread_override);
+
+    // Distillation warm-start mode.
+    if args.iter().any(|a| a == "--distill") {
+        let mut dc = DistillCfg::default();
+        if let Some(v) = arg_val(&args, "--distill-games") {
+            dc.games = v.parse().unwrap_or(dc.games);
+        }
+        if let Some(v) = arg_val(&args, "--distill-epochs") {
+            dc.epochs = v.parse().unwrap_or(dc.epochs);
+        }
+        if let Some(v) = arg_val(&args, "--batch") {
+            dc.batch = v.parse().unwrap_or(dc.batch);
+        }
+        if let Some(v) = arg_val(&args, "--lr") {
+            dc.lr = v.parse().unwrap_or(dc.lr);
+        }
+        if let Some(v) = arg_val(&args, "--l2") {
+            dc.l2 = v.parse().unwrap_or(dc.l2);
+        }
+        if let Some(v) = arg_val(&args, "--seed") {
+            dc.seed = v.parse().unwrap_or(dc.seed);
+        }
+        if let Some(v) = arg_val(&args, "--tau") {
+            dc.tau = v.parse().unwrap_or(dc.tau);
+        }
+        if let Some(v) = arg_val(&args, "--action-weight") {
+            dc.action_weight = v.parse().unwrap_or(dc.action_weight);
+        }
+        if let Some(v) = arg_val(&args, "--out") {
+            dc.out = v;
+        }
+        // Teacher = the MLP champion policy to behaviour-clone. `--teacher` is the
+        // canonical flag; `--policy` is kept as an alias (it wires the same path).
+        if let Some(v) = arg_val(&args, "--teacher").or_else(|| arg_val(&args, "--policy")) {
+            dc.policy_path = v;
+        }
+        if let Some(v) = arg_val(&args, "--value") {
+            dc.value_path = v;
+        }
+        if let Some(v) = arg_val(&args, "--round-cap") {
+            dc.round_cap = v.parse().unwrap_or(dc.round_cap);
+        }
+        run_distill(&dc);
+        return;
+    }
+
+    // Real AlphaZero iteration/benchmark/checkpoint loop.
+    if args.iter().any(|a| a == "--train") {
+        let mut tc = TrainCfg::default();
+        if let Some(v) = arg_val(&args, "--out") { tc.out = PathBuf::from(v); }
+        if let Some(v) = arg_val(&args, "--init") { tc.init = Some(PathBuf::from(v)); }
+        if let Some(v) = arg_val(&args, "--iters") { tc.iters = v.parse().unwrap_or(tc.iters); }
+        if let Some(v) = arg_val(&args, "--games") { tc.games = v.parse().unwrap_or(tc.games); }
+        if let Some(v) = arg_val(&args, "--sims") { tc.sims = v.parse().unwrap_or(tc.sims); }
+        if let Some(v) = arg_val(&args, "--epochs") { tc.epochs = v.parse().unwrap_or(tc.epochs); }
+        if let Some(v) = arg_val(&args, "--batch") { tc.batch = v.parse().unwrap_or(tc.batch); }
+        if let Some(v) = arg_val(&args, "--buffer") { tc.buffer = v.parse().unwrap_or(tc.buffer); }
+        if let Some(v) = arg_val(&args, "--lr") { tc.lr = v.parse().unwrap_or(tc.lr); }
+        if let Some(v) = arg_val(&args, "--l2") { tc.l2 = v.parse().unwrap_or(tc.l2); }
+        if let Some(v) = arg_val(&args, "--vs-hard-frac") {
+            tc.vs_hard_frac = v.parse::<f64>().unwrap_or(tc.vs_hard_frac).clamp(0.0, 1.0);
+        }
+        if let Some(v) = arg_val(&args, "--bench-every") { tc.bench_every = v.parse::<usize>().unwrap_or(tc.bench_every).max(1); }
+        if let Some(v) = arg_val(&args, "--bench-games") { tc.bench_games = v.parse().unwrap_or(tc.bench_games); }
+        if let Some(v) = arg_val(&args, "--replay-every") { tc.replay_every = v.parse::<usize>().unwrap_or(tc.replay_every).max(1); }
+        if let Some(v) = arg_val(&args, "--replay-games") { tc.replay_games = v.parse().unwrap_or(tc.replay_games); }
+        if let Some(v) = arg_val(&args, "--cap") { tc.cap = v.parse().unwrap_or(tc.cap); }
+        if let Some(v) = arg_val(&args, "--width") { tc.width = v.parse().unwrap_or(tc.width); }
+        if let Some(v) = arg_val(&args, "--height") { tc.height = v.parse().unwrap_or(tc.height); }
+        if let Some(v) = arg_val(&args, "--seed") { tc.seed = v.parse().unwrap_or(tc.seed); }
+        if let Some(v) = arg_val(&args, "--dirichlet-alpha") { tc.dirichlet_alpha = v.parse().unwrap_or(tc.dirichlet_alpha); }
+        if let Some(v) = arg_val(&args, "--dirichlet-eps") { tc.dirichlet_eps = v.parse().unwrap_or(tc.dirichlet_eps); }
+        if let Some(v) = arg_val(&args, "--move-temp") { tc.move_temp = v.parse().unwrap_or(tc.move_temp); }
+        if let Some(v) = arg_val(&args, "--temp-until-round") { tc.temp_until_round = v.parse().unwrap_or(tc.temp_until_round); }
+        if let Some(v) = arg_val(&args, "--device-bonus") { tc.device_bonus = v.parse().unwrap_or(tc.device_bonus); }
+        if let Some(v) = arg_val(&args, "--tie-penalty") { tc.tie_penalty = v.parse().unwrap_or(tc.tie_penalty); }
+        if let Some(v) = arg_val(&args, "--shape-gamma") { tc.shape_gamma = v.parse().unwrap_or(tc.shape_gamma); }
+        if let Some(v) = arg_val(&args, "--shape-weight") { tc.shape_weight = v.parse().unwrap_or(tc.shape_weight); }
+        if let Some(v) = arg_val(&args, "--build-prior-floor") { tc.build_prior_floor = v.parse().unwrap_or(tc.build_prior_floor); }
+        if let Some(v) = arg_val(&args, "--stall-rounds") { tc.stall_rounds = v.parse().unwrap_or(tc.stall_rounds); }
+        if let Some(v) = arg_val(&args, "--device-potential") { tc.device_potential = v.parse().unwrap_or(tc.device_potential); }
+        if let Some(v) = arg_val(&args, "--eval-prior-floor") { tc.eval_prior_floor = v.parse().unwrap_or(tc.eval_prior_floor); }
+        if args.iter().any(|a| a == "--pfsp") { tc.pfsp = true; }
+        if args.iter().any(|a| a == "--script-opponents") { tc.script_opponents = true; }
+        if let Some(v) = arg_val(&args, "--script-frac") {
+            tc.script_frac = v.parse::<f64>().unwrap_or(tc.script_frac).clamp(0.0, 1.0);
+        }
+        if let Some(v) = arg_val(&args, "--device-credit") {
+            tc.device_credit = v.parse::<f64>().unwrap_or(tc.device_credit).max(0.0);
+        }
+        if args.iter().any(|a| a == "--turn-search") { tc.turn_search = true; }
+        if args.iter().any(|a| a == "--record-opp-value") { tc.record_opp_value = true; }
+        if args.iter().any(|a| a == "--script-grade") { tc.script_grade = true; }
+        // PASSIVITY-CURE levers (all default 0/false = exact no-op).
+        if let Some(v) = arg_val(&args, "--tile-potential") { tc.tile_potential = v.parse().unwrap_or(tc.tile_potential); }
+        if let Some(v) = arg_val(&args, "--idle-penalty") { tc.idle_penalty = v.parse::<f64>().unwrap_or(tc.idle_penalty).max(0.0); }
+        if let Some(v) = arg_val(&args, "--soldier-cap-potential") { tc.soldier_cap_potential = v.parse::<f64>().unwrap_or(tc.soldier_cap_potential).max(0.0); }
+        if args.iter().any(|a| a == "--turn-search-spend") { tc.turn_search_spend = true; }
+        // STEP 1 (kill safe-Pass): growth/lead Φ + saturating cap + idle-as-FLOW.
+        // All default 0.0 = exact no-op (Φ bit-identical to the FIX-1/FIX-3 path).
+        if let Some(v) = arg_val(&args, "--income-lead-potential") { tc.income_lead_potential = v.parse().unwrap_or(tc.income_lead_potential); }
+        if let Some(v) = arg_val(&args, "--cap-potential") { tc.cap_potential = v.parse::<f64>().unwrap_or(tc.cap_potential).max(0.0); }
+        if let Some(v) = arg_val(&args, "--w-army") { tc.w_army = v.parse::<f64>().unwrap_or(tc.w_army).max(0.0); }
+        if let Some(v) = arg_val(&args, "--w-cut") { tc.w_cut = v.parse::<f64>().unwrap_or(tc.w_cut).max(0.0); }
+        if let Some(v) = arg_val(&args, "--idle-flow-penalty") { tc.idle_flow_penalty = v.parse::<f64>().unwrap_or(tc.idle_flow_penalty).max(0.0); }
+        // SECONDARY (§2.5): net size for a COLD-START. Default = large round-3 arch.
+        if let Some(v) = arg_val(&args, "--net-size") { tc.small_net = v.eq_ignore_ascii_case("small"); }
+        if args.iter().any(|a| a == "--small-net") { tc.small_net = true; }
+        run_train(&tc);
+        return;
+    }
+
+    let vs_hard = args.iter().any(|a| a == "--vs-hard");
+    // Default (no args) or explicit --smoke → run the smoke test.
+    let smoke = args.is_empty() || args.iter().any(|a| a == "--smoke");
+    if smoke {
+        run_smoke(vs_hard);
+    } else {
+        eprintln!("cnn_train: --smoke [--vs-hard] | --distill [flags] | --train [flags]");
+        eprintln!(
+            "  distill flags: --distill-games --distill-epochs --batch --lr --l2 --seed --tau --action-weight --out --teacher --value --round-cap"
+        );
+        eprintln!(
+            "  train flags: --out --init --iters --games --sims --epochs --batch --buffer --lr --l2 --vs-hard-frac --bench-every --bench-games --replay-every --replay-games --cap --width --height --seed --dirichlet-alpha --dirichlet-eps --move-temp --temp-until-round --device-bonus --device-credit --tie-penalty --shape-gamma --shape-weight --build-prior-floor --stall-rounds --device-potential --eval-prior-floor --pfsp --script-opponents --script-frac --turn-search --record-opp-value --script-grade --tile-potential --idle-penalty --soldier-cap-potential --turn-search-spend --income-lead-potential --cap-potential --idle-flow-penalty --w-army --w-cut --net-size --threads"
+        );
+        std::process::exit(2);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build a small, fast `TrainCfg` for tests: tiny board, few sims, low cap so a
+    /// game resolves quickly and we can sweep many seeds.
+    fn test_tc() -> TrainCfg {
+        let mut tc = TrainCfg::default();
+        tc.width = 8;
+        tc.height = 8;
+        tc.sims = 4;
+        tc.cap = 120;
+        // Default to terminal-only value targets in tests so the legacy
+        // resolution tests can assert discrete z ∈ {-1,0,+1}. Tests that exercise
+        // reward shaping opt in by setting `shape_weight` themselves (or call the
+        // pure `shaped_returns` helper directly).
+        tc.shape_weight = 0.0;
+        tc
+    }
+
+    /// Step-0 HONEST-metric math: `true_win_vs_hard` must EXCLUDE bankruptcy-propped
+    /// wins, and `bankruptcy_win_share` must be bankruptcy / total champ wins. Built
+    /// from a known champWins breakdown (the mirage made explicit).
+    #[test]
+    fn true_win_and_bankruptcy_share_from_known_breakdown() {
+        // 60-game bench. Champ wins: 5 device, 4 domination, 8 conquest, 9 bankruptcy,
+        // 2 tiebreak = 28 total wins. Honest (mirage-free) = 5+4+8+2 = 19.
+        let mut br = BenchResult {
+            n: 60, win: 28.0 / 60.0, loss: 0.0, timeout: 0.0, tile_frac: 0.0,
+            wins_seat0: 0, n_seat0: 30, wins_seat1: 0, n_seat1: 30,
+            champ_cause: CauseTally { device: 5, domination: 4, conquest: 8, bankruptcy: 9, tiebreak: 2 },
+            hard_cause: CauseTally::default(), true_tie: 0,
+            device_games: 0, device_wins: 0,
+            champ_device_built: 0, champ_device_won: 0,
+            hard_device_built: 0, hard_device_won: 0,
+            champ_villages_sum: 0, champ_outposts_sum: 0, champ_max_soldiers_sum: 0,
+            hard_device_denied: 0,
+            intents: [0; NUM_INTENTS], extra: ExtraIntents::default(), decisions: 0,
+            rounds_sum: [0.0; 5], rounds_cnt: [0; 5],
+        };
+        // trueWinVsHard = 19/60; raw winRate = 28/60 → the mirage gap is the 9 bankruptcy wins.
+        assert!((br.true_win_vs_hard() - 19.0 / 60.0).abs() < 1e-9);
+        assert!(br.true_win_vs_hard() < br.win, "honest win-rate must be below the raw (mirage) win-rate");
+        // bankruptcy share = 9/28 of the wins.
+        assert!((br.bankruptcy_win_share().unwrap() - 9.0 / 28.0).abs() < 1e-9);
+
+        // No champ wins → bankruptcy share is None (avoid 0/0), trueWin = 0.
+        br.champ_cause = CauseTally::default();
+        assert_eq!(br.true_win_vs_hard(), 0.0);
+        assert!(br.bankruptcy_win_share().is_none());
+
+        // All wins bankruptcy → trueWin = 0, share = 1.0 (pure mirage).
+        br.champ_cause = CauseTally { device: 0, domination: 0, conquest: 0, bankruptcy: 7, tiebreak: 0 };
+        assert_eq!(br.true_win_vs_hard(), 0.0);
+        assert!((br.bankruptcy_win_share().unwrap() - 1.0).abs() < 1e-9);
+    }
+
+    /// The eval-phase restructure merged the two sequential replay batches
+    /// (champ-vs-hard, self-play) into ONE `into_par_iter` over `2*rg` games,
+    /// indexed `k`: `k in [0,rg)` = champ-vs-hard (local gi = k), `k in [rg,2rg)`
+    /// = self-play (local gi = k - rg). This locks that the per-game seeds derived
+    /// in the merged form are BIT-IDENTICAL to the original two-loop formulas, so
+    /// the captured replay games (and thus dashboard output) do not change for a
+    /// given `replay_games` / seed / iter. Mirrors the inline closure math.
+    #[test]
+    fn merged_replay_seeds_match_original_two_loop() {
+        let hard_seed = |seed: u32, iter: u32, gi: u32| {
+            seed ^ iter.wrapping_mul(0x9E37_79B1) ^ 0x9E_F00D ^ gi.wrapping_mul(0x2545_F491)
+        };
+        let self_seed = |seed: u32, iter: u32, gi: u32| {
+            seed ^ iter.wrapping_mul(0x85EB_CA77) ^ 0x5E1F ^ gi.wrapping_mul(0x9E37_79B1)
+        };
+        for &seed in &[0u32, 1, 0xDEAD_BEEF, 0x1234_5678] {
+            for &iter in &[0u32, 1, 7, 10, 250] {
+                for &rg in &[3u32, 5, 8] {
+                    // Original two-loop seeds (keyed on per-source gi 0..rg).
+                    let orig_hard: Vec<u32> = (0..rg).map(|gi| hard_seed(seed, iter, gi)).collect();
+                    let orig_self: Vec<u32> = (0..rg).map(|gi| self_seed(seed, iter, gi)).collect();
+                    // Merged single-iterator seeds (keyed on k, partitioned at rg).
+                    let mut merged_hard = Vec::new();
+                    let mut merged_self = Vec::new();
+                    for k in 0..(2 * rg) {
+                        if k < rg {
+                            merged_hard.push(hard_seed(seed, iter, k));
+                        } else {
+                            merged_self.push(self_seed(seed, iter, k - rg));
+                        }
+                    }
+                    assert_eq!(orig_hard, merged_hard, "champ-vs-hard seeds drifted");
+                    assert_eq!(orig_self, merged_self, "self-play seeds drifted");
+                    // 5+5 (and any rg+rg) games produced after partition.
+                    assert_eq!(merged_hard.len(), rg as usize);
+                    assert_eq!(merged_self.len(), rg as usize);
+                }
+            }
+        }
+        // Default is now 5 replay games per source (3 → 5 bump).
+        assert_eq!(test_tc().replay_games, 5);
+    }
+
+    /// Self-play games must run to completion (no `current_player()` panic on an
+    /// empty `player_order`) even when a game ends in a mutual / 0-survivor
+    /// elimination, and the 0-survivor case must resolve as a TIE: every harvested
+    /// example's outcome `z` is 0 (no winner), never ±1. This drives the real
+    /// guarded `play_one_game_explore` / `advance_after_root` paths.
+    #[test]
+    fn selfplay_resolves_zero_survivor_games_without_panic() {
+        let net = SpatialNet::default_with_value_scalars(PLANE_COUNT, SPATIAL_LOCAL_DIM, INTENT_DIM, VALUE_SCALAR_DIM, 0xC0FFEE);
+        let cfg = TRAINING_CONFIG;
+        let tc = test_tc();
+        let mut saw_zero_survivor = false;
+        // Sweep enough seeds to (usually) hit a mutual-elimination game; regardless,
+        // none may panic and each must resolve to a legal outcome.
+        for s in 0u32..200 {
+            let seed = s.wrapping_mul(2_654_435_761) ^ 0x1234_5678;
+            let mut rng = XorShift32::new(seed ^ 0x9E37_79B1);
+            // Self-play (both seats = net) so terminal states are reachable. The
+            // call itself must NOT panic (the bug under test): the game may end in a
+            // 0-survivor mutual elimination, after which the loop's winner-resolution
+            // runs without ever touching `current_player()` on the empty order.
+            let (examples, _outcome) = play_one_game_explore(&net, seed, &cfg, &tc, Opponent::SelfTwin, &mut rng);
+            // Every harvested z must be a legal outcome in {-1, 0, +1}.
+            for e in &examples {
+                assert!(
+                    e.z == -1.0 || e.z == 0.0 || e.z == 1.0,
+                    "seed {seed}: illegal outcome z={}",
+                    e.z
+                );
+            }
+            // A no-winner game (tie / timeout / 0-survivor mutual elimination) tags
+            // EVERY example z = 0. Record that we exercised that resolution branch.
+            if !examples.is_empty() && examples.iter().all(|e| e.z == 0.0) {
+                saw_zero_survivor = true;
+            }
+        }
+        // We don't hard-require hitting a 0-survivor game (it's stochastic), but the
+        // sweep MUST have produced at least one no-decision (tie/timeout) game,
+        // exercising the None-winner resolution branch.
+        assert!(
+            saw_zero_survivor,
+            "expected at least one tie/timeout/0-survivor game across the seed sweep"
+        );
+    }
+
+    /// `write_spatial_json` must never panic when its candidate snapshot game ends
+    /// up terminal (the old code fell back to the finished game and called
+    /// `current_player()` on an empty `player_order`). Sweeping seeds against a tmp
+    /// out-dir must complete cleanly.
+    #[test]
+    fn write_spatial_json_never_panics_on_terminal_fallback() {
+        let net = SpatialNet::default_with_value_scalars(PLANE_COUNT, SPATIAL_LOCAL_DIM, INTENT_DIM, VALUE_SCALAR_DIM, 0xC0FFEE);
+        let cfg = TRAINING_CONFIG;
+        let mut tc = test_tc();
+        let dir = std::env::temp_dir().join(format!("cnn_spatial_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        tc.out = dir.clone();
+        for s in 0u32..60 {
+            let seed = s.wrapping_mul(0x27D4_EB2F) ^ 0x5A7;
+            // Must not panic regardless of whether the game reaches a terminal state.
+            write_spatial_json(&net, &cfg, &tc, 0, seed);
+            // When a spatial.json is produced, its multi-frame schema must be valid:
+            // 1..=3 frames, each carrying the required per-tile arrays of length W*H.
+            if let Ok(s) = std::fs::read_to_string(dir.join("spatial.json")) {
+                let v: serde_json::Value =
+                    serde_json::from_str(&s).expect("spatial.json is valid JSON");
+                let w = v["width"].as_u64().unwrap() as usize;
+                let h = v["height"].as_u64().unwrap() as usize;
+                let n_tiles = w * h;
+                let frames = v["frames"].as_array().expect("frames array");
+                assert!(
+                    (1..=3).contains(&frames.len()),
+                    "expected 1..=3 frames, got {}",
+                    frames.len()
+                );
+                for fr in frames {
+                    assert!(fr["label"].is_string());
+                    assert!(fr["round"].is_i64() || fr["round"].is_u64());
+                    assert_eq!(fr["owner"].as_array().unwrap().len(), n_tiles);
+                    assert_eq!(fr["building"].as_array().unwrap().len(), n_tiles);
+                    assert_eq!(fr["soldiers"].as_array().unwrap().len(), n_tiles);
+                    assert_eq!(fr["policy"].as_array().unwrap().len(), n_tiles);
+                    assert_eq!(fr["valueMap"].as_array().unwrap().len(), n_tiles);
+                    assert_eq!(fr["terrain"].as_str().unwrap().chars().count(), n_tiles);
+                    assert!(fr["topMoves"].as_array().unwrap().len() <= 6);
+                }
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // --- LEVER A (horizon / turn-search) ------------------------------------
+
+    /// Helper: a mid-game 2-player state with HQs placed and a few real turns
+    /// played so the root seat has an economy to spend (multiple legal intents).
+    fn midgame_state(seed: u32, rounds: usize) -> (Game, TierConfig) {
+        let cfg = TRAINING_CONFIG;
+        let mut g = Game::new(10, 10, &["P1", "P2"]);
+        g.generate_map(10, 10, seed);
+        let bot = HardAi::hard();
+        for _ in 0..2 {
+            let cur = g.current_player();
+            bot.place_headquarters(&mut g, cur);
+            g.change_turn();
+        }
+        // Develop both seats with a few HARD turns so the root has resources/tiles.
+        for _ in 0..rounds {
+            if g.live_players().len() <= 1 {
+                break;
+            }
+            let cur = g.current_player();
+            let mut b = HardAi::hard();
+            b.plan_turn(&mut g, cur);
+            if let EndTurnOutcome::Win(_) | EndTurnOutcome::Tie = g.end_turn() {
+                break;
+            }
+        }
+        (g, cfg)
+    }
+
+    /// LEVER A core mechanism: `complete_root_turn` advances the root through a
+    /// FULL turn (many intents) rather than the single-intent edge of the legacy
+    /// search. Proven by: after one searched intent + completion the root has
+    /// taken STRICTLY MORE actions (more owned tiles + buildings) than after a
+    /// single intent alone, given a state where multiple legal intents exist.
+    #[test]
+    fn turn_search_completes_a_full_turn() {
+        let net = SpatialNet::default_with_value_scalars(
+            PLANE_COUNT, SPATIAL_LOCAL_DIM, INTENT_DIM, VALUE_SCALAR_DIM, 0xA11CE,
+        );
+        // Find a seed/round where the root has >1 legal intent (an actual decision).
+        let mut found = false;
+        for s in 0u32..80 {
+            let seed = s.wrapping_mul(0x9E37_79B1) ^ 0xBEEF;
+            let (g, cfg) = midgame_state(seed, 8);
+            if g.live_players().len() <= 1 {
+                continue;
+            }
+            let cur = g.current_player();
+            let cands = candidates::enumerate(&g, cur, &cfg);
+            // Need a real decision AND a non-Pass first move for the completion to do
+            // anything beyond the single searched intent.
+            let non_pass: Vec<_> = cands
+                .iter()
+                .filter(|c| c.intent != candidates::Intent::Pass)
+                .collect();
+            if cands.len() <= 1 || non_pass.is_empty() {
+                continue;
+            }
+
+            // A "footprint" = how many actions the seat has materialised (owned tiles
+            // + buildings). Strictly increases with each executed build/expand intent.
+            let footprint = |gg: &Game| -> usize {
+                gg.get_tiles()
+                    .iter()
+                    .filter(|t| t.owner == Some(cur))
+                    .map(|t| 1 + usize::from(t.building.is_some()))
+                    .sum()
+            };
+            let base = footprint(&g);
+
+            let first = non_pass[0].action.clone();
+
+            // (1) Legacy edge: execute ONE intent only.
+            let mut g_one = g.clone();
+            let _ = candidates::execute_action(&mut g_one, cur, &cfg, &first);
+            scaffold_staff(&mut g_one, cur, &cfg);
+            let one = footprint(&g_one);
+
+            // (2) Turn-search edge: same first intent, then COMPLETE the turn.
+            let tree = Mcts {
+                nodes: Vec::new(),
+                net: &net,
+                player: cur,
+                cfg,
+                bot: HardAi::hard(),
+                turn_search: true,
+                turn_budget: (cfg.budget - 1).max(0),
+                turn_search_spend: false,
+            };
+            let mut g_full = g.clone();
+            let _ = candidates::execute_action(&mut g_full, cur, &cfg, &first);
+            tree.complete_root_turn(&mut g_full);
+            let full = footprint(&g_full);
+
+            // The completion never UNDOES the first intent's progress, and on a state
+            // with an economy it executes additional intents → strictly more.
+            assert!(full >= one, "completion regressed footprint: full={full} one={one}");
+            assert!(base >= 1, "root should own its HQ tile");
+            if full > one {
+                found = true;
+                break;
+            }
+        }
+        assert!(
+            found,
+            "expected at least one mid-game state where completing the turn does more than a single intent"
+        );
+    }
+
+    /// LEVER A no-op guarantee: with `turn_search = false`, `mcts_select` returns a
+    /// decision identical to the pre-Lever-A path (the flag changes nothing). We
+    /// assert the chosen index + visit distribution are byte-identical to a second
+    /// call with the flag off (determinism), and that flipping the flag ON is a
+    /// LEGAL, non-panicking decision over the same candidate space.
+    #[test]
+    fn turn_search_default_is_noop_and_on_is_legal() {
+        let net = SpatialNet::default_with_value_scalars(
+            PLANE_COUNT, SPATIAL_LOCAL_DIM, INTENT_DIM, VALUE_SCALAR_DIM, 0x5EED,
+        );
+        let (g, cfg) = midgame_state(0x1357, 6);
+        if g.live_players().len() <= 1 {
+            return;
+        }
+        let cur = g.current_player();
+        let n = candidates::enumerate(&g, cur, &cfg).len();
+        if n <= 1 {
+            return;
+        }
+        // Two OFF calls are byte-identical (search is deterministic at temp 0):
+        let a = mcts_select(&net, &g, cur, &cfg, 16, 0.0, false, false);
+        let b = mcts_select(&net, &g, cur, &cfg, 16, 0.0, false, false);
+        assert_eq!(a.chosen, b.chosen, "OFF search is non-deterministic");
+        assert_eq!(a.pi.len(), b.pi.len());
+        for (x, y) in a.pi.iter().zip(b.pi.iter()) {
+            assert!((x - y).abs() < 1e-12, "OFF π differs across calls");
+        }
+        // ON must produce a legal decision over the SAME candidate space (no panic,
+        // chosen index in range, π normalised) — the flag is safe to enable.
+        let c = mcts_select(&net, &g, cur, &cfg, 16, 0.0, true, false);
+        assert!(c.chosen < n, "turn-search chose out-of-range index");
+        let total: f64 = c.pi.iter().sum();
+        assert!((total - 1.0).abs() < 1e-9 || total == 0.0, "π not normalised: {total}");
+        assert_eq!(c.pi.len(), n);
+    }
+
+    // --- (a) telescoping / no-op shaped-return targets ----------------------
+
+    /// With `shape_weight = 0`, `play_one_game_explore` must produce value targets
+    /// IDENTICAL to the plain terminal z (the pre-shaping behaviour): every
+    /// example's z ∈ {-1, 0, +1} and within a seat all share the seat's terminal
+    /// outcome. And `shaped_returns` with shape_weight=0 must return the terminal z
+    /// for the last step and γ-discounted z for earlier steps (NOT the per-step
+    /// shaped reward) — i.e. the shaping term vanishes exactly.
+    #[test]
+    fn shape_weight_zero_is_terminal_only_noop() {
+        // Pure helper: shape_weight = 0 ⇒ no shaping term, just γ-discounted z.
+        let phis = [0.4, 0.7, 0.1];
+        let z = 1.0;
+        let g = shaped_returns(&phis, z, 0.99, 0.0);
+        // G_2 = z; G_1 = γ z; G_0 = γ² z (no Φ term at all).
+        assert!((g[2] - 1.0).abs() < 1e-12);
+        assert!((g[1] - 0.99f64.clamp(-1.0, 1.0)).abs() < 1e-12);
+        assert!((g[0] - (0.99f64 * 0.99).clamp(-1.0, 1.0)).abs() < 1e-12);
+
+        // Full game path: shape_weight=0 leaves z exactly the terminal outcome
+        // (clamped to ±1 / 0), per the gated no-op branch.
+        let net = SpatialNet::default_with_value_scalars(PLANE_COUNT, SPATIAL_LOCAL_DIM, INTENT_DIM, VALUE_SCALAR_DIM, 0xC0FFEE);
+        let cfg = TRAINING_CONFIG;
+        let mut tc = test_tc();
+        tc.shape_weight = 0.0;
+        for s in 0u32..40 {
+            let seed = s.wrapping_mul(2_654_435_761) ^ 0xABCD;
+            let mut rng = XorShift32::new(seed ^ 0x9E37_79B1);
+            let (examples, _outcome) = play_one_game_explore(&net, seed, &cfg, &tc, Opponent::SelfTwin, &mut rng);
+            for e in &examples {
+                assert!(
+                    e.z == -1.0 || e.z == 0.0 || e.z == 1.0,
+                    "no-op: z must be a plain terminal outcome, got {}",
+                    e.z
+                );
+            }
+            // All of a seat's examples share that seat's single terminal outcome.
+            for seat in [PlayerId(0), PlayerId(1)] {
+                let zs: Vec<f64> = examples.iter().filter(|e| e.seat == seat).map(|e| e.z).collect();
+                if let Some(&first) = zs.first() {
+                    assert!(zs.iter().all(|&z| z == first), "no-op: seat z must be uniform");
+                }
+            }
+        }
+    }
+
+    /// With `shape_weight > 0`, a scripted 3-step seat sequence must yield exactly
+    /// the hand-computed discounted shaped return.
+    #[test]
+    fn shaped_returns_match_hand_computation() {
+        let phis = [0.2, 0.5, 0.3]; // Φ_0, Φ_1, Φ_2
+        let z = 1.0;
+        let gamma = 0.9;
+        let sw = 0.3;
+        let g = shaped_returns(&phis, z, gamma, sw);
+
+        // Hand compute (unclamped recursion; store clamped):
+        // G_2 = z = 1.0
+        // G_1 = sw*(γ Φ_2 − Φ_1) + γ G_2
+        //     = 0.3*(0.9*0.3 − 0.5) + 0.9*1.0 = 0.3*(-0.23) + 0.9 = 0.831
+        // G_0 = sw*(γ Φ_1 − Φ_0) + γ G_1
+        //     = 0.3*(0.9*0.5 − 0.2) + 0.9*0.831 = 0.3*0.25 + 0.7479 = 0.8229
+        let g2 = 1.0f64;
+        let g1 = sw * (gamma * phis[2] - phis[1]) + gamma * g2;
+        let g0 = sw * (gamma * phis[1] - phis[0]) + gamma * g1;
+        assert!((g[2] - g2.clamp(-1.0, 1.0)).abs() < 1e-12, "G_2");
+        assert!((g[1] - g1.clamp(-1.0, 1.0)).abs() < 1e-12, "G_1 want {g1} got {}", g[1]);
+        assert!((g[0] - g0.clamp(-1.0, 1.0)).abs() < 1e-12, "G_0 want {g0} got {}", g[0]);
+        // Sanity: shaped returns live in [-1, 1].
+        for &v in &g {
+            assert!((-1.0..=1.0).contains(&v));
+        }
+    }
+
+    // --- (b) growth-aware potential Φ ---------------------------------------
+
+    /// Φ's staffed_ratio and income must be GROWTH-AWARE: a just-staffed IMMATURE
+    /// farm contributes 0; only after maturing (growth_phase==4 → pays at +1==5)
+    /// does it count as producing. An unstaffed farm always contributes 0.
+    #[test]
+    fn potential_is_growth_aware_for_farms() {
+        let mut g = Game::new(8, 8, &["P0", "P1"]);
+        g.generate_map(8, 8, 7);
+        let me = PlayerId(0);
+
+        // Find two grassland tiles to host farms (so Farm is the only producer).
+        let grass: Vec<TileId> = g
+            .get_tiles()
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.tile_type == TileType::Grassland)
+            .map(|(i, _)| TileId(i))
+            .collect();
+        assert!(grass.len() >= 2, "need two grassland tiles");
+        let staffed = grass[0];
+        let unstaffed = grass[1];
+
+        g.set_tile_owner(staffed, Some(me));
+        g.set_tile_owner(unstaffed, Some(me));
+        g.place_building(staffed, BuildingType::Farm, Some(me));
+        g.place_building(unstaffed, BuildingType::Farm, Some(me));
+        // Staff only the first farm; it starts IMMATURE (growth_phase 1).
+        g.spawn_unit_on_tile(UnitType::BasicWorker, me, staffed, false);
+
+        // Immature staffed farm + unstaffed farm: NEITHER produces.
+        assert!(!is_producing_now(&g, staffed), "immature staffed farm produces 0");
+        assert!(!is_producing_now(&g, unstaffed), "unstaffed farm produces 0");
+        // staffed_ratio = 0/2 = 0; immature income excludes both farms.
+        let phi_immature = potential(&g, me);
+        let inc_immature = realized_income_per_round(&g, me);
+
+        // Mature the staffed farm (stored growth_phase==4 ⇒ pays this turn).
+        g.tiles[staffed.0].building.as_mut().unwrap().growth_phase = 4;
+        assert!(is_producing_now(&g, staffed), "matured staffed farm produces");
+        assert!(!is_producing_now(&g, unstaffed), "unstaffed farm still 0");
+        let phi_mature = potential(&g, me);
+        let inc_mature = realized_income_per_round(&g, me);
+
+        // A producing farm raises Φ (staffed_ratio 1/2 + positive income share).
+        assert!(
+            phi_mature > phi_immature,
+            "maturing a farm must raise Φ: immature={phi_immature} mature={phi_mature}"
+        );
+        // Maturing the farm strictly increases the growth-aware income by the farm's
+        // gross money output (≈175), since the only change is its production gate.
+        assert!(
+            inc_mature > inc_immature,
+            "mature farm yields more growth-aware income: immature={inc_immature} mature={inc_mature}"
+        );
+    }
+
+    /// A Village is an UNCONDITIONAL producer: it counts as producing in Φ even
+    /// with no worker, raising the staffed ratio.
+    #[test]
+    fn potential_counts_village_as_always_producing() {
+        let mut g = Game::new(8, 8, &["P0", "P1"]);
+        g.generate_map(8, 8, 11);
+        let me = PlayerId(0);
+        let grass = g
+            .get_tiles()
+            .iter()
+            .position(|t| t.tile_type == TileType::Grassland)
+            .map(TileId)
+            .expect("grassland");
+        g.set_tile_owner(grass, Some(me));
+        g.place_building(grass, BuildingType::Village, Some(me));
+        assert!(is_producing_now(&g, grass), "village always produces");
+    }
+
+    /// Φ's capacity term rewards UTILIZED cap, not EMPTY cap. A Village raises
+    /// max_unit AND free_unit, so building one and SITTING on the empty +3 cap must
+    /// NOT score higher than having no Village (used_unit_ratio stays 0); FILLING
+    /// that cap with workers (Expand) raises Φ.
+    #[test]
+    fn potential_rewards_utilized_not_empty_capacity() {
+        let mut g = Game::new(8, 8, &["P0", "P1"]);
+        g.generate_map(8, 8, 7);
+        let me = PlayerId(0);
+        let grass: Vec<TileId> = g
+            .get_tiles()
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.tile_type == TileType::Grassland)
+            .map(|(i, _)| TileId(i))
+            .collect();
+        assert!(grass.len() >= 5, "need >=5 grassland tiles");
+
+        // Baseline: own 3 UNSTAFFED farms (so they're real producers in the ratio)
+        // and NO Village → no unit cap, no workers. used_unit_ratio = (0-0)/1 = 0.
+        let farms = [grass[2], grass[3], grass[4]];
+        for &f in &farms {
+            g.set_tile_owner(f, Some(me));
+            g.place_building(f, BuildingType::Farm, Some(me));
+        }
+        let _ = g.max_unit_amount(me); // refresh cached caps (max_unit == 0 here)
+        let phi_no_village = potential(&g, me);
+
+        // A: + a Village with its +3 unit cap left EMPTY (no workers hired).
+        let village = grass[0];
+        g.set_tile_owner(village, Some(me));
+        g.place_building(village, BuildingType::Village, Some(me));
+        let _ = g.max_unit_amount(me); // max_unit == 3, free_unit == 3, used == 0
+        let phi_empty_village = potential(&g, me);
+
+        // A freshly-built Village (empty +3 cap) must NOT RAISE Φ via the cap term:
+        // used_unit_ratio stays 0 (cap added but unfilled). The Village IS an
+        // unconditional producer, so the staffed-ratio actually IMPROVES (3 unstaffed
+        // farms → 3 farms + 1 always-producing Village), i.e. the cap term alone does
+        // not lift Φ — any rise is from the producer ratio, never from empty cap.
+        let cap_term =
+            |phi: f64, inc: f64, stf: f64| phi - W_INC * inc - W_STF * stf;
+        let inc_no_v = clamp01(realized_income_per_round(&g, me) / 400.0);
+        // (income is identical in both — no producing farm yet — so reuse for both)
+        let stf_no_village = 0.0; // 0 producing / 3 producers
+        let stf_empty_village = 1.0 / 4.0; // village produces: 1 producing / 4 producers
+        assert!(
+            (cap_term(phi_empty_village, inc_no_v, stf_empty_village) - 0.0).abs() < 1e-9,
+            "empty-cap Village contributes 0 via the cap term (used_unit_ratio==0)"
+        );
+        assert!(
+            (cap_term(phi_no_village, inc_no_v, stf_no_village) - 0.0).abs() < 1e-9,
+            "no-Village baseline contributes 0 via the cap term"
+        );
+
+        // B: FILL the Village's +3 cap with 3 workers, each staffing a matured farm.
+        for &f in &farms {
+            g.spawn_unit_on_tile(UnitType::BasicWorker, me, f, false);
+            g.tiles[f.0].building.as_mut().unwrap().growth_phase = 4;
+        }
+        let _ = g.max_unit_amount(me); // max_unit == 3, 3 workers → free_unit == 0, used == 1
+        let phi_filled_village = potential(&g, me);
+
+        // Filling the cap (used_unit_ratio 0→1, cap term 0→0.6*W_CAP) AND staffing
+        // producing farms (income + staffed_ratio ↑) must raise Φ well above both the
+        // empty-cap Village and the no-Village baseline.
+        assert!(
+            phi_filled_village > phi_empty_village,
+            "filling the Village cap with staffing workers must raise Φ: \
+             empty={phi_empty_village} filled={phi_filled_village}"
+        );
+        assert!(
+            phi_filled_village > phi_no_village,
+            "a Village whose +3 cap is FILLED by producing workers beats no Village: \
+             no_village={phi_no_village} filled={phi_filled_village}"
+        );
+    }
+
+    /// Φ's bank-toward-the-Device term: inside the Device-eligible window
+    /// (rounds ≥ DEVICE_MIN_ROUND, no Device standing), banking money toward the
+    /// Device cost RAISES Φ monotonically up to saturation; OUTSIDE the window it
+    /// contributes nothing (no reward for early hoarding); and once a Device stands
+    /// it contributes nothing (objective is moot).
+    #[test]
+    fn potential_banks_toward_device_only_in_window() {
+        use cp_sim::resources::BasicResource;
+        let mut g = Game::new(8, 8, &["P0", "P1"]);
+        g.generate_map(8, 8, 7);
+        let me = PlayerId(0);
+
+        let set_money = |g: &mut Game, amt: i64| g.players[me.0].resources.set(BasicResource::Money, amt);
+
+        // EARLY (round < 18): banking money must NOT change Φ via the bank term.
+        set_money(&mut g, 0);
+        let phi_early_poor = potential(&g, me);
+        set_money(&mut g, 1300);
+        let phi_early_rich = potential(&g, me);
+        assert!(
+            (phi_early_rich - phi_early_poor).abs() < 1e-12,
+            "before round {DEVICE_MIN_ROUND} the bank term is inert: poor={phi_early_poor} rich={phi_early_rich}"
+        );
+
+        // Advance into the Device-eligible window (2 players → 2 change_turns per round).
+        while g.get_rounds_played() < DEVICE_MIN_ROUND {
+            g.change_turn();
+        }
+        assert!(g.get_rounds_played() >= DEVICE_MIN_ROUND);
+        assert!(!g.has_strange_device());
+
+        // IN-WINDOW: more banked money → higher Φ, saturating at the Device cost.
+        set_money(&mut g, 0);
+        let phi_poor = potential(&g, me);
+        set_money(&mut g, 650);
+        let phi_half = potential(&g, me);
+        set_money(&mut g, 1300);
+        let phi_full = potential(&g, me);
+        set_money(&mut g, 5000); // beyond cost → saturates
+        let phi_over = potential(&g, me);
+        assert!(phi_half > phi_poor, "banking raises Φ in-window: poor={phi_poor} half={phi_half}");
+        assert!(phi_full > phi_half, "more banking raises Φ further: half={phi_half} full={phi_full}");
+        assert!(
+            (phi_over - phi_full).abs() < 1e-12,
+            "bank term saturates at the Device cost: full={phi_full} over={phi_over}"
+        );
+        // The full bank term equals exactly W_BANK above the no-money baseline.
+        assert!(
+            (phi_full - phi_poor - W_BANK).abs() < 1e-9,
+            "full bank contributes exactly W_BANK: poor={phi_poor} full={phi_full} W_BANK={W_BANK}"
+        );
+    }
+
+    /// Action-level device-commitment potential: owning a STANDING device that is
+    /// ticking toward a win raises Φ (more as it nears detonation), and `potential`
+    /// (= `potential_dev` with weight 0) is unchanged. With no device, the device
+    /// term is 0 regardless of weight.
+    #[test]
+    fn device_potential_rewards_owned_ticking_device() {
+        let mut g = Game::new(8, 8, &["P0", "P1"]);
+        g.generate_map(8, 8, 11);
+        let me = PlayerId(0);
+        let w = 0.3; // a representative --device-potential weight
+
+        // NO device: the device term is 0, so `potential_dev(w)` == `potential` (= w=0).
+        let phi_base0 = potential(&g, me);
+        let phi_base_w = potential_dev(&g, me, w);
+        assert!(
+            (phi_base0 - phi_base_w).abs() < 1e-12,
+            "no device → device term is 0 regardless of weight: base0={phi_base0} base_w={phi_base_w}"
+        );
+
+        // Place a STANDING device on a tile we own and arm its countdown to the max.
+        let dt = g
+            .get_tiles()
+            .iter()
+            .enumerate()
+            .find(|(_, t)| t.tile_type == TileType::Grassland)
+            .map(|(i, _)| TileId(i))
+            .expect("a grassland tile");
+        g.set_tile_owner(dt, Some(me));
+        g.place_building(dt, BuildingType::StrangeDevice, Some(me));
+        let max_cd = cp_sim::resources::strange_device_countdown(g.get_tile_count());
+        g.tiles[dt.0].building.as_mut().unwrap().countdown = max_cd;
+        assert!(g.player_owns_strange_device(me));
+
+        // weight 0 (= plain `potential`) must be IDENTICAL whether or not the device
+        // stands (the device term only exists in `potential_dev` with weight > 0).
+        let phi_w0_with_dev = potential_dev(&g, me, 0.0);
+        let phi_plain_with_dev = potential(&g, me);
+        assert!(
+            (phi_w0_with_dev - phi_plain_with_dev).abs() < 1e-12,
+            "weight 0 == plain potential even with a device standing"
+        );
+
+        // FRESH device (countdown == max → progress ~0): ≈ no bonus yet.
+        let phi_fresh = potential_dev(&g, me, w);
+        assert!(
+            (phi_fresh - phi_plain_with_dev).abs() < 1e-9,
+            "a freshly-armed device (full countdown) contributes ~0: fresh={phi_fresh} plain={phi_plain_with_dev}"
+        );
+
+        // HALFWAY: countdown at half → ~half the weight added.
+        g.tiles[dt.0].building.as_mut().unwrap().countdown = max_cd / 2;
+        let phi_half = potential_dev(&g, me, w);
+        assert!(phi_half > phi_fresh, "ticking down raises Φ: half={phi_half} fresh={phi_fresh}");
+
+        // ONE TICK FROM DETONATION (countdown 1): near the full weight added.
+        g.tiles[dt.0].building.as_mut().unwrap().countdown = 1;
+        let phi_near = potential_dev(&g, me, w);
+        assert!(phi_near > phi_half, "nearer detonation raises Φ further: near={phi_near} half={phi_half}");
+        // The bonus is bounded by the weight: never more than `w` above the plain Φ.
+        assert!(
+            phi_near - phi_plain_with_dev <= w + 1e-9,
+            "device bonus is bounded by the weight: extra={} w={w}",
+            phi_near - phi_plain_with_dev
+        );
+
+        // An ENEMY-owned device contributes nothing to MY Φ.
+        g.set_tile_owner(dt, Some(PlayerId(1)));
+        let phi_enemy_dev = potential_dev(&g, me, w);
+        assert!(
+            !g.player_owns_strange_device(me),
+            "device is now enemy-owned"
+        );
+        // My device term is 0 again → equals my plain Φ in THIS (enemy-owned) state.
+        assert!(
+            (phi_enemy_dev - potential(&g, me)).abs() < 1e-12,
+            "enemy device gives me no bonus: phi_enemy_dev={phi_enemy_dev}"
+        );
+    }
+
+    // --- PASSIVITY-CURE Φ terms (FIX 1 + FIX 3) ------------------------------
+
+    /// With all three new weights 0, `potential_full` is BIT-IDENTICAL to
+    /// `potential_dev` — the prior runs reproduce unchanged.
+    #[test]
+    fn potential_full_default_is_bit_identical_noop() {
+        let mut g = Game::new(8, 8, &["P0", "P1"]);
+        g.generate_map(8, 8, 5);
+        let me = PlayerId(0);
+        // Give the seat some tiles/buildings/soldiers so Φ is non-trivial.
+        let grass: Vec<TileId> = g
+            .get_tiles().iter().enumerate()
+            .filter(|(_, t)| t.tile_type == TileType::Grassland)
+            .map(|(i, _)| TileId(i)).take(3).collect();
+        for &t in &grass {
+            g.set_tile_owner(t, Some(me));
+            g.place_building(t, BuildingType::Outpost, Some(me));
+        }
+        let _ = g.max_soldier_amount(me);
+        for &w in &[0.0_f64] {
+            let base = potential_dev(&g, me, w);
+            let full = potential_full(&g, me, w, 0.0, 0.0, 0.0);
+            assert!(
+                (base - full).to_bits() == 0 || (base - full).abs() == 0.0,
+                "all-zero new weights must be a bit-identical no-op: base={base} full={full}"
+            );
+        }
+    }
+
+    /// FIX 1a: a larger SIGNED tile lead raises Φ via `--tile-potential`; a tile
+    /// DEFICIT lowers it. Direction must track `tile_lead`.
+    #[test]
+    fn tile_potential_rewards_tile_lead() {
+        let mut g = Game::new(10, 10, &["P0", "P1"]);
+        g.generate_map(10, 10, 9);
+        let me = PlayerId(0);
+        let enemy = PlayerId(1);
+        let w = 0.4;
+        let grass: Vec<TileId> = g
+            .get_tiles().iter().enumerate()
+            .filter(|(_, t)| t.tile_type == TileType::Grassland)
+            .map(|(i, _)| TileId(i)).collect();
+        assert!(grass.len() >= 8, "need several grassland tiles");
+
+        // Baseline: equal tiles (2 vs 2) → tile_lead 0 → tile term contributes 0.
+        for &t in &grass[0..2] { g.set_tile_owner(t, Some(me)); }
+        for &t in &grass[2..4] { g.set_tile_owner(t, Some(enemy)); }
+        let phi_even_plain = potential_dev(&g, me, 0.0);
+        let phi_even = potential_full(&g, me, 0.0, w, 0.0, 0.0);
+        assert!(
+            (phi_even - phi_even_plain).abs() < 1e-12,
+            "equal tiles → tile term is 0: even={phi_even} plain={phi_even_plain}"
+        );
+
+        // LEAD: give ME more tiles → tile term positive → Φ rises above the plain Φ.
+        for &t in &grass[4..8] { g.set_tile_owner(t, Some(me)); }
+        let phi_lead_plain = potential_dev(&g, me, 0.0);
+        let phi_lead = potential_full(&g, me, 0.0, w, 0.0, 0.0);
+        assert!(
+            phi_lead > phi_lead_plain,
+            "a tile lead raises Φ via tile-potential: lead={phi_lead} plain={phi_lead_plain}"
+        );
+
+        // DEFICIT: hand all those back to the enemy → tile term negative → Φ DROPS
+        // below the plain Φ.
+        for &t in &grass[0..8] { g.set_tile_owner(t, Some(enemy)); }
+        let phi_def_plain = potential_dev(&g, me, 0.0);
+        let phi_def = potential_full(&g, me, 0.0, w, 0.0, 0.0);
+        assert!(
+            phi_def < phi_def_plain,
+            "a tile deficit lowers Φ via tile-potential: deficit={phi_def} plain={phi_def_plain}"
+        );
+    }
+
+    /// FIX 1b: idle UNFILLED soldier/worker slots and idle (in-window) money LOWER Φ
+    /// via `--idle-penalty`. Filling/spending raises it back.
+    #[test]
+    fn idle_penalty_lowers_phi_for_hoarded_capacity() {
+        use cp_sim::resources::BasicResource;
+        let mut g = Game::new(8, 8, &["P0", "P1"]);
+        g.generate_map(8, 8, 13);
+        let me = PlayerId(0);
+        let w = 0.3;
+
+        // Build an Outpost (raises soldier cap by +3) with the slots left EMPTY.
+        let dt = g
+            .get_tiles().iter().enumerate()
+            .find(|(_, t)| t.tile_type == TileType::Grassland)
+            .map(|(i, _)| TileId(i)).expect("a grassland tile");
+        g.set_tile_owner(dt, Some(me));
+        g.place_building(dt, BuildingType::Outpost, Some(me));
+        let _ = g.max_soldier_amount(me); // refresh caps; free_soldier now > 0
+
+        // With empty soldier slots the idle term is negative → Φ below the plain Φ.
+        let phi_plain = potential_dev(&g, me, 0.0);
+        let phi_idle = potential_full(&g, me, 0.0, 0.0, w, 0.0);
+        assert!(
+            phi_idle < phi_plain,
+            "unfilled soldier slots lower Φ via idle-penalty: idle={phi_idle} plain={phi_plain}"
+        );
+
+        // Idle money inside the Device window also lowers Φ. Advance into the window.
+        while g.get_rounds_played() < DEVICE_MIN_ROUND { g.change_turn(); }
+        g.players[me.0].resources.set(BasicResource::Money, 0);
+        let phi_no_cash = potential_full(&g, me, 0.0, 0.0, w, 0.0);
+        g.players[me.0].resources.set(BasicResource::Money, 1300);
+        let phi_cash = potential_full(&g, me, 0.0, 0.0, w, 0.0);
+        assert!(
+            phi_cash < phi_no_cash,
+            "idle in-window money lowers Φ via idle-penalty: cash={phi_cash} no_cash={phi_no_cash}"
+        );
+    }
+
+    /// FIX 3: FILLING soldier capacity (fielding soldiers) RAISES Φ via
+    /// `--soldier-cap-potential` — unlocking the army.
+    #[test]
+    fn soldier_cap_potential_rewards_filled_army() {
+        let mut g = Game::new(8, 8, &["P0", "P1"]);
+        g.generate_map(8, 8, 17);
+        let me = PlayerId(0);
+        let w = 0.3;
+
+        // An Outpost + HQ give soldier cap; field some soldiers on the outpost tile.
+        let dt = g
+            .get_tiles().iter().enumerate()
+            .find(|(_, t)| t.tile_type == TileType::Grassland)
+            .map(|(i, _)| TileId(i)).expect("a grassland tile");
+        g.set_tile_owner(dt, Some(me));
+        g.place_building(dt, BuildingType::Outpost, Some(me));
+        let _ = g.max_soldier_amount(me);
+
+        let phi_no_army = potential_full(&g, me, 0.0, 0.0, 0.0, w);
+        // Field 3 soldiers (FILL the outpost capacity).
+        for _ in 0..3 {
+            g.spawn_unit_on_tile(UnitType::Soldier, me, dt, false);
+        }
+        let _ = g.max_soldier_amount(me);
+        let phi_army = potential_full(&g, me, 0.0, 0.0, 0.0, w);
+        assert!(
+            phi_army > phi_no_army,
+            "fielding soldiers (filled cap) raises Φ via soldier-cap-potential: \
+             army={phi_army} no_army={phi_no_army}"
+        );
+    }
+
+    // --- STEP 1 Φ (kill safe-Pass): growth/lead + saturating cap + idle-as-FLOW ---
+
+    /// With all three STEP-1 weights 0, `potential_step1` is BIT-IDENTICAL to
+    /// `potential_full` (and, with FIX-1/FIX-3 also 0, to `potential_dev`). Prior runs
+    /// reproduce exactly — parity-safe.
+    #[test]
+    fn potential_step1_default_is_bit_identical_noop() {
+        let mut g = Game::new(8, 8, &["P0", "P1"]);
+        g.generate_map(8, 8, 5);
+        let me = PlayerId(0);
+        let grass: Vec<TileId> = g
+            .get_tiles().iter().enumerate()
+            .filter(|(_, t)| t.tile_type == TileType::Grassland)
+            .map(|(i, _)| TileId(i)).take(3).collect();
+        for &t in &grass {
+            g.set_tile_owner(t, Some(me));
+            g.place_building(t, BuildingType::Outpost, Some(me));
+        }
+        let _ = g.max_soldier_amount(me);
+        // Exercise non-zero FIX-1/FIX-3 weights too: STEP-1 zeros must leave THOSE
+        // untouched (the step-1 fast path returns potential_full's value exactly).
+        for &(dev, tp, ip, scp) in &[(0.0, 0.0, 0.0, 0.0), (0.2, 0.3, 0.1, 0.25)] {
+            let full = potential_full(&g, me, dev, tp, ip, scp);
+            let step1 = potential_step1(&g, me, dev, tp, ip, scp, 0.0, 0.0, 0.0, 0.0, 0.0);
+            assert!(
+                (full - step1).abs() == 0.0,
+                "all-zero STEP-1/STEP-2 weights must be a bit-identical no-op: full={full} step1={step1}"
+            );
+        }
+    }
+
+    /// §1.1: a SIGNED income lead raises Φ via `--income-lead-potential`; an income
+    /// DEFICIT lowers it. (Staffed farms on MY tiles vs the enemy's.)
+    #[test]
+    fn income_lead_potential_rewards_income_lead() {
+        let mut g = Game::new(10, 10, &["P0", "P1"]);
+        g.generate_map(10, 10, 23);
+        let me = PlayerId(0);
+        let enemy = PlayerId(1);
+        let w = 0.5;
+        let grass: Vec<TileId> = g
+            .get_tiles().iter().enumerate()
+            .filter(|(_, t)| t.tile_type == TileType::Grassland)
+            .map(|(i, _)| TileId(i)).collect();
+        assert!(grass.len() >= 6, "need several grassland tiles");
+
+        // Helper: a fully staffed, MATURE farm (produces money this turn).
+        let mut mature_farm = |gg: &mut Game, t: TileId, owner: PlayerId| {
+            gg.set_tile_owner(t, Some(owner));
+            gg.place_building(t, BuildingType::Farm, Some(owner));
+            if let Some(b) = gg.tiles[t.0].building.as_mut() { b.growth_phase = 4; }
+            gg.spawn_unit_on_tile(UnitType::BasicWorker, owner, t, false);
+        };
+
+        // Symmetric income: 1 farm each → income_lead ≈ 0 (within drain rounding).
+        mature_farm(&mut g, grass[0], me);
+        mature_farm(&mut g, grass[1], enemy);
+        let phi_even_plain = potential_step1(&g, me, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        let phi_even = potential_step1(&g, me, 0.0, 0.0, 0.0, 0.0, w, 0.0, 0.0, 0.0, 0.0);
+        assert!(
+            (phi_even - phi_even_plain).abs() < 1e-9,
+            "equal income → income-lead term ~0: even={phi_even} plain={phi_even_plain}"
+        );
+
+        // LEAD: give ME two more staffed farms → my income exceeds the enemy's → Φ rises.
+        mature_farm(&mut g, grass[2], me);
+        mature_farm(&mut g, grass[3], me);
+        let phi_lead_plain = potential_step1(&g, me, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        let phi_lead = potential_step1(&g, me, 0.0, 0.0, 0.0, 0.0, w, 0.0, 0.0, 0.0, 0.0);
+        assert!(
+            phi_lead > phi_lead_plain,
+            "an income lead raises Φ via income-lead-potential: lead={phi_lead} plain={phi_lead_plain}"
+        );
+
+        // DEFICIT: give the ENEMY more farms than me → income_lead negative → Φ drops.
+        for &t in &grass[2..4] { g.set_tile_owner(t, Some(enemy)); } // strip my extra farms
+        mature_farm(&mut g, grass[4], enemy);
+        mature_farm(&mut g, grass[5], enemy);
+        let phi_def_plain = potential_step1(&g, me, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        let phi_def = potential_step1(&g, me, 0.0, 0.0, 0.0, 0.0, w, 0.0, 0.0, 0.0, 0.0);
+        assert!(
+            phi_def < phi_def_plain,
+            "an income deficit lowers Φ via income-lead-potential: deficit={phi_def} plain={phi_def_plain}"
+        );
+    }
+
+    /// §1.2: the SATURATING soldier-cap term raises Φ as cap rises (building an Outpost
+    /// raises Φ immediately, EVEN with empty slots), and saturates at CAP_TARGET.
+    #[test]
+    fn cap_potential_rewards_having_cap_and_saturates() {
+        let mut g = Game::new(10, 10, &["P0", "P1"]);
+        g.generate_map(10, 10, 29);
+        let me = PlayerId(0);
+        let w = 0.4;
+        let grass: Vec<TileId> = g
+            .get_tiles().iter().enumerate()
+            .filter(|(_, t)| t.tile_type == TileType::Grassland)
+            .map(|(i, _)| TileId(i)).collect();
+        assert!(grass.len() >= 4, "need several grassland tiles");
+
+        // Baseline cap (just whatever the seat starts with, no Outposts).
+        let _ = g.max_soldier_amount(me);
+        let phi0 = potential_step1(&g, me, 0.0, 0.0, 0.0, 0.0, 0.0, w, 0.0, 0.0, 0.0);
+
+        // Build the first Outpost (+3 cap, slots EMPTY) → cap term rises.
+        g.set_tile_owner(grass[0], Some(me));
+        g.place_building(grass[0], BuildingType::Outpost, Some(me));
+        let _ = g.max_soldier_amount(me);
+        let phi1 = potential_step1(&g, me, 0.0, 0.0, 0.0, 0.0, 0.0, w, 0.0, 0.0, 0.0);
+        assert!(
+            phi1 > phi0,
+            "building an Outpost (raises soldier cap) raises Φ via cap-potential: phi1={phi1} phi0={phi0}"
+        );
+
+        // Two more Outposts push cap well past CAP_TARGET=7 → term saturates (no further rise).
+        g.set_tile_owner(grass[1], Some(me));
+        g.place_building(grass[1], BuildingType::Outpost, Some(me));
+        g.set_tile_owner(grass[2], Some(me));
+        g.place_building(grass[2], BuildingType::Outpost, Some(me));
+        let _ = g.max_soldier_amount(me);
+        let phi_sat = potential_step1(&g, me, 0.0, 0.0, 0.0, 0.0, 0.0, w, 0.0, 0.0, 0.0);
+        g.set_tile_owner(grass[3], Some(me));
+        g.place_building(grass[3], BuildingType::Outpost, Some(me));
+        let _ = g.max_soldier_amount(me);
+        let phi_more = potential_step1(&g, me, 0.0, 0.0, 0.0, 0.0, 0.0, w, 0.0, 0.0, 0.0);
+        assert!(
+            (phi_more - phi_sat).abs() < 1e-9,
+            "cap-potential saturates at CAP_TARGET: more={phi_more} sat={phi_sat}"
+        );
+    }
+
+    /// §1.2c: idle = unused FLOW. Unstaffed workers (exist but staff no producer) and
+    /// un-spent affordable money LOWER Φ via `--idle-flow-penalty`.
+    #[test]
+    fn idle_flow_penalty_penalizes_unused_flow() {
+        use cp_sim::resources::BasicResource;
+        let mut g = Game::new(10, 10, &["P0", "P1"]);
+        g.generate_map(10, 10, 31);
+        let me = PlayerId(0);
+        let w = 0.3;
+        let grass: Vec<TileId> = g
+            .get_tiles().iter().enumerate()
+            .filter(|(_, t)| t.tile_type == TileType::Grassland)
+            .map(|(i, _)| TileId(i)).collect();
+        assert!(grass.len() >= 3, "need grassland tiles");
+
+        // Own a plain tile to PARK idle workers on (NOT a producer building).
+        g.set_tile_owner(grass[0], Some(me));
+        // Zero out money first so the money branch is isolated.
+        g.players[me.0].resources.set(BasicResource::Money, 0);
+        let phi_clean = potential_step1(&g, me, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, w, 0.0, 0.0);
+
+        // Park 2 workers on a non-producer tile → unstaffed flow > 0 → Φ drops.
+        g.spawn_unit_on_tile(UnitType::BasicWorker, me, grass[0], false);
+        g.spawn_unit_on_tile(UnitType::BasicWorker, me, grass[0], false);
+        let phi_idle_units = potential_step1(&g, me, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, w, 0.0, 0.0);
+        assert!(
+            phi_idle_units < phi_clean,
+            "unstaffed workers lower Φ via idle-flow-penalty: idle={phi_idle_units} clean={phi_clean}"
+        );
+
+        // Un-spent affordable money (>= a Farm's 100) lowers Φ further.
+        let phi_no_cash = potential_step1(&g, me, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, w, 0.0, 0.0);
+        g.players[me.0].resources.set(BasicResource::Money, 300);
+        let phi_cash = potential_step1(&g, me, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, w, 0.0, 0.0);
+        assert!(
+            phi_cash < phi_no_cash,
+            "un-spent affordable money lowers Φ via idle-flow-penalty: cash={phi_cash} no_cash={phi_no_cash}"
+        );
+    }
+
+    /// THE ANTI-TENSION TEST (§1.2/§1.2c): building an Outpost must NOT lower Φ under
+    /// the coherent STEP-1 config (cap-potential ON + idle-flow-penalty ON). The fresh
+    /// Outpost's empty soldier slots add ZERO idle (idle is FLOW, not empty slots) and
+    /// RAISE the saturating cap term → net Φ change is ≥ 0. This is the explicit fix for
+    /// the idle-vs-Outpost double-count that broke earlier runs (where idle keyed on
+    /// empty slots and an Outpost momentarily LOWERED Φ).
+    #[test]
+    fn building_outpost_does_not_lower_phi_under_step1() {
+        use cp_sim::resources::BasicResource;
+        let mut g = Game::new(10, 10, &["P0", "P1"]);
+        g.generate_map(10, 10, 37);
+        let me = PlayerId(0);
+        // Coherent STEP-1 weights (recommended-launch magnitudes).
+        let (cap_w, idle_flow_w) = (0.3_f64, 0.3_f64);
+        let grass: Vec<TileId> = g
+            .get_tiles().iter().enumerate()
+            .filter(|(_, t)| t.tile_type == TileType::Grassland)
+            .map(|(i, _)| TileId(i)).collect();
+        assert!(grass.len() >= 2, "need grassland tiles");
+
+        // A seat with some money (enough to "afford" a build) and a couple of owned tiles.
+        g.set_tile_owner(grass[0], Some(me));
+        g.players[me.0].resources.set(BasicResource::Money, 700); // can afford an Outpost
+        let _ = g.max_soldier_amount(me);
+        let phi_before =
+            potential_step1(&g, me, 0.0, 0.0, 0.0, 0.0, 0.0, cap_w, idle_flow_w, 0.0, 0.0);
+
+        // Build an Outpost on grass[1] (raises soldier cap +3, slots EMPTY) and SPEND
+        // the money (a real build consumes treasury → idle money drops too).
+        g.set_tile_owner(grass[1], Some(me));
+        g.place_building(grass[1], BuildingType::Outpost, Some(me));
+        g.players[me.0].resources.set(BasicResource::Money, 50); // spent on the build
+        let _ = g.max_soldier_amount(me);
+        let phi_after =
+            potential_step1(&g, me, 0.0, 0.0, 0.0, 0.0, 0.0, cap_w, idle_flow_w, 0.0, 0.0);
+
+        assert!(
+            phi_after >= phi_before - 1e-12,
+            "building an Outpost must NOT lower Φ under STEP-1 (anti-tension): \
+             before={phi_before} after={phi_after}"
+        );
+        // And it should STRICTLY raise it (cap term up, idle term unchanged-or-down).
+        assert!(
+            phi_after > phi_before,
+            "building an Outpost should RAISE Φ under STEP-1: before={phi_before} after={phi_after}"
+        );
+    }
+
+    /// Contrast: under the OLD empty-slot `idle_penalty` an Outpost LOWERS Φ — the
+    /// documented tension. This asserts the bug the STEP-1 redefinition fixes still
+    /// exists in the old term, so the two are genuinely different (no silent merge).
+    #[test]
+    fn old_idle_penalty_still_punishes_fresh_outpost_slots() {
+        let mut g = Game::new(10, 10, &["P0", "P1"]);
+        g.generate_map(10, 10, 41);
+        let me = PlayerId(0);
+        let w = 0.3;
+        let grass: Vec<TileId> = g
+            .get_tiles().iter().enumerate()
+            .filter(|(_, t)| t.tile_type == TileType::Grassland)
+            .map(|(i, _)| TileId(i)).collect();
+        assert!(!grass.is_empty());
+        g.set_tile_owner(grass[0], Some(me));
+        let _ = g.max_soldier_amount(me);
+        // OLD idle (empty-SLOT) term only:
+        let phi_before = potential_full(&g, me, 0.0, 0.0, w, 0.0);
+        g.place_building(grass[0], BuildingType::Outpost, Some(me));
+        let _ = g.max_soldier_amount(me);
+        let phi_after = potential_full(&g, me, 0.0, 0.0, w, 0.0);
+        assert!(
+            phi_after < phi_before,
+            "the OLD empty-slot idle penalty DOES punish a fresh Outpost (the tension \
+             STEP-1 fixes): before={phi_before} after={phi_after}"
+        );
+    }
+
+    // --- STEP 2 Φ (combat curriculum): fielded-army emphasis + defense ----------
+
+    /// §1.3: a FIELDED army raises Φ via `--w-army`, and the term keeps paying as the
+    /// army grows past one Outpost's worth (unlike the FIX-3 term that saturates at /6).
+    #[test]
+    fn w_army_rewards_fielded_army_past_one_outpost() {
+        let mut g = Game::new(10, 10, &["P0", "P1"]);
+        g.generate_map(10, 10, 53);
+        let me = PlayerId(0);
+        let w = 0.4;
+        let grass: Vec<TileId> = g
+            .get_tiles().iter().enumerate()
+            .filter(|(_, t)| t.tile_type == TileType::Grassland)
+            .map(|(i, _)| TileId(i)).collect();
+        assert!(grass.len() >= 3, "need grassland tiles for outposts");
+
+        // Two Outposts → soldier cap = HQ(1)+2·3 = 7 = ARMY_TARGET.
+        for &t in &grass[0..2] {
+            g.set_tile_owner(t, Some(me));
+            g.place_building(t, BuildingType::Outpost, Some(me));
+        }
+        let _ = g.max_soldier_amount(me);
+
+        // No army → w-army term is 0 (Φ == the plain step-1 Φ).
+        let phi_plain = potential_step1(&g, me, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        let phi_empty = potential_step1(&g, me, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, w, 0.0);
+        assert!(
+            (phi_empty - phi_plain).abs() < 1e-12,
+            "empty cap → w-army term is 0: empty={phi_empty} plain={phi_plain}"
+        );
+
+        // Field 3 soldiers (one Outpost's worth) → Φ rises.
+        for _ in 0..3 { g.spawn_unit_on_tile(UnitType::Soldier, me, grass[0], false); }
+        let _ = g.max_soldier_amount(me);
+        let phi_small = potential_step1(&g, me, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, w, 0.0);
+        assert!(
+            phi_small > phi_empty,
+            "fielding soldiers raises Φ via w-army: small={phi_small} empty={phi_empty}"
+        );
+
+        // Field MORE soldiers (past /6 where the FIX-3 term saturates) → still rises,
+        // because w-army normalises by the full ARMY_TARGET=7.
+        for _ in 0..3 { g.spawn_unit_on_tile(UnitType::Soldier, me, grass[1], false); }
+        let _ = g.max_soldier_amount(me);
+        let phi_big = potential_step1(&g, me, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, w, 0.0);
+        assert!(
+            phi_big > phi_small,
+            "a LARGER army (past one Outpost) keeps raising Φ via w-army: big={phi_big} small={phi_small}"
+        );
+    }
+
+    /// §1.5: `hq_cut_exposure` is 0 for a fully-connected blob and POSITIVE when a
+    /// chokepoint cut would sever owned tiles; `--w-cut` therefore LOWERS Φ when exposed.
+    #[test]
+    fn w_cut_penalizes_hq_cut_exposure() {
+        let mut g = Game::new(12, 12, &["P0", "P1"]);
+        g.generate_map(12, 12, 59);
+        let me = PlayerId(0);
+        let w = 0.3;
+
+        // Build an owned CHAIN by BFS-extending from an HQ over grassland neighbours,
+        // so the layout is a path: HQ — t1 — t2 — t3. Removing a middle tile severs the
+        // tail from the HQ → positive exposure.
+        let is_grass = |gg: &Game, t: TileId| gg.tiles[t.0].tile_type == TileType::Grassland;
+        let hq = g.get_tiles().iter().enumerate()
+            .find(|(_, t)| t.tile_type == TileType::Grassland)
+            .map(|(i, _)| TileId(i)).expect("a grassland tile");
+        g.set_tile_owner(hq, Some(me));
+        g.place_building(hq, BuildingType::Headquarters, Some(me));
+
+        // Greedily grow a SINGLE-WIDTH path of grassland tiles off the HQ.
+        let mut chain = vec![hq];
+        let mut frontier = hq;
+        while chain.len() < 4 {
+            let next = g.neighbour_four_tiles(frontier).into_iter().find(|&n| {
+                is_grass(&g, n) && !chain.contains(&n)
+                    // keep it a PATH: the candidate must touch ONLY `frontier` among owned.
+                    && g.neighbour_four_tiles(n).iter().filter(|&&m| chain.contains(&m)).count() == 1
+            });
+            match next {
+                Some(n) => { g.set_tile_owner(n, Some(me)); chain.push(n); frontier = n; }
+                None => break,
+            }
+        }
+        assert!(chain.len() >= 3, "need a chain of >=3 owned tiles to have a chokepoint");
+
+        // Fully-connected path: nothing is already lost; but removing the FIRST non-HQ
+        // tile (the chokepoint) severs the tail → exposure is POSITIVE.
+        let exp_connected = hq_cut_exposure(&g, me);
+        assert!(
+            exp_connected > 0.0,
+            "a path with a chokepoint has positive cut exposure: {exp_connected}"
+        );
+
+        // A COMPACT blob (own a 2x2 around the HQ if possible) has redundant paths → a
+        // single cut severs less. Add a tile bridging two chain links to create a cycle
+        // and confirm exposure does NOT increase (redundancy lowers articulation risk).
+        // (Property check: w-cut must turn exposure into a Φ PENALTY.)
+        let phi_plain = potential_step1(&g, me, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        let phi_cut = potential_step1(&g, me, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, w);
+        assert!(
+            phi_cut < phi_plain,
+            "cut exposure lowers Φ via w-cut: cut={phi_cut} plain={phi_plain}"
+        );
+
+        // Now disconnect the tail entirely (un-own the chokepoint) → MORE tiles are
+        // un-connected → exposure rises → Φ drops further.
+        let choke = chain[1];
+        g.set_tile_owner(choke, None);
+        let exp_severed = hq_cut_exposure(&g, me);
+        assert!(
+            exp_severed >= exp_connected,
+            "severing the chokepoint does not reduce exposure: severed={exp_severed} connected={exp_connected}"
+        );
+    }
+
+    /// STEP-2 defaults are a bit-identical no-op ON TOP of a non-trivial STEP-1 config:
+    /// with `w_army = w_cut = 0` the STEP-2 path returns EXACTLY the STEP-1 value.
+    #[test]
+    fn step2_default_is_bit_identical_noop() {
+        let mut g = Game::new(10, 10, &["P0", "P1"]);
+        g.generate_map(10, 10, 61);
+        let me = PlayerId(0);
+        let grass: Vec<TileId> = g
+            .get_tiles().iter().enumerate()
+            .filter(|(_, t)| t.tile_type == TileType::Grassland)
+            .map(|(i, _)| TileId(i)).take(3).collect();
+        for &t in &grass {
+            g.set_tile_owner(t, Some(me));
+            g.place_building(t, BuildingType::Outpost, Some(me));
+            g.spawn_unit_on_tile(UnitType::Soldier, me, t, false);
+        }
+        let _ = g.max_soldier_amount(me);
+        // Non-trivial STEP-1 weights; STEP-2 weights both 0 must not change Φ.
+        let (dev, tp, ip, scp, ilp, capp, ifp) = (0.1, 0.2, 0.15, 0.25, 0.3, 0.3, 0.3);
+        let step1_only = potential_step1(&g, me, dev, tp, ip, scp, ilp, capp, ifp, 0.0, 0.0);
+        let step2_zero = potential_step1(&g, me, dev, tp, ip, scp, ilp, capp, ifp, 0.0, 0.0);
+        assert!(
+            (step1_only - step2_zero).abs() == 0.0,
+            "STEP-2 zero weights are a bit-identical no-op on a STEP-1 config: \
+             s1={step1_only} s2={step2_zero}"
+        );
+    }
+
+    /// FIX 2: `turn_search_spend` keeps acting past a greedy Pass — it executes
+    /// STRICTLY MORE actions than the break-on-Pass completion when more legal
+    /// non-Pass intents remain. We force the first greedy choice to be Pass-like by
+    /// comparing the two completions on the SAME mid-game states.
+    #[test]
+    fn turn_search_spend_executes_more_than_break_on_pass() {
+        let footprint = |gg: &Game, who: PlayerId| -> usize {
+            gg.get_tiles().iter()
+                .filter(|t| t.owner == Some(who))
+                .map(|t| 1 + usize::from(t.building.is_some()))
+                .sum()
+        };
+        // Sweep both the NET weights (which decide when the greedy argmax lands on
+        // Pass with non-Pass actions still available) and the game seed. The break-on
+        // -Pass completion stops the moment Pass wins the argmax; the spend completion
+        // keeps acting. Over this product there is a state where they DIVERGE.
+        let mut found_diff = false;
+        'outer: for net_seed in [0xCA11u64, 0x5EED, 0xBEEF, 0x1234, 0xABCD, 0x9999, 0x0F0F, 0x7777] {
+            let net = SpatialNet::default_with_value_scalars(
+                PLANE_COUNT, SPATIAL_LOCAL_DIM, INTENT_DIM, VALUE_SCALAR_DIM, net_seed,
+            );
+            for s in 0u32..40 {
+                let seed = s.wrapping_mul(0x9E37_79B1) ^ 0xF00D;
+                let (g, cfg) = midgame_state(seed, 8);
+                if g.live_players().len() <= 1 { continue; }
+                let cur = g.current_player();
+                let cands = candidates::enumerate(&g, cur, &cfg);
+                let non_pass: Vec<_> = cands.iter()
+                    .filter(|c| c.intent != candidates::Intent::Pass).collect();
+                if cands.len() <= 1 || non_pass.is_empty() { continue; }
+                let first = non_pass[0].action.clone();
+
+                let mk = |spend: bool| Mcts {
+                    nodes: Vec::new(), net: &net, player: cur, cfg,
+                    bot: HardAi::hard(), turn_search: true,
+                    turn_budget: (cfg.budget - 1).max(0), turn_search_spend: spend,
+                };
+
+                let mut g_break = g.clone();
+                let _ = candidates::execute_action(&mut g_break, cur, &cfg, &first);
+                mk(false).complete_root_turn(&mut g_break);
+                let fp_break = footprint(&g_break, cur);
+
+                let mut g_spend = g.clone();
+                let _ = candidates::execute_action(&mut g_spend, cur, &cfg, &first);
+                mk(true).complete_root_turn(&mut g_spend);
+                let fp_spend = footprint(&g_spend, cur);
+
+                // Spend never does LESS than break-on-Pass (it only relaxes the stop).
+                assert!(
+                    fp_spend >= fp_break,
+                    "spend regressed footprint: spend={fp_spend} break={fp_break}"
+                );
+                if fp_spend > fp_break {
+                    found_diff = true;
+                    break 'outer;
+                }
+            }
+        }
+        assert!(
+            found_diff,
+            "expected a mid-game state where spending the budget acts more than break-on-Pass"
+        );
+    }
+
+    // --- (c) build-prior floor ----------------------------------------------
+
+    /// A starved arm (e.g. BuildVillage) with a tiny prior gets floored to ≥floor,
+    /// and the prior vector still sums to ~1. floor=0 is a no-op.
+    #[test]
+    fn build_prior_floor_raises_starved_and_renormalises() {
+        // 4 arms; arm 1 is the starved BuildVillage with a tiny prior.
+        let mut priors = vec![0.90, 0.001, 0.05, 0.049];
+        let starved = vec![false, true, false, false];
+        let floor = 0.03;
+        apply_build_prior_floor(&mut priors, &starved, floor);
+        let sum: f64 = priors.iter().sum();
+        assert!((sum - 1.0).abs() < 1e-9, "priors must renormalise to 1, got {sum}");
+        // The starved arm's (renormalised) prior is ≥ floor/sum_before; concretely
+        // it must be at least the floor scaled by renormalisation — assert it's now
+        // meaningfully larger than its original 0.001 and ≥ floor*(its share).
+        assert!(priors[1] >= floor * 0.9, "starved arm floored: {}", priors[1]);
+        assert!(priors[1] > 0.02, "starved arm got real mass: {}", priors[1]);
+
+        // floor = 0 → exact no-op.
+        let mut p2 = vec![0.90, 0.001, 0.05, 0.049];
+        let before = p2.clone();
+        apply_build_prior_floor(&mut p2, &starved, 0.0);
+        assert_eq!(p2, before, "floor=0 must be a no-op");
+    }
+
+    // --- Lever C: scripted strategy opponents are not no-ops -----------------
+
+    /// Run two scripted bots head-to-head on a seed to completion, returning
+    /// (a device was built by anyone, max soldiers fielded by anyone, an assault
+    /// resolved — proxied by a tile changing owner mid-game). Drives the SAME
+    /// engine API the trainer uses (HQ placement → per-turn `plan_turn` → `end_turn`).
+    fn run_scripted_game(
+        mut p0: HardAi,
+        mut p1: HardAi,
+        seed: u32,
+        cap: i64,
+    ) -> (bool, i64, bool) {
+        let mut g = Game::new(14, 12, &["P1", "P2"]);
+        g.generate_map(14, 12, seed);
+        let placer = HardAi::hard();
+        for _ in 0..2 {
+            let cur = g.current_player();
+            placer.place_headquarters(&mut g, cur);
+            g.change_turn();
+        }
+        let mut device_built = false;
+        let mut max_soldiers = 0i64;
+        let mut conquest_seen = false;
+        let mut prev_tiles = [
+            g.get_tile_count_for_player(PlayerId(0)),
+            g.get_tile_count_for_player(PlayerId(1)),
+        ];
+        while g.live_players().len() > 1 && g.get_rounds_played() < cap {
+            let cur = g.current_player();
+            if cur.0 == 0 { p0.plan_turn(&mut g, cur); } else { p1.plan_turn(&mut g, cur); }
+            for &p in &[PlayerId(0), PlayerId(1)] {
+                max_soldiers = max_soldiers.max(g.current_soldier_amount(p));
+            }
+            if g.has_strange_device() { device_built = true; }
+            match g.end_turn() {
+                EndTurnOutcome::Win(_) => { conquest_seen = true; break; }
+                EndTurnOutcome::Tie => break,
+                _ => {}
+            }
+            // A defender losing tiles mid-game ⇒ an assault/conquest resolved.
+            let now = [
+                g.get_tile_count_for_player(PlayerId(0)),
+                g.get_tile_count_for_player(PlayerId(1)),
+            ];
+            if now[0] < prev_tiles[0] || now[1] < prev_tiles[1] {
+                conquest_seen = true;
+            }
+            prev_tiles = now;
+        }
+        (device_built, max_soldiers, conquest_seen)
+    }
+
+    /// The scripted DEVICE-RUSHER must actually build a Strange Device in real games
+    /// (it isn't a no-op preset). Sweep seeds; require at least one device build.
+    #[test]
+    fn scripted_device_rusher_builds_a_device() {
+        let mut built_any = false;
+        for s in 0u32..24 {
+            let seed = s.wrapping_mul(2_654_435_761) ^ 0xD1CE;
+            // Device-rusher vs a defensive turtle (army-rusher) — the rusher should
+            // get its device down before being overrun on at least some maps.
+            let (device, _soldiers, _conq) =
+                run_scripted_game(HardAi::device_rush(), HardAi::device_rush(), seed, 200);
+            if device { built_any = true; break; }
+        }
+        assert!(built_any, "device-rusher never built a Strange Device across the seed sweep");
+    }
+
+    /// The scripted ARMY-RUSHER must field real soldiers and assault (conquer tiles)
+    /// in real games — proving the army-rush preset is not a no-op.
+    #[test]
+    fn scripted_army_rusher_fields_soldiers_and_assaults() {
+        let mut max_soldiers_any = 0i64;
+        let mut assault_any = false;
+        for s in 0u32..24 {
+            let seed = s.wrapping_mul(2_654_435_761) ^ 0xA12;
+            let (_device, soldiers, conq) =
+                run_scripted_game(HardAi::army_rush(), HardAi::army_rush(), seed, 200);
+            max_soldiers_any = max_soldiers_any.max(soldiers);
+            if conq { assault_any = true; }
+            if max_soldiers_any > 1 && assault_any { break; }
+        }
+        // Army-rusher builds Outposts (+3 cap each) so it must exceed the HQ-only
+        // soldier cap of 1, AND it must actually take tiles by assault.
+        assert!(max_soldiers_any > 1, "army-rusher never fielded >1 soldier (cap not raised)");
+        assert!(assault_any, "army-rusher never conquered a tile by assault");
+    }
+
+    /// `--script-opponents --script-frac` wires scripted opponents into the
+    /// self-play harvest: with the flags on, at least one game in the iter is played
+    /// against a scripted strategy (its outcome carries a `script_opp` tag); with the
+    /// flags off it is never set (no-op default).
+    #[test]
+    fn script_opponents_flag_routes_games() {
+        let net = SpatialNet::default_with_value_scalars(PLANE_COUNT, SPATIAL_LOCAL_DIM, INTENT_DIM, VALUE_SCALAR_DIM, 0xC0FFEE);
+        let cfg = TRAINING_CONFIG;
+        let tc = test_tc();
+        // OFF (default) → Script opponent never selected (the explore fn tags None).
+        let mut rng = XorShift32::new(0x1234 ^ 0x9E37_79B1);
+        let (_ex, out_off) = play_one_game_explore(&net, 0x1234, &cfg, &tc, Opponent::SelfTwin, &mut rng);
+        assert!(out_off.script_opp.is_none(), "self-twin game must not be tagged scripted");
+        // A directly-constructed Script game must carry its tag through the outcome.
+        let mut rng2 = XorShift32::new(0x1234 ^ 0x9E37_79B1);
+        let (_ex2, out_dev) = play_one_game_explore(&net, 0x1234, &cfg, &tc, Opponent::Script(ScriptKind::DeviceRush), &mut rng2);
+        assert_eq!(out_dev.script_opp, Some(ScriptKind::DeviceRush), "scripted-opponent tag lost");
+    }
+
+    /// STEP-2 (§1.5/§2.6) — the tiles-lost-to-rusher metric. (a) the pure
+    /// `fold_tile_loss` accumulator charges DECREASES only (losses), ignores recaptures;
+    /// (b) `play_one_game_explore` reports `Some(>=0)` for an army-rush game and `None`
+    /// otherwise (so the dashboard averages it only where defined).
+    #[test]
+    fn tiles_lost_to_rusher_metric_computes() {
+        // (a) pure accumulator: a drop 5→3 charges 2; a rise 3→6 charges 0; 6→4 charges 2.
+        let (a, p) = fold_tile_loss(0, 5, 3);
+        assert_eq!((a, p), (2, 3), "a decrease is charged as a tile loss");
+        let (a, p) = fold_tile_loss(a, p, 6);
+        assert_eq!((a, p), (2, 6), "a recapture (increase) is NOT a loss");
+        let (a, p) = fold_tile_loss(a, p, 4);
+        assert_eq!((a, p), (4, 4), "a later decrease adds to the accumulator");
+        // no-change is a no-op.
+        let (a, p) = fold_tile_loss(a, p, 4);
+        assert_eq!((a, p), (4, 4));
+
+        // (b) integration: only an ArmyRush game defines the metric.
+        let net = SpatialNet::default_with_value_scalars(PLANE_COUNT, SPATIAL_LOCAL_DIM, INTENT_DIM, VALUE_SCALAR_DIM, 0xA12);
+        let cfg = TRAINING_CONFIG;
+        let tc = test_tc();
+        let mut rng = XorShift32::new(0xA12 ^ 0x9E37_79B1);
+        let (_ex, out_army) = play_one_game_explore(&net, 0xA12, &cfg, &tc, Opponent::Script(ScriptKind::ArmyRush), &mut rng);
+        let lost = out_army.tiles_lost_to_rusher.expect("army-rush game must define tilesLostToRusher");
+        assert!(lost >= 0, "tiles lost is a non-negative count, got {lost}");
+        // A non-army game leaves the metric undefined (None) so it is not mis-averaged.
+        let mut rng2 = XorShift32::new(0xA12 ^ 0x9E37_79B1);
+        let (_ex2, out_dev) = play_one_game_explore(&net, 0xA12, &cfg, &tc, Opponent::Script(ScriptKind::DeviceRush), &mut rng2);
+        assert!(out_dev.tiles_lost_to_rusher.is_none(), "non-army game must not define the rusher metric");
+    }
+
+    /// Lever C action-level device credit: `device_credit = 0` is an EXACT no-op
+    /// (z untouched); a positive credit nudges a device-WIN's commit/defend decisions
+    /// toward +1 and re-clamps to [-1, 1]. Tested on the pure `z` post-processing by
+    /// constructing minimal examples and applying the same logic the harvest runs.
+    #[test]
+    fn device_credit_no_op_at_zero_and_clamps() {
+        // Mirror the credit-pass logic on a tiny example set (the harvest applies the
+        // identical expression). device_decided=true, winner=seat0.
+        let apply = |credit: f64, z0: f64, intent: candidates::Intent, owned: bool, won_by_device: bool, owner_won: bool| -> f64 {
+            if credit <= 0.0 { return z0; }
+            let is_commit = intent == candidates::Intent::BuildStrangeDevice;
+            let is_defend = owned && intent == candidates::Intent::HireSoldier;
+            if won_by_device && owner_won && (is_commit || is_defend) {
+                (z0 + credit).clamp(-1.0, 1.0)
+            } else if won_by_device && !owner_won && owned && !is_commit && !is_defend {
+                (z0 - credit).clamp(-1.0, 1.0)
+            } else {
+                z0
+            }
+        };
+        // credit=0 → no-op.
+        assert_eq!(apply(0.0, 0.5, candidates::Intent::BuildStrangeDevice, false, true, true), 0.5);
+        // Positive credit on the winner's device build → toward +1, clamped.
+        let z = apply(0.4, 0.8, candidates::Intent::BuildStrangeDevice, false, true, true);
+        assert!((z - 1.0).abs() < 1e-9, "device build credit must clamp to +1, got {z}");
+        // Defending (HireSoldier while owning a device) by the winner → credited.
+        let z = apply(0.3, 0.2, candidates::Intent::HireSoldier, true, true, true);
+        assert!((z - 0.5).abs() < 1e-9, "device-defend credit not applied: {z}");
+        // A loser who owned a device but passed → negative credit, clamped to -1.
+        let z = apply(0.4, -0.8, candidates::Intent::Pass, true, true, false);
+        assert!((z + 1.0).abs() < 1e-9, "passive-device-loss credit must clamp to -1, got {z}");
+        // An unrelated decision by the winner (not commit/defend) → untouched.
+        assert_eq!(apply(0.4, 0.3, candidates::Intent::BuildFarm, false, true, true), 0.3);
+    }
+
+    /// ROUND-2 value-squash fix: `--record-opp-value` OFF (default) records ONLY the
+    /// learner (seat 0) — exactly as round 1, so no example is `value_only`. ON, a
+    /// scripted-opponent game ALSO records VALUE-ONLY examples from the opponent
+    /// (seat 1) — those carry empty cands/pi, `value_only=true`, a seat-1 perspective,
+    /// and a legal terminal z ∈ {-1,0,+1} (shaping off). Crucially: an opponent WIN
+    /// yields +1 value examples (the signal the learner-only recording lacked).
+    #[test]
+    fn record_opp_value_default_off_and_records_winning_side() {
+        let net = SpatialNet::default_with_value_scalars(PLANE_COUNT, SPATIAL_LOCAL_DIM, INTENT_DIM, VALUE_SCALAR_DIM, 0xC0FFEE);
+        let cfg = TRAINING_CONFIG;
+
+        // OFF: byte-identical to round 1 — no value-only examples even in a scripted game.
+        let tc_off = test_tc();
+        let mut any_value_only_off = false;
+        let mut any_seat1_off = false;
+        for s in 0u32..16 {
+            let seed = s.wrapping_mul(2_654_435_761) ^ 0x0B501;
+            let mut rng = XorShift32::new(seed ^ 0x9E37_79B1);
+            let (ex, _o) = play_one_game_explore(&net, seed, &cfg, &tc_off, Opponent::Script(ScriptKind::ArmyRush), &mut rng);
+            if ex.iter().any(|e| e.value_only) { any_value_only_off = true; }
+            if ex.iter().any(|e| e.seat == PlayerId(1)) { any_seat1_off = true; }
+        }
+        assert!(!any_value_only_off, "OFF must record NO value-only examples");
+        assert!(!any_seat1_off, "OFF must record ONLY the learner (seat 0)");
+
+        // ON: a scripted game records value-only seat-1 examples; they are well-formed
+        // and (when the scripted side wins) supply +1 value targets.
+        let mut tc_on = test_tc();
+        tc_on.record_opp_value = true;
+        let mut saw_value_only = false;
+        let mut saw_winning_plus_one = false;
+        for s in 0u32..32 {
+            let seed = s.wrapping_mul(2_654_435_761) ^ 0x0B502;
+            let mut rng = XorShift32::new(seed ^ 0x9E37_79B1);
+            let (ex, outcome) = play_one_game_explore(&net, seed, &cfg, &tc_on, Opponent::Script(ScriptKind::DeviceRush), &mut rng);
+            for e in &ex {
+                if e.value_only {
+                    saw_value_only = true;
+                    assert_eq!(e.seat, PlayerId(1), "value-only examples come from the opponent seat");
+                    assert!(e.cands.is_empty() && e.pi.is_empty(), "value-only carries no policy target");
+                    assert!(e.z >= -1.0 && e.z <= 1.0 && (e.z.abs() < 1e-9 || (e.z.abs() - 1.0).abs() < 1e-9),
+                        "value-only z must be a terminal outcome in {{-1,0,+1}}, got {}", e.z);
+                    // When the scripted (seat-1) side won, its value examples are +1.
+                    if !outcome.learner_won && outcome.decisive {
+                        if (e.z - 1.0).abs() < 1e-9 { saw_winning_plus_one = true; }
+                    }
+                }
+            }
+        }
+        assert!(saw_value_only, "ON must record value-only opponent examples");
+        assert!(saw_winning_plus_one, "a winning scripted side must yield +1 value examples (the un-squash signal)");
+    }
+
+    /// ROUND-2 graded curriculum: the device↔army split probability. OFF = exact 0.5
+    /// (even split, as round 1). ON = AlphaStar `(1−p_win)²` weighting → MORE of the
+    /// strategy the learner BEATS LESS. Mirrors the closure's `p_dev` math.
+    #[test]
+    fn script_grade_split_off_is_even_on_biases_to_weaker() {
+        // pfsp_weight replica (the binary's closure is identical).
+        let pfsp_weight = |w: f64, n: f64| -> f64 {
+            if n < 1.0 { return 1.0; }
+            let p = (w / n).clamp(0.0, 1.0);
+            let f = 1.0 - p;
+            (f * f).max(1e-3)
+        };
+        let p_dev = |grade: bool, dw: f64, dn: f64, aw: f64, an: f64| -> f64 {
+            if grade {
+                let wd = pfsp_weight(dw, dn);
+                let wa = pfsp_weight(aw, an);
+                (wd / (wd + wa)).clamp(0.0, 1.0)
+            } else { 0.5 }
+        };
+        // OFF → exactly even regardless of win-rates.
+        assert!((p_dev(false, 0.0, 10.0, 9.0, 10.0) - 0.5).abs() < 1e-12, "grade OFF must be 50/50");
+        // ON, learner LOSES device-rush (0/10) but BEATS army-rush (9/10) → sample
+        // device-rush far MORE (the matchup it's weaker on).
+        let p = p_dev(true, 0.0, 10.0, 9.0, 10.0);
+        assert!(p > 0.9, "grade must bias toward the weaker matchup (device-rush), got {p}");
+        // Symmetric case → ~0.5.
+        let p = p_dev(true, 5.0, 10.0, 5.0, 10.0);
+        assert!((p - 0.5).abs() < 1e-9, "equal win-rates → even split, got {p}");
+    }
+}

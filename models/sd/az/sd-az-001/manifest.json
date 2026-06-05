@@ -1,0 +1,13 @@
+{
+  "id": "sd-az-001",
+  "arc": "sd",
+  "type": "az",
+  "version": 1,
+  "created_utc": "2026-06-03T18:58:13.012Z",
+  "git_commit": null,
+  "parent": null,
+  "training_config": {},
+  "benchmarks": {},
+  "status": "experimental",
+  "notes": "vs-hard non-spatial AZ champion (~22% vs HARD). Plateaued baseline / warm-start PARENT for the spatial (Route A) run. Value net co-located as value.json (arch [41,32,16,1], spatial). Policy arch [64,24,16,1]."
+}

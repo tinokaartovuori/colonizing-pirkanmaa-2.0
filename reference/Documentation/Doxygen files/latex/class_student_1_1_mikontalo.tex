@@ -1,0 +1,141 @@
+\hypertarget{class_student_1_1_mikontalo}{\section{Student\-:\-:Mikontalo Class Reference}
+\label{class_student_1_1_mikontalo}\index{Student\-::\-Mikontalo@{Student\-::\-Mikontalo}}
+}
+
+
+The \hyperlink{class_student_1_1_mikontalo}{Mikontalo} class represents a \hyperlink{class_student_1_1_mikontalo}{Mikontalo} in the game.  
+
+
+
+
+{\ttfamily \#include $<$mikontalo.\-h$>$}
+
+
+
+Inheritance diagram for Student\-:\-:Mikontalo\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_student_1_1_mikontalo__inherit__graph}
+\end{center}
+\end{figure}
+
+
+Collaboration diagram for Student\-:\-:Mikontalo\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_student_1_1_mikontalo__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_student_1_1_mikontalo_a6cd21de75404e73cf369afd0a51861d7}{\hyperlink{class_student_1_1_mikontalo_a6cd21de75404e73cf369afd0a51861d7}{Mikontalo} ()=delete}\label{class_student_1_1_mikontalo_a6cd21de75404e73cf369afd0a51861d7}
+
+\begin{DoxyCompactList}\small\item\em Disabled parameterless constructor. \end{DoxyCompactList}\item 
+\hyperlink{class_student_1_1_mikontalo_a6b3e2c88efbb21cd4b0f57ee5ecfa2e6}{Mikontalo} (const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{Course\-::i\-Object\-Manager} $>$ \&objectmanager, const std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Course\-::\-Player\-Base} $>$ \&owner, const Course\-::\-Resource\-Map \&buildcost=Course\-::\-Const\-Resource\-Maps\-::\-N\-O\-\_\-\-R\-E\-S\-O\-U\-R\-C\-E\-S, const Course\-::\-Resource\-Map \&production=Course\-::\-Const\-Resource\-Maps\-::\-N\-O\-\_\-\-R\-E\-S\-O\-U\-R\-C\-E\-S)
+\begin{DoxyCompactList}\small\item\em Constructor for the class. \end{DoxyCompactList}\item 
+\hypertarget{class_student_1_1_mikontalo_ab4fa78934d9660213ff8b1c5fccfa903}{virtual \hyperlink{class_student_1_1_mikontalo_ab4fa78934d9660213ff8b1c5fccfa903}{$\sim$\-Mikontalo} ()=default}\label{class_student_1_1_mikontalo_ab4fa78934d9660213ff8b1c5fccfa903}
+
+\begin{DoxyCompactList}\small\item\em Default destructor. \end{DoxyCompactList}\item 
+virtual std\-::string \hyperlink{class_student_1_1_mikontalo_a71ab64374c57380dd45efea5a5304104}{get\-Type} () const override
+\begin{DoxyCompactList}\small\item\em Returns the building's type in string. In this case it's \char`\"{}\-Mikontalo\char`\"{}. \end{DoxyCompactList}\item 
+std\-::string \hyperlink{class_student_1_1_mikontalo_ad04d2288dfb6f9fbb9ce507f939f7db3}{get\-Extra\-Description} ()
+\begin{DoxyCompactList}\small\item\em Returns the building's extra description in string. \end{DoxyCompactList}\end{DoxyCompactItemize}
+\subsection*{Additional Inherited Members}
+
+
+\subsection{Detailed Description}
+The \hyperlink{class_student_1_1_mikontalo}{Mikontalo} class represents a \hyperlink{class_student_1_1_mikontalo}{Mikontalo} in the game. 
+
+It costs to build it and it consumes resources but it lets the player to have more Basic\-Workers and Experts.
+
+Check \hyperlink{resourcemaps_8h_source}{Core/resourcemaps.\-h} M\-I\-K\-O\-N\-T\-A\-L\-O\-\_\-\-P\-R\-O\-D\-U\-C\-T\-I\-O\-N, M\-I\-K\-O\-N\-T\-A\-L\-O\-\_\-\-B\-U\-I\-L\-D\-\_\-\-C\-O\-S\-T and Mikontalo\-\_\-\-U\-N\-I\-T\-\_\-\-V\-A\-L\-U\-E for the effects. 
+
+\subsection{Constructor \& Destructor Documentation}
+\hypertarget{class_student_1_1_mikontalo_a6b3e2c88efbb21cd4b0f57ee5ecfa2e6}{\index{Student\-::\-Mikontalo@{Student\-::\-Mikontalo}!Mikontalo@{Mikontalo}}
+\index{Mikontalo@{Mikontalo}!Student::Mikontalo@{Student\-::\-Mikontalo}}
+\subsubsection[{Mikontalo}]{\setlength{\rightskip}{0pt plus 5cm}Student\-::\-Mikontalo\-::\-Mikontalo (
+\begin{DoxyParamCaption}
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Course\-::i\-Game\-Event\-Handler} $>$ \&}]{eventhandler, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Course\-::i\-Object\-Manager} $>$ \&}]{objectmanager, }
+\item[{const std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Player\-Base} $>$ \&}]{owner, }
+\item[{const Course\-::\-Resource\-Map \&}]{buildcost = {\ttfamily Course\-:\-:ConstResourceMaps\-:\-:NO\-\_\-RESOURCES}, }
+\item[{const Course\-::\-Resource\-Map \&}]{production = {\ttfamily Course\-:\-:ConstResourceMaps\-:\-:NO\-\_\-RESOURCES}}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [explicit]}}}\label{class_student_1_1_mikontalo_a6b3e2c88efbb21cd4b0f57ee5ecfa2e6}
+
+
+Constructor for the class. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em eventhandler} & points to the \hyperlink{class_student_1_1_game_event_handler}{Game\-Event\-Handler}. \\
+\hline
+{\em objectmanager} & points to the \hyperlink{class_student_1_1_object_manager}{Object\-Manager}. \\
+\hline
+{\em owner} & points to the owning player. \\
+\hline
+{\em buildcost} & is a Resource\-Map of the building cost of the building \\
+\hline
+{\em production} & is a Resource\-Map of the production of the building\\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: No guarantee. 
+\end{DoxyPostcond}
+
+\begin{DoxyExceptions}{Exceptions}
+{\em Owner\-Conflict} & -\/ if the building conflicts with tile's ownership. \\
+\hline
+\end{DoxyExceptions}
+
+
+\subsection{Member Function Documentation}
+\hypertarget{class_student_1_1_mikontalo_ad04d2288dfb6f9fbb9ce507f939f7db3}{\index{Student\-::\-Mikontalo@{Student\-::\-Mikontalo}!get\-Extra\-Description@{get\-Extra\-Description}}
+\index{get\-Extra\-Description@{get\-Extra\-Description}!Student::Mikontalo@{Student\-::\-Mikontalo}}
+\subsubsection[{get\-Extra\-Description}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Student\-::\-Mikontalo\-::get\-Extra\-Description (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_mikontalo_ad04d2288dfb6f9fbb9ce507f939f7db3}
+
+
+Returns the building's extra description in string. 
+
+\begin{DoxyReturn}{Returns}
+Building's extra description in string. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_mikontalo_a71ab64374c57380dd45efea5a5304104}{\index{Student\-::\-Mikontalo@{Student\-::\-Mikontalo}!get\-Type@{get\-Type}}
+\index{get\-Type@{get\-Type}!Student::Mikontalo@{Student\-::\-Mikontalo}}
+\subsubsection[{get\-Type}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Student\-::\-Mikontalo\-::get\-Type (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_mikontalo_a71ab64374c57380dd45efea5a5304104}
+
+
+Returns the building's type in string. In this case it's \char`\"{}\-Mikontalo\char`\"{}. 
+
+\begin{DoxyReturn}{Returns}
+Building's type in string. In this case it's \char`\"{}\-Mikontalo\char`\"{} 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+Reimplemented from \hyperlink{class_course_1_1_building_base_ac2cc44e08dc73d05b1617bf71295baaf}{Course\-::\-Building\-Base}.
+
+
+
+The documentation for this class was generated from the following files\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Buildings/mikontalo.\-h\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Buildings/mikontalo.\-cpp\end{DoxyCompactItemize}

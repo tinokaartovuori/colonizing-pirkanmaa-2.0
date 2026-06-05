@@ -1,0 +1,132 @@
+\hypertarget{class_course_1_1i_game_event_handler}{\section{Course\-:\-:i\-Game\-Event\-Handler Class Reference}
+\label{class_course_1_1i_game_event_handler}\index{Course\-::i\-Game\-Event\-Handler@{Course\-::i\-Game\-Event\-Handler}}
+}
+
+
+The \hyperlink{class_course_1_1i_game_event_handler}{i\-Game\-Event\-Handler} class is an interface which the Course-\/side code uses to interact with the Game\-Event\-Handler implemented by the students.  
+
+
+
+
+{\ttfamily \#include $<$igameeventhandler.\-h$>$}
+
+
+
+Inheritance diagram for Course\-:\-:i\-Game\-Event\-Handler\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[width=252pt]{class_course_1_1i_game_event_handler__inherit__graph}
+\end{center}
+\end{figure}
+
+
+Collaboration diagram for Course\-:\-:i\-Game\-Event\-Handler\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[width=252pt]{class_course_1_1i_game_event_handler__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Signals}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_course_1_1i_game_event_handler_a028b8c260ae15ed0fee87974f28381dc}{void {\bfseries restart\-Game\-Signal} ()}\label{class_course_1_1i_game_event_handler_a028b8c260ae15ed0fee87974f28381dc}
+
+\end{DoxyCompactItemize}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_course_1_1i_game_event_handler_a355e0d9635cc9b4888a1b77596431faa}{virtual \hyperlink{class_course_1_1i_game_event_handler_a355e0d9635cc9b4888a1b77596431faa}{$\sim$i\-Game\-Event\-Handler} ()=default}\label{class_course_1_1i_game_event_handler_a355e0d9635cc9b4888a1b77596431faa}
+
+\begin{DoxyCompactList}\small\item\em Default destructor. \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1i_game_event_handler_a085bdd5ee80ff0cd7dfeff9ddad66341}{virtual void {\bfseries set\-Game\-Scene} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_student_1_1_game_scene}{Student\-::\-Game\-Scene} $>$ gs)=0}\label{class_course_1_1i_game_event_handler_a085bdd5ee80ff0cd7dfeff9ddad66341}
+
+\item 
+\hypertarget{class_course_1_1i_game_event_handler_aa85980d3caa036ca0421d9e06db39046}{virtual void {\bfseries first\-Round\-Actions} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ tile)=0}\label{class_course_1_1i_game_event_handler_aa85980d3caa036ca0421d9e06db39046}
+
+\item 
+\hypertarget{class_course_1_1i_game_event_handler_a90c7fc9b36084f2aaabc3a847e845cf2}{virtual void {\bfseries tile\-Clicked} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ tile)=0}\label{class_course_1_1i_game_event_handler_a90c7fc9b36084f2aaabc3a847e845cf2}
+
+\item 
+\hypertarget{class_course_1_1i_game_event_handler_aec68369399acf42c300f4d4f4b3e59f6}{virtual void {\bfseries end\-Turn} ()=0}\label{class_course_1_1i_game_event_handler_aec68369399acf42c300f4d4f4b3e59f6}
+
+\item 
+\hypertarget{class_course_1_1i_game_event_handler_a97cd035d2f7b296f11056919c9187094}{virtual void {\bfseries update\-Animated\-Tile\-To\-Static} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ tile, int frame)=0}\label{class_course_1_1i_game_event_handler_a97cd035d2f7b296f11056919c9187094}
+
+\item 
+\hypertarget{class_course_1_1i_game_event_handler_a701eba27730f7c2038e9e04b247936a1}{virtual void {\bfseries update\-Forest} (std\-::string status, std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ tile, const std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_building_base}{Course\-::\-Building\-Base} $>$ \&building=nullptr)=0}\label{class_course_1_1i_game_event_handler_a701eba27730f7c2038e9e04b247936a1}
+
+\item 
+\hypertarget{class_course_1_1i_game_event_handler_a5e8ed00233a86377413ec9a74d3583a0}{virtual void {\bfseries set\-Tile\-Inspection\-Menu\-View} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ tile, int index\-\_\-for\-\_\-buildings=0)=0}\label{class_course_1_1i_game_event_handler_a5e8ed00233a86377413ec9a74d3583a0}
+
+\item 
+\hypertarget{class_course_1_1i_game_event_handler_abb9fa40c8f3529ea00e930d8480df610}{virtual void {\bfseries open\-Stats\-Menu\-View} ()=0}\label{class_course_1_1i_game_event_handler_abb9fa40c8f3529ea00e930d8480df610}
+
+\item 
+\hypertarget{class_course_1_1i_game_event_handler_acd565f49492e6714f4d7be125099681b}{virtual void {\bfseries open\-Default\-Menu\-View} ()=0}\label{class_course_1_1i_game_event_handler_acd565f49492e6714f4d7be125099681b}
+
+\item 
+\hypertarget{class_course_1_1i_game_event_handler_a8a4da8745776a663eaf2e0cc33a5f35f}{virtual void {\bfseries create\-Unit} (std\-::string unit)=0}\label{class_course_1_1i_game_event_handler_a8a4da8745776a663eaf2e0cc33a5f35f}
+
+\item 
+\hypertarget{class_course_1_1i_game_event_handler_af115943c7ff335505536c20c84f6ef62}{virtual void {\bfseries open\-Unit\-Buy\-Menu} ()=0}\label{class_course_1_1i_game_event_handler_af115943c7ff335505536c20c84f6ef62}
+
+\item 
+\hypertarget{class_course_1_1i_game_event_handler_af30e32fd07181ff435c1284f9a8de89a}{virtual void {\bfseries move\-Unit\-From\-Tile} (int index, std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ tile)=0}\label{class_course_1_1i_game_event_handler_af30e32fd07181ff435c1284f9a8de89a}
+
+\item 
+\hypertarget{class_course_1_1i_game_event_handler_ad2adf1d57dc96bdfba849e9aefb73ee6}{virtual void {\bfseries delete\-Unit\-From\-Tile} (int index, std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ tile)=0}\label{class_course_1_1i_game_event_handler_ad2adf1d57dc96bdfba849e9aefb73ee6}
+
+\item 
+\hypertarget{class_course_1_1i_game_event_handler_a52b26d73c7b3c59d3b5861a7ad328140}{virtual void {\bfseries delete\-Unit\-From\-Tile} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_unit_base}{Course\-::\-Unit\-Base} $>$ unit, std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ tile)=0}\label{class_course_1_1i_game_event_handler_a52b26d73c7b3c59d3b5861a7ad328140}
+
+\item 
+\hypertarget{class_course_1_1i_game_event_handler_a9c496a0b542ecfce23537fbd0a95a8c4}{virtual void {\bfseries update\-Tile} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ tile)=0}\label{class_course_1_1i_game_event_handler_a9c496a0b542ecfce23537fbd0a95a8c4}
+
+\item 
+\hypertarget{class_course_1_1i_game_event_handler_aaa0d404b6fb9ebbb700ca9364d3cd5cf}{virtual void {\bfseries buy\-Unit\-Or\-Building} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_placeable_game_object}{Course\-::\-Placeable\-Game\-Object} $>$ object)=0}\label{class_course_1_1i_game_event_handler_aaa0d404b6fb9ebbb700ca9364d3cd5cf}
+
+\item 
+\hypertarget{class_course_1_1i_game_event_handler_ad27784a9a3e65362c8889c9fa7e0abbf}{virtual bool {\bfseries can\-Buy\-Unit\-Or\-Building} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_placeable_game_object}{Course\-::\-Placeable\-Game\-Object} $>$ object)=0}\label{class_course_1_1i_game_event_handler_ad27784a9a3e65362c8889c9fa7e0abbf}
+
+\item 
+\hypertarget{class_course_1_1i_game_event_handler_af7918c95a16eb0f65b19f8fb6d678994}{virtual void {\bfseries build\-Building} (std\-::string building, std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ tile)=0}\label{class_course_1_1i_game_event_handler_af7918c95a16eb0f65b19f8fb6d678994}
+
+\item 
+\hypertarget{class_course_1_1i_game_event_handler_aecc284039fc48f335bd0dfa32bb90fef}{virtual Course\-::\-Resource\-Map {\bfseries get\-Current\-Revenue} ()=0}\label{class_course_1_1i_game_event_handler_aecc284039fc48f335bd0dfa32bb90fef}
+
+\item 
+\hypertarget{class_course_1_1i_game_event_handler_a59e601715dde93390fb167f2929c0eb8}{virtual Course\-::\-Resource\-Map {\bfseries get\-Current\-Expences} ()=0}\label{class_course_1_1i_game_event_handler_a59e601715dde93390fb167f2929c0eb8}
+
+\item 
+\hypertarget{class_course_1_1i_game_event_handler_a2edfe04f9d882dd69fdfa79fbd618ba7}{virtual Course\-::\-Resource\-Map {\bfseries get\-Current\-Net} ()=0}\label{class_course_1_1i_game_event_handler_a2edfe04f9d882dd69fdfa79fbd618ba7}
+
+\item 
+\hypertarget{class_course_1_1i_game_event_handler_a5cd1f40527ea6143ca51addae05b02a5}{virtual std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_course_1_1_player_base}{Course\-::\-Player\-Base} $>$ {\bfseries get\-Current\-Player} ()=0}\label{class_course_1_1i_game_event_handler_a5cd1f40527ea6143ca51addae05b02a5}
+
+\item 
+\hypertarget{class_course_1_1i_game_event_handler_a0aacafb21d5327f1cdd4df98012c9d0a}{virtual void {\bfseries neutralize\-Player} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Course\-::\-Player\-Base} $>$ player)=0}\label{class_course_1_1i_game_event_handler_a0aacafb21d5327f1cdd4df98012c9d0a}
+
+\item 
+\hypertarget{class_course_1_1i_game_event_handler_ab5d7bb2b679c7f8bd280b892b5c983e0}{virtual void {\bfseries restart\-Game} ()=0}\label{class_course_1_1i_game_event_handler_ab5d7bb2b679c7f8bd280b892b5c983e0}
+
+\end{DoxyCompactItemize}
+
+
+\subsection{Detailed Description}
+The \hyperlink{class_course_1_1i_game_event_handler}{i\-Game\-Event\-Handler} class is an interface which the Course-\/side code uses to interact with the Game\-Event\-Handler implemented by the students. 
+
+\begin{DoxyNote}{Note}
+The interface declares only functions required by the Course-\/side code. The actual implementation can (and should!) contain more stuff. 
+
+In a \char`\"{}real\char`\"{} project, the Game\-Event\-Handler should be a singleton and not use an abstract base class to define the interface for it. {\bfseries This design was chosen merely for pedagogical reasons and to give students more freedom in their project design.} 
+\end{DoxyNote}
+
+
+The documentation for this class was generated from the following file\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Interfaces/igameeventhandler.\-h\end{DoxyCompactItemize}

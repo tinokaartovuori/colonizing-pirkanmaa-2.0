@@ -1,0 +1,141 @@
+\hypertarget{class_student_1_1_village}{\section{Student\-:\-:Village Class Reference}
+\label{class_student_1_1_village}\index{Student\-::\-Village@{Student\-::\-Village}}
+}
+
+
+The \hyperlink{class_student_1_1_village}{Village} class represents a village in the game.  
+
+
+
+
+{\ttfamily \#include $<$village.\-h$>$}
+
+
+
+Inheritance diagram for Student\-:\-:Village\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_student_1_1_village__inherit__graph}
+\end{center}
+\end{figure}
+
+
+Collaboration diagram for Student\-:\-:Village\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_student_1_1_village__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_student_1_1_village_a5dc36130a7a03212c78560b9cc11a8b9}{\hyperlink{class_student_1_1_village_a5dc36130a7a03212c78560b9cc11a8b9}{Village} ()=delete}\label{class_student_1_1_village_a5dc36130a7a03212c78560b9cc11a8b9}
+
+\begin{DoxyCompactList}\small\item\em Disabled parameterless constructor. \end{DoxyCompactList}\item 
+\hyperlink{class_student_1_1_village_a242338705d4d6b031af1d82ce9fc7503}{Village} (const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{Course\-::i\-Object\-Manager} $>$ \&objectmanager, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Course\-::\-Player\-Base} $>$ \&owner, const Course\-::\-Resource\-Map \&buildcost=Course\-::\-Const\-Resource\-Maps\-::\-V\-I\-L\-L\-A\-G\-E\-\_\-\-B\-U\-I\-L\-D\-\_\-\-C\-O\-S\-T, const Course\-::\-Resource\-Map \&production=Course\-::\-Const\-Resource\-Maps\-::\-V\-I\-L\-L\-A\-G\-E\-\_\-\-P\-R\-O\-D\-U\-C\-T\-I\-O\-N)
+\begin{DoxyCompactList}\small\item\em Constructor for the class. \end{DoxyCompactList}\item 
+\hypertarget{class_student_1_1_village_ada3544b6f628001dc48b7199bf563d46}{virtual \hyperlink{class_student_1_1_village_ada3544b6f628001dc48b7199bf563d46}{$\sim$\-Village} ()=default}\label{class_student_1_1_village_ada3544b6f628001dc48b7199bf563d46}
+
+\begin{DoxyCompactList}\small\item\em Default destructor. \end{DoxyCompactList}\item 
+virtual std\-::string \hyperlink{class_student_1_1_village_a02b27bc84f9d250795ec2f9ff72fbe1b}{get\-Type} () const override
+\begin{DoxyCompactList}\small\item\em Returns the building's type in string. In this case it's \char`\"{}\-Village\char`\"{}. \end{DoxyCompactList}\item 
+std\-::string \hyperlink{class_student_1_1_village_acc186ea92b25b3b7852b457aa4880680}{get\-Extra\-Description} ()
+\begin{DoxyCompactList}\small\item\em Returns the building's extra description in string. \end{DoxyCompactList}\end{DoxyCompactItemize}
+\subsection*{Additional Inherited Members}
+
+
+\subsection{Detailed Description}
+The \hyperlink{class_student_1_1_village}{Village} class represents a village in the game. 
+
+It costs to build it and it consumes resources but it lets the player to have more Basic\-Workers and Experts.
+
+Check \hyperlink{resourcemaps_8h_source}{Core/resourcemaps.\-h} V\-I\-L\-L\-A\-G\-E\-\_\-\-P\-R\-O\-D\-U\-C\-T\-I\-O\-N, V\-I\-L\-L\-A\-G\-E\-\_\-\-B\-U\-I\-L\-D\-\_\-\-C\-O\-S\-T and V\-I\-L\-L\-A\-G\-E\-\_\-\-U\-N\-I\-T\-\_\-\-V\-A\-L\-U\-E for the effects. 
+
+\subsection{Constructor \& Destructor Documentation}
+\hypertarget{class_student_1_1_village_a242338705d4d6b031af1d82ce9fc7503}{\index{Student\-::\-Village@{Student\-::\-Village}!Village@{Village}}
+\index{Village@{Village}!Student::Village@{Student\-::\-Village}}
+\subsubsection[{Village}]{\setlength{\rightskip}{0pt plus 5cm}Student\-::\-Village\-::\-Village (
+\begin{DoxyParamCaption}
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Course\-::i\-Game\-Event\-Handler} $>$ \&}]{eventhandler, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Course\-::i\-Object\-Manager} $>$ \&}]{objectmanager, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Course\-::\-Player\-Base} $>$ \&}]{owner, }
+\item[{const Course\-::\-Resource\-Map \&}]{buildcost = {\ttfamily Course\-:\-:ConstResourceMaps\-:\-:VILLAGE\-\_\-BUILD\-\_\-COST}, }
+\item[{const Course\-::\-Resource\-Map \&}]{production = {\ttfamily Course\-:\-:ConstResourceMaps\-:\-:VILLAGE\-\_\-PRODUCTION}}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [explicit]}}}\label{class_student_1_1_village_a242338705d4d6b031af1d82ce9fc7503}
+
+
+Constructor for the class. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em eventhandler} & points to the \hyperlink{class_student_1_1_game_event_handler}{Game\-Event\-Handler}. \\
+\hline
+{\em objectmanager} & points to the \hyperlink{class_student_1_1_object_manager}{Object\-Manager}. \\
+\hline
+{\em owner} & points to the owning player. \\
+\hline
+{\em buildcost} & is a Resource\-Map of the building cost of the building \\
+\hline
+{\em production} & is a Resource\-Map of the production of the building\\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: No guarantee. 
+\end{DoxyPostcond}
+
+\begin{DoxyExceptions}{Exceptions}
+{\em Owner\-Conflict} & -\/ if the building conflicts with tile's ownership. \\
+\hline
+\end{DoxyExceptions}
+
+
+\subsection{Member Function Documentation}
+\hypertarget{class_student_1_1_village_acc186ea92b25b3b7852b457aa4880680}{\index{Student\-::\-Village@{Student\-::\-Village}!get\-Extra\-Description@{get\-Extra\-Description}}
+\index{get\-Extra\-Description@{get\-Extra\-Description}!Student::Village@{Student\-::\-Village}}
+\subsubsection[{get\-Extra\-Description}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Student\-::\-Village\-::get\-Extra\-Description (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_village_acc186ea92b25b3b7852b457aa4880680}
+
+
+Returns the building's extra description in string. 
+
+\begin{DoxyReturn}{Returns}
+Building's extra description in string. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_village_a02b27bc84f9d250795ec2f9ff72fbe1b}{\index{Student\-::\-Village@{Student\-::\-Village}!get\-Type@{get\-Type}}
+\index{get\-Type@{get\-Type}!Student::Village@{Student\-::\-Village}}
+\subsubsection[{get\-Type}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Student\-::\-Village\-::get\-Type (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_village_a02b27bc84f9d250795ec2f9ff72fbe1b}
+
+
+Returns the building's type in string. In this case it's \char`\"{}\-Village\char`\"{}. 
+
+\begin{DoxyReturn}{Returns}
+Building's type in string. In this case it's \char`\"{}\-Village\char`\"{} 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+Reimplemented from \hyperlink{class_course_1_1_building_base_ac2cc44e08dc73d05b1617bf71295baaf}{Course\-::\-Building\-Base}.
+
+
+
+The documentation for this class was generated from the following files\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Buildings/village.\-h\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Buildings/village.\-cpp\end{DoxyCompactItemize}

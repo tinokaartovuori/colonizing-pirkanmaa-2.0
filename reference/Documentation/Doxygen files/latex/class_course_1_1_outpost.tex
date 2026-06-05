@@ -1,0 +1,141 @@
+\hypertarget{class_course_1_1_outpost}{\section{Course\-:\-:Outpost Class Reference}
+\label{class_course_1_1_outpost}\index{Course\-::\-Outpost@{Course\-::\-Outpost}}
+}
+
+
+The \hyperlink{class_course_1_1_outpost}{Outpost} class represents an outpost in the game.  
+
+
+
+
+{\ttfamily \#include $<$outpost.\-h$>$}
+
+
+
+Inheritance diagram for Course\-:\-:Outpost\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_course_1_1_outpost__inherit__graph}
+\end{center}
+\end{figure}
+
+
+Collaboration diagram for Course\-:\-:Outpost\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_course_1_1_outpost__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_course_1_1_outpost_a3b69759306e036223cfd991337c8b4e2}{\hyperlink{class_course_1_1_outpost_a3b69759306e036223cfd991337c8b4e2}{Outpost} ()=delete}\label{class_course_1_1_outpost_a3b69759306e036223cfd991337c8b4e2}
+
+\begin{DoxyCompactList}\small\item\em Disabled parameterless constructor. \end{DoxyCompactList}\item 
+\hyperlink{class_course_1_1_outpost_a2447a5968b4f7dd2faceacd50b804f71}{Outpost} (const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{i\-Object\-Manager} $>$ \&objectmanager, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Player\-Base} $>$ \&owner, const Resource\-Map \&buildcost=Const\-Resource\-Maps\-::\-O\-U\-T\-P\-O\-S\-T\-\_\-\-B\-U\-I\-L\-D\-\_\-\-C\-O\-S\-T, const Resource\-Map \&production=Const\-Resource\-Maps\-::\-O\-U\-T\-P\-O\-S\-T\-\_\-\-P\-R\-O\-D\-U\-C\-T\-I\-O\-N)
+\begin{DoxyCompactList}\small\item\em Constructor for the class. \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1_outpost_aed6c03ab76797cac0712b1d88660ce14}{virtual \hyperlink{class_course_1_1_outpost_aed6c03ab76797cac0712b1d88660ce14}{$\sim$\-Outpost} ()=default}\label{class_course_1_1_outpost_aed6c03ab76797cac0712b1d88660ce14}
+
+\begin{DoxyCompactList}\small\item\em Default destructor. \end{DoxyCompactList}\item 
+virtual std\-::string \hyperlink{class_course_1_1_outpost_a8c89c67187451e0a49ecd57d4fc80602}{get\-Type} () const override
+\begin{DoxyCompactList}\small\item\em Returns the building's type in string. In this case it's \char`\"{}\-Outpost\char`\"{}. \end{DoxyCompactList}\item 
+std\-::string \hyperlink{class_course_1_1_outpost_a2019a87ccf9a85aa6e01c9217c644473}{get\-Extra\-Description} ()
+\begin{DoxyCompactList}\small\item\em This function is used by the menu to get information about the headquarters building. The information is showed to the player as a text. This information tells us how much wood the tile has left and how many rounds the tile has been empty (cut). \end{DoxyCompactList}\end{DoxyCompactItemize}
+\subsection*{Additional Inherited Members}
+
+
+\subsection{Detailed Description}
+The \hyperlink{class_course_1_1_outpost}{Outpost} class represents an outpost in the game. 
+
+It costs to build it and it consumes resources but it lets the player to have more Soldiers
+
+Check \hyperlink{resourcemaps_8h_source}{Core/resourcemaps.\-h} O\-U\-T\-P\-O\-S\-T\-\_\-\-P\-R\-O\-D\-U\-C\-T\-I\-O\-N, O\-U\-T\-P\-O\-S\-T\-\_\-\-B\-U\-I\-L\-D\-\_\-\-C\-O\-S\-T and O\-U\-T\-P\-O\-S\-T\-\_\-\-S\-O\-L\-D\-I\-E\-R\-\_\-\-V\-A\-L\-U\-E for the effects. 
+
+\subsection{Constructor \& Destructor Documentation}
+\hypertarget{class_course_1_1_outpost_a2447a5968b4f7dd2faceacd50b804f71}{\index{Course\-::\-Outpost@{Course\-::\-Outpost}!Outpost@{Outpost}}
+\index{Outpost@{Outpost}!Course::Outpost@{Course\-::\-Outpost}}
+\subsubsection[{Outpost}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Outpost\-::\-Outpost (
+\begin{DoxyParamCaption}
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Game\-Event\-Handler} $>$ \&}]{eventhandler, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Object\-Manager} $>$ \&}]{objectmanager, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Player\-Base} $>$ \&}]{owner, }
+\item[{const Resource\-Map \&}]{buildcost = {\ttfamily ConstResourceMaps\-:\-:OUTPOST\-\_\-BUILD\-\_\-COST}, }
+\item[{const Resource\-Map \&}]{production = {\ttfamily ConstResourceMaps\-:\-:OUTPOST\-\_\-PRODUCTION}}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [explicit]}}}\label{class_course_1_1_outpost_a2447a5968b4f7dd2faceacd50b804f71}
+
+
+Constructor for the class. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em eventhandler} & points to the Game\-Event\-Handler. \\
+\hline
+{\em objectmanager} & points to the Object\-Manager. \\
+\hline
+{\em owner} & points to the owning player. \\
+\hline
+{\em buildcost} & is a Resource\-Map of the building cost of the building \\
+\hline
+{\em production} & is a Resource\-Map of the production of the building\\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception Guarantee\-: No guarantee. 
+\end{DoxyPostcond}
+
+\begin{DoxyExceptions}{Exceptions}
+{\em \hyperlink{class_course_1_1_owner_conflict}{Owner\-Conflict}} & -\/ if the building conflicts with tile's ownership. \\
+\hline
+\end{DoxyExceptions}
+
+
+\subsection{Member Function Documentation}
+\hypertarget{class_course_1_1_outpost_a2019a87ccf9a85aa6e01c9217c644473}{\index{Course\-::\-Outpost@{Course\-::\-Outpost}!get\-Extra\-Description@{get\-Extra\-Description}}
+\index{get\-Extra\-Description@{get\-Extra\-Description}!Course::Outpost@{Course\-::\-Outpost}}
+\subsubsection[{get\-Extra\-Description}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Course\-::\-Outpost\-::get\-Extra\-Description (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_outpost_a2019a87ccf9a85aa6e01c9217c644473}
+
+
+This function is used by the menu to get information about the headquarters building. The information is showed to the player as a text. This information tells us how much wood the tile has left and how many rounds the tile has been empty (cut). 
+
+\begin{DoxyReturn}{Returns}
+String of the extra description the tile might have 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ????????????????????????????? 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_outpost_a8c89c67187451e0a49ecd57d4fc80602}{\index{Course\-::\-Outpost@{Course\-::\-Outpost}!get\-Type@{get\-Type}}
+\index{get\-Type@{get\-Type}!Course::Outpost@{Course\-::\-Outpost}}
+\subsubsection[{get\-Type}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Course\-::\-Outpost\-::get\-Type (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_course_1_1_outpost_a8c89c67187451e0a49ecd57d4fc80602}
+
+
+Returns the building's type in string. In this case it's \char`\"{}\-Outpost\char`\"{}. 
+
+\begin{DoxyReturn}{Returns}
+Building's type in string. In this case it's \char`\"{}\-Outpost\char`\"{} 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+Reimplemented from \hyperlink{class_course_1_1_building_base_ac2cc44e08dc73d05b1617bf71295baaf}{Course\-::\-Building\-Base}.
+
+
+
+The documentation for this class was generated from the following files\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Buildings/outpost.\-h\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Buildings/outpost.\-cpp\end{DoxyCompactItemize}

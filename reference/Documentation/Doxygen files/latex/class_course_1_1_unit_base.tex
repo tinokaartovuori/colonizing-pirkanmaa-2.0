@@ -1,0 +1,349 @@
+\hypertarget{class_course_1_1_unit_base}{\section{Course\-:\-:Unit\-Base Class Reference}
+\label{class_course_1_1_unit_base}\index{Course\-::\-Unit\-Base@{Course\-::\-Unit\-Base}}
+}
+
+
+The \hyperlink{class_course_1_1_unit_base}{Unit\-Base} class is aa base-\/class for Unit-\/objects.  
+
+
+
+
+{\ttfamily \#include $<$unitbase.\-h$>$}
+
+
+
+Inheritance diagram for Course\-:\-:Unit\-Base\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_course_1_1_unit_base__inherit__graph}
+\end{center}
+\end{figure}
+
+
+Collaboration diagram for Course\-:\-:Unit\-Base\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_course_1_1_unit_base__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_course_1_1_unit_base_a28175446e9c369e755c1e392a1c8c10e}{\hyperlink{class_course_1_1_unit_base_a28175446e9c369e755c1e392a1c8c10e}{Unit\-Base} ()=delete}\label{class_course_1_1_unit_base_a28175446e9c369e755c1e392a1c8c10e}
+
+\begin{DoxyCompactList}\small\item\em Disabled parameterless constructor. \end{DoxyCompactList}\item 
+\hyperlink{class_course_1_1_unit_base_a291d6f5b21bfa8d431204ba7a6f81dd6}{Unit\-Base} (const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{i\-Object\-Manager} $>$ \&objectmanager, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_student_1_1_game_settings_manager}{Student\-::\-Game\-Settings\-Manager} $>$ \&gamesettingsmanager, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Player\-Base} $>$ \&owner, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Tile\-Base} $>$ \&parenttile)
+\begin{DoxyCompactList}\small\item\em Constructor for the class. \end{DoxyCompactList}\item 
+\hyperlink{class_course_1_1_unit_base_a21b3f9039a70b31fb72079c5b5fa9e66}{Unit\-Base} (const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{i\-Object\-Manager} $>$ \&objectmanager, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_student_1_1_game_settings_manager}{Student\-::\-Game\-Settings\-Manager} $>$ \&gamesettingsmanager, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Player\-Base} $>$ \&owner)
+\begin{DoxyCompactList}\small\item\em Constructor for the class. \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1_unit_base_a7a319a085adb34da50d016418a662f81}{virtual \hyperlink{class_course_1_1_unit_base_a7a319a085adb34da50d016418a662f81}{$\sim$\-Unit\-Base} ()=default}\label{class_course_1_1_unit_base_a7a319a085adb34da50d016418a662f81}
+
+\begin{DoxyCompactList}\small\item\em Default destructor. \end{DoxyCompactList}\item 
+virtual std\-::string \hyperlink{class_course_1_1_unit_base_a5b7353afcd94aa5ad3670ac652fd8ca2}{get\-Type} () const override
+\begin{DoxyCompactList}\small\item\em Returns the unit's type in string. In this case it's \char`\"{}\-Unit\-Base\char`\"{}. \end{DoxyCompactList}\item 
+void \hyperlink{class_course_1_1_unit_base_a51f0564112ada7a9d2700ecb04d0d309}{add\-Parent\-Tile} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ tile)
+\begin{DoxyCompactList}\small\item\em Adds the parent tile the unit is on. \end{DoxyCompactList}\item 
+std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ \hyperlink{class_course_1_1_unit_base_a49024d8ba68370f6f828bd22cf04d8df}{get\-Parent\-Tile} ()
+\begin{DoxyCompactList}\small\item\em Gets the parent tile the unit is on. \end{DoxyCompactList}\item 
+void \hyperlink{class_course_1_1_unit_base_a67af30f42c5839524bc4dbd071384a39}{update\-Parent\-Tile} ()
+\begin{DoxyCompactList}\small\item\em Updates the parent tile the unit is on. The point of the function is to set the unit tile related coordinates right depending on if the unit is conquering or not. \end{DoxyCompactList}\item 
+virtual bool \hyperlink{class_course_1_1_unit_base_a67d35d8bde94d778bbbf611d2d7d6562}{can\-Be\-Placed\-On\-Tile} (const std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Tile\-Base} $>$ \&target) const override
+\begin{DoxyCompactList}\small\item\em Checks if the unit can be placed on a tile. \end{DoxyCompactList}\item 
+int \hyperlink{class_course_1_1_unit_base_aad5b491a13617446e34f34118cd920ef}{get\-Grid\-Size} ()
+\begin{DoxyCompactList}\small\item\em Checks if the unit can be placed on a tile. \end{DoxyCompactList}\item 
+std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_coordinate}{Coordinate} $>$ \hyperlink{class_course_1_1_unit_base_a25ba49373b6d868b1f13d5ee75e7d684}{get\-Tile\-Related\-Coordinates} ()
+\begin{DoxyCompactList}\small\item\em Returns the parent tile coordinates. \end{DoxyCompactList}\item 
+void \hyperlink{class_course_1_1_unit_base_a1d5ad7e6450b9a2d70c944b7457ac95b}{set\-Tile\-Related\-Coordinates} (int x, int y)
+\begin{DoxyCompactList}\small\item\em Sets unit's tile related coordinates. Every tile has a 3x2 grid for units. \end{DoxyCompactList}\item 
+void \hyperlink{class_course_1_1_unit_base_a7c23bef1720d0eb40829b42ede6a819f}{pay\-Salary} ()
+\begin{DoxyCompactList}\small\item\em Pays salary from the player resources for the unit. \end{DoxyCompactList}\item 
+bool \hyperlink{class_course_1_1_unit_base_ae23a0a75e158eb0dfd2947101abe5cac}{is\-Conquering\-Unit} ()
+\begin{DoxyCompactList}\small\item\em Checks if the unit is conquering or not. \end{DoxyCompactList}\item 
+void \hyperlink{class_course_1_1_unit_base_a81a979e2566a1f55b38db00e3199e54c}{set\-As\-Conquering} (bool is\-Conquering)
+\begin{DoxyCompactList}\small\item\em Sets the unit to be conquering or non-\/conquering. \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1_unit_base_a960002e7202707497581135df3c56172}{virtual Resource\-Map \hyperlink{class_course_1_1_unit_base_a960002e7202707497581135df3c56172}{get\-Salary} ()=0}\label{class_course_1_1_unit_base_a960002e7202707497581135df3c56172}
+
+\begin{DoxyCompactList}\small\item\em Found in all classes inherited from \hyperlink{class_course_1_1_unit_base}{Unit\-Base}. All of them have their own description of their functionality. \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1_unit_base_ab02cc752895ebbdd633554686a04f0e8}{virtual Resource\-Map \hyperlink{class_course_1_1_unit_base_ab02cc752895ebbdd633554686a04f0e8}{get\-Cost} ()=0}\label{class_course_1_1_unit_base_ab02cc752895ebbdd633554686a04f0e8}
+
+\begin{DoxyCompactList}\small\item\em Found in all classes inherited from \hyperlink{class_course_1_1_unit_base}{Unit\-Base}. All of them have their own description of their functionality. \end{DoxyCompactList}\end{DoxyCompactItemize}
+\subsection*{Additional Inherited Members}
+
+
+\subsection{Detailed Description}
+The \hyperlink{class_course_1_1_unit_base}{Unit\-Base} class is aa base-\/class for Unit-\/objects. 
+
+Units can be placed on tiles and they can work in buildings. They can also conquer new areas for the 
+
+\subsection{Constructor \& Destructor Documentation}
+\hypertarget{class_course_1_1_unit_base_a291d6f5b21bfa8d431204ba7a6f81dd6}{\index{Course\-::\-Unit\-Base@{Course\-::\-Unit\-Base}!Unit\-Base@{Unit\-Base}}
+\index{Unit\-Base@{Unit\-Base}!Course::UnitBase@{Course\-::\-Unit\-Base}}
+\subsubsection[{Unit\-Base}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Unit\-Base\-::\-Unit\-Base (
+\begin{DoxyParamCaption}
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Game\-Event\-Handler} $>$ \&}]{eventhandler, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Object\-Manager} $>$ \&}]{objectmanager, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Student\-::\-Game\-Settings\-Manager} $>$ \&}]{gamesettingsmanager, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Player\-Base} $>$ \&}]{owner, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Tile\-Base} $>$ \&}]{parenttile}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_unit_base_a291d6f5b21bfa8d431204ba7a6f81dd6}
+
+
+Constructor for the class. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em eventhandler} & points to the Game\-Event\-Handler. \\
+\hline
+{\em objectmanager} & points to the Object\-Manager. \\
+\hline
+{\em gamesettingsmanager} & points to the Game\-Settings\-Manager. \\
+\hline
+{\em owner} & is a shared pointer to the owner of the unit \\
+\hline
+{\em parenttile} & is a shared pointer to the tile the unit is on \\
+\hline
+\end{DoxyParams}
+\hypertarget{class_course_1_1_unit_base_a21b3f9039a70b31fb72079c5b5fa9e66}{\index{Course\-::\-Unit\-Base@{Course\-::\-Unit\-Base}!Unit\-Base@{Unit\-Base}}
+\index{Unit\-Base@{Unit\-Base}!Course::UnitBase@{Course\-::\-Unit\-Base}}
+\subsubsection[{Unit\-Base}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Unit\-Base\-::\-Unit\-Base (
+\begin{DoxyParamCaption}
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Game\-Event\-Handler} $>$ \&}]{eventhandler, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Object\-Manager} $>$ \&}]{objectmanager, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Student\-::\-Game\-Settings\-Manager} $>$ \&}]{gamesettingsmanager, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Player\-Base} $>$ \&}]{owner}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_unit_base_a21b3f9039a70b31fb72079c5b5fa9e66}
+
+
+Constructor for the class. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em eventhandler} & points to the Game\-Event\-Handler. \\
+\hline
+{\em objectmanager} & points to the Object\-Manager. \\
+\hline
+{\em gamesettingsmanager} & points to the Game\-Settings\-Manager. \\
+\hline
+{\em owner} & is a shared pointer to the owner of the unit \\
+\hline
+\end{DoxyParams}
+
+
+\subsection{Member Function Documentation}
+\hypertarget{class_course_1_1_unit_base_a51f0564112ada7a9d2700ecb04d0d309}{\index{Course\-::\-Unit\-Base@{Course\-::\-Unit\-Base}!add\-Parent\-Tile@{add\-Parent\-Tile}}
+\index{add\-Parent\-Tile@{add\-Parent\-Tile}!Course::UnitBase@{Course\-::\-Unit\-Base}}
+\subsubsection[{add\-Parent\-Tile}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Unit\-Base\-::add\-Parent\-Tile (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Tile\-Base} $>$}]{tile}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_unit_base_a51f0564112ada7a9d2700ecb04d0d309}
+
+
+Adds the parent tile the unit is on. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Shared} & pointer to the tile the unit is on. \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ????????????? 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_unit_base_a67d35d8bde94d778bbbf611d2d7d6562}{\index{Course\-::\-Unit\-Base@{Course\-::\-Unit\-Base}!can\-Be\-Placed\-On\-Tile@{can\-Be\-Placed\-On\-Tile}}
+\index{can\-Be\-Placed\-On\-Tile@{can\-Be\-Placed\-On\-Tile}!Course::UnitBase@{Course\-::\-Unit\-Base}}
+\subsubsection[{can\-Be\-Placed\-On\-Tile}]{\setlength{\rightskip}{0pt plus 5cm}bool Course\-::\-Unit\-Base\-::can\-Be\-Placed\-On\-Tile (
+\begin{DoxyParamCaption}
+\item[{const std\-::shared\-\_\-ptr$<$ {\bf Tile\-Base} $>$ \&}]{target}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_course_1_1_unit_base_a67d35d8bde94d778bbbf611d2d7d6562}
+
+
+Checks if the unit can be placed on a tile. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Shared} & pointer of the tile the unit is trying to be placed on \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+Boolean value. True if the unit can be placed and false if not 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ????????????? 
+\end{DoxyPostcond}
+
+
+Reimplemented from \hyperlink{class_course_1_1_placeable_game_object_a09616c1b271c35df61c88b37d0b85968}{Course\-::\-Placeable\-Game\-Object}.
+
+\hypertarget{class_course_1_1_unit_base_aad5b491a13617446e34f34118cd920ef}{\index{Course\-::\-Unit\-Base@{Course\-::\-Unit\-Base}!get\-Grid\-Size@{get\-Grid\-Size}}
+\index{get\-Grid\-Size@{get\-Grid\-Size}!Course::UnitBase@{Course\-::\-Unit\-Base}}
+\subsubsection[{get\-Grid\-Size}]{\setlength{\rightskip}{0pt plus 5cm}int Course\-::\-Unit\-Base\-::get\-Grid\-Size (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_unit_base_aad5b491a13617446e34f34118cd920ef}
+
+
+Checks if the unit can be placed on a tile. 
+
+\begin{DoxyReturn}{Returns}
+Integer of the map grid size (how many pixels wide one map tile is) 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ????????????? 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_unit_base_a49024d8ba68370f6f828bd22cf04d8df}{\index{Course\-::\-Unit\-Base@{Course\-::\-Unit\-Base}!get\-Parent\-Tile@{get\-Parent\-Tile}}
+\index{get\-Parent\-Tile@{get\-Parent\-Tile}!Course::UnitBase@{Course\-::\-Unit\-Base}}
+\subsubsection[{get\-Parent\-Tile}]{\setlength{\rightskip}{0pt plus 5cm}std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Tile\-Base} $>$ Course\-::\-Unit\-Base\-::get\-Parent\-Tile (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_unit_base_a49024d8ba68370f6f828bd22cf04d8df}
+
+
+Gets the parent tile the unit is on. 
+
+\begin{DoxyReturn}{Returns}
+Shared pointer to the tile the unit is on. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_unit_base_a25ba49373b6d868b1f13d5ee75e7d684}{\index{Course\-::\-Unit\-Base@{Course\-::\-Unit\-Base}!get\-Tile\-Related\-Coordinates@{get\-Tile\-Related\-Coordinates}}
+\index{get\-Tile\-Related\-Coordinates@{get\-Tile\-Related\-Coordinates}!Course::UnitBase@{Course\-::\-Unit\-Base}}
+\subsubsection[{get\-Tile\-Related\-Coordinates}]{\setlength{\rightskip}{0pt plus 5cm}std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Coordinate} $>$ Course\-::\-Unit\-Base\-::get\-Tile\-Related\-Coordinates (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_unit_base_a25ba49373b6d868b1f13d5ee75e7d684}
+
+
+Returns the parent tile coordinates. 
+
+\begin{DoxyReturn}{Returns}
+Shared pointer to the parent tile coordinates 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ????????????? 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_unit_base_a5b7353afcd94aa5ad3670ac652fd8ca2}{\index{Course\-::\-Unit\-Base@{Course\-::\-Unit\-Base}!get\-Type@{get\-Type}}
+\index{get\-Type@{get\-Type}!Course::UnitBase@{Course\-::\-Unit\-Base}}
+\subsubsection[{get\-Type}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Course\-::\-Unit\-Base\-::get\-Type (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_course_1_1_unit_base_a5b7353afcd94aa5ad3670ac652fd8ca2}
+
+
+Returns the unit's type in string. In this case it's \char`\"{}\-Unit\-Base\char`\"{}. 
+
+\begin{DoxyReturn}{Returns}
+Unit's type in string. In this case it's \char`\"{}\-Unit\-Base\char`\"{} 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+Reimplemented from \hyperlink{class_course_1_1_placeable_game_object_adcd0c91b52ccedd434092380644f210e}{Course\-::\-Placeable\-Game\-Object}.
+
+
+
+Reimplemented in \hyperlink{class_course_1_1_basic_worker_a8396e00dafd128cbb86e479296d75c12}{Course\-::\-Basic\-Worker}, \hyperlink{class_student_1_1_expert_a103f30e0809cd26e7bafe4ef94a8673d}{Student\-::\-Expert}, and \hyperlink{class_student_1_1_soldier_a4339c81cdf40a1dba28f6fcffb555d33}{Student\-::\-Soldier}.
+
+\hypertarget{class_course_1_1_unit_base_ae23a0a75e158eb0dfd2947101abe5cac}{\index{Course\-::\-Unit\-Base@{Course\-::\-Unit\-Base}!is\-Conquering\-Unit@{is\-Conquering\-Unit}}
+\index{is\-Conquering\-Unit@{is\-Conquering\-Unit}!Course::UnitBase@{Course\-::\-Unit\-Base}}
+\subsubsection[{is\-Conquering\-Unit}]{\setlength{\rightskip}{0pt plus 5cm}bool Course\-::\-Unit\-Base\-::is\-Conquering\-Unit (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_unit_base_ae23a0a75e158eb0dfd2947101abe5cac}
+
+
+Checks if the unit is conquering or not. 
+
+\begin{DoxyReturn}{Returns}
+Boolean value. True if the unit is conquering and false if not. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_unit_base_a7c23bef1720d0eb40829b42ede6a819f}{\index{Course\-::\-Unit\-Base@{Course\-::\-Unit\-Base}!pay\-Salary@{pay\-Salary}}
+\index{pay\-Salary@{pay\-Salary}!Course::UnitBase@{Course\-::\-Unit\-Base}}
+\subsubsection[{pay\-Salary}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Unit\-Base\-::pay\-Salary (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_unit_base_a7c23bef1720d0eb40829b42ede6a819f}
+
+
+Pays salary from the player resources for the unit. 
+
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ????????????? 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_unit_base_a81a979e2566a1f55b38db00e3199e54c}{\index{Course\-::\-Unit\-Base@{Course\-::\-Unit\-Base}!set\-As\-Conquering@{set\-As\-Conquering}}
+\index{set\-As\-Conquering@{set\-As\-Conquering}!Course::UnitBase@{Course\-::\-Unit\-Base}}
+\subsubsection[{set\-As\-Conquering}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Unit\-Base\-::set\-As\-Conquering (
+\begin{DoxyParamCaption}
+\item[{bool}]{is\-Conquering}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_unit_base_a81a979e2566a1f55b38db00e3199e54c}
+
+
+Sets the unit to be conquering or non-\/conquering. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Boolean} & value. True if the unit is conquering and false if not. \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_unit_base_a1d5ad7e6450b9a2d70c944b7457ac95b}{\index{Course\-::\-Unit\-Base@{Course\-::\-Unit\-Base}!set\-Tile\-Related\-Coordinates@{set\-Tile\-Related\-Coordinates}}
+\index{set\-Tile\-Related\-Coordinates@{set\-Tile\-Related\-Coordinates}!Course::UnitBase@{Course\-::\-Unit\-Base}}
+\subsubsection[{set\-Tile\-Related\-Coordinates}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Unit\-Base\-::set\-Tile\-Related\-Coordinates (
+\begin{DoxyParamCaption}
+\item[{int}]{x, }
+\item[{int}]{y}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_unit_base_a1d5ad7e6450b9a2d70c944b7457ac95b}
+
+
+Sets unit's tile related coordinates. Every tile has a 3x2 grid for units. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Integer} & of the coordinate x and y values to be set \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ????????????? 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_unit_base_a67af30f42c5839524bc4dbd071384a39}{\index{Course\-::\-Unit\-Base@{Course\-::\-Unit\-Base}!update\-Parent\-Tile@{update\-Parent\-Tile}}
+\index{update\-Parent\-Tile@{update\-Parent\-Tile}!Course::UnitBase@{Course\-::\-Unit\-Base}}
+\subsubsection[{update\-Parent\-Tile}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Unit\-Base\-::update\-Parent\-Tile (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_unit_base_a67af30f42c5839524bc4dbd071384a39}
+
+
+Updates the parent tile the unit is on. The point of the function is to set the unit tile related coordinates right depending on if the unit is conquering or not. 
+
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ????????????? 
+\end{DoxyPostcond}
+
+
+The documentation for this class was generated from the following files\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Units/unitbase.\-h\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Units/unitbase.\-cpp\end{DoxyCompactItemize}

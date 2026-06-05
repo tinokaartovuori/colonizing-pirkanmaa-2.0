@@ -1,0 +1,185 @@
+\hypertarget{class_student_1_1_expert}{\section{Student\-:\-:Expert Class Reference}
+\label{class_student_1_1_expert}\index{Student\-::\-Expert@{Student\-::\-Expert}}
+}
+
+
+The \hyperlink{class_student_1_1_expert}{Expert} class represents an expert in the game.  
+
+
+
+
+{\ttfamily \#include $<$expert.\-h$>$}
+
+
+
+Inheritance diagram for Student\-:\-:Expert\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_student_1_1_expert__inherit__graph}
+\end{center}
+\end{figure}
+
+
+Collaboration diagram for Student\-:\-:Expert\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_student_1_1_expert__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_student_1_1_expert_a797a86567792b100caa002c831751c4f}{\hyperlink{class_student_1_1_expert_a797a86567792b100caa002c831751c4f}{Expert} ()=delete}\label{class_student_1_1_expert_a797a86567792b100caa002c831751c4f}
+
+\begin{DoxyCompactList}\small\item\em Disabled parameterless constructor. \end{DoxyCompactList}\item 
+\hyperlink{class_student_1_1_expert_a84882a44459039bdc831f6a719af18bc}{Expert} (const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{Course\-::i\-Object\-Manager} $>$ \&objectmanager, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_student_1_1_game_settings_manager}{Game\-Settings\-Manager} $>$ \&gamesettingsmanager, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Course\-::\-Player\-Base} $>$ \&owner, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ \&tile)
+\begin{DoxyCompactList}\small\item\em Constructor for the class. \end{DoxyCompactList}\item 
+\hyperlink{class_student_1_1_expert_a9632eb520f3d33137b1324441e297b82}{Expert} (const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{Course\-::i\-Object\-Manager} $>$ \&objectmanager, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_student_1_1_game_settings_manager}{Game\-Settings\-Manager} $>$ \&gamesettingsmanager, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Course\-::\-Player\-Base} $>$ \&owner)
+\begin{DoxyCompactList}\small\item\em Constructor for the class. \end{DoxyCompactList}\item 
+\hypertarget{class_student_1_1_expert_a65197de677d6467ccb39cb9d000dacb0}{virtual \hyperlink{class_student_1_1_expert_a65197de677d6467ccb39cb9d000dacb0}{$\sim$\-Expert} ()=default}\label{class_student_1_1_expert_a65197de677d6467ccb39cb9d000dacb0}
+
+\begin{DoxyCompactList}\small\item\em Default destructor. \end{DoxyCompactList}\item 
+virtual std\-::string \hyperlink{class_student_1_1_expert_a103f30e0809cd26e7bafe4ef94a8673d}{get\-Type} () const override
+\begin{DoxyCompactList}\small\item\em Returns the unit's type in string. In this case it's \char`\"{}\-Expert\char`\"{}. \end{DoxyCompactList}\item 
+virtual Course\-::\-Resource\-Map \hyperlink{class_student_1_1_expert_a1e9298ad606390b2bf1d32937d119b0b}{get\-Salary} () override
+\begin{DoxyCompactList}\small\item\em Returns the unit's salary. \end{DoxyCompactList}\item 
+virtual Course\-::\-Resource\-Map \hyperlink{class_student_1_1_expert_a6701c9f8242ea9e326bcffada4ec0182}{get\-Cost} () override
+\begin{DoxyCompactList}\small\item\em Returns the cost of the unit. \end{DoxyCompactList}\end{DoxyCompactItemize}
+\subsection*{Additional Inherited Members}
+
+
+\subsection{Detailed Description}
+The \hyperlink{class_student_1_1_expert}{Expert} class represents an expert in the game. 
+
+The expert can work in various buildings and is needed in nuclear and hydroelectric power plants in order for them to operate. Adding the unit costs money and the expert also has a salary that is payed when the round ends. The unit can conquer new areas too if the tile has no owner 
+
+\subsection{Constructor \& Destructor Documentation}
+\hypertarget{class_student_1_1_expert_a84882a44459039bdc831f6a719af18bc}{\index{Student\-::\-Expert@{Student\-::\-Expert}!Expert@{Expert}}
+\index{Expert@{Expert}!Student::Expert@{Student\-::\-Expert}}
+\subsubsection[{Expert}]{\setlength{\rightskip}{0pt plus 5cm}Student\-::\-Expert\-::\-Expert (
+\begin{DoxyParamCaption}
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Course\-::i\-Game\-Event\-Handler} $>$ \&}]{eventhandler, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Course\-::i\-Object\-Manager} $>$ \&}]{objectmanager, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Game\-Settings\-Manager} $>$ \&}]{gamesettingsmanager, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Course\-::\-Player\-Base} $>$ \&}]{owner, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Course\-::\-Tile\-Base} $>$ \&}]{tile}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_expert_a84882a44459039bdc831f6a719af18bc}
+
+
+Constructor for the class. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em eventhandler} & points to the \hyperlink{class_student_1_1_game_event_handler}{Game\-Event\-Handler}. \\
+\hline
+{\em objectmanager} & points to the \hyperlink{class_student_1_1_object_manager}{Object\-Manager}. \\
+\hline
+{\em gamesettingsmanager} & points to the \hyperlink{class_student_1_1_game_settings_manager}{Game\-Settings\-Manager}. \\
+\hline
+{\em owner} & is a shared pointer to the owner of the unit \\
+\hline
+{\em tile} & is a shared pointer to the tile the unit is on \\
+\hline
+\end{DoxyParams}
+\hypertarget{class_student_1_1_expert_a9632eb520f3d33137b1324441e297b82}{\index{Student\-::\-Expert@{Student\-::\-Expert}!Expert@{Expert}}
+\index{Expert@{Expert}!Student::Expert@{Student\-::\-Expert}}
+\subsubsection[{Expert}]{\setlength{\rightskip}{0pt plus 5cm}Student\-::\-Expert\-::\-Expert (
+\begin{DoxyParamCaption}
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Course\-::i\-Game\-Event\-Handler} $>$ \&}]{eventhandler, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Course\-::i\-Object\-Manager} $>$ \&}]{objectmanager, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Game\-Settings\-Manager} $>$ \&}]{gamesettingsmanager, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Course\-::\-Player\-Base} $>$ \&}]{owner}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_expert_a9632eb520f3d33137b1324441e297b82}
+
+
+Constructor for the class. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em eventhandler} & points to the \hyperlink{class_student_1_1_game_event_handler}{Game\-Event\-Handler}. \\
+\hline
+{\em objectmanager} & points to the \hyperlink{class_student_1_1_object_manager}{Object\-Manager}. \\
+\hline
+{\em gamesettingsmanager} & points to the \hyperlink{class_student_1_1_game_settings_manager}{Game\-Settings\-Manager}. \\
+\hline
+{\em owner} & is a shared pointer to the owner of the unit \\
+\hline
+\end{DoxyParams}
+
+
+\subsection{Member Function Documentation}
+\hypertarget{class_student_1_1_expert_a6701c9f8242ea9e326bcffada4ec0182}{\index{Student\-::\-Expert@{Student\-::\-Expert}!get\-Cost@{get\-Cost}}
+\index{get\-Cost@{get\-Cost}!Student::Expert@{Student\-::\-Expert}}
+\subsubsection[{get\-Cost}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Resource\-Map Student\-::\-Expert\-::get\-Cost (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_expert_a6701c9f8242ea9e326bcffada4ec0182}
+
+
+Returns the cost of the unit. 
+
+\begin{DoxyReturn}{Returns}
+Unit's cost as a Resource\-Map 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ?????????????? 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1_unit_base_ab02cc752895ebbdd633554686a04f0e8}{Course\-::\-Unit\-Base}.
+
+\hypertarget{class_student_1_1_expert_a1e9298ad606390b2bf1d32937d119b0b}{\index{Student\-::\-Expert@{Student\-::\-Expert}!get\-Salary@{get\-Salary}}
+\index{get\-Salary@{get\-Salary}!Student::Expert@{Student\-::\-Expert}}
+\subsubsection[{get\-Salary}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Resource\-Map Student\-::\-Expert\-::get\-Salary (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_expert_a1e9298ad606390b2bf1d32937d119b0b}
+
+
+Returns the unit's salary. 
+
+\begin{DoxyReturn}{Returns}
+Unit's salary as a Resource\-Map 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ?????????????? 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1_unit_base_a960002e7202707497581135df3c56172}{Course\-::\-Unit\-Base}.
+
+\hypertarget{class_student_1_1_expert_a103f30e0809cd26e7bafe4ef94a8673d}{\index{Student\-::\-Expert@{Student\-::\-Expert}!get\-Type@{get\-Type}}
+\index{get\-Type@{get\-Type}!Student::Expert@{Student\-::\-Expert}}
+\subsubsection[{get\-Type}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Student\-::\-Expert\-::get\-Type (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_expert_a103f30e0809cd26e7bafe4ef94a8673d}
+
+
+Returns the unit's type in string. In this case it's \char`\"{}\-Expert\char`\"{}. 
+
+\begin{DoxyReturn}{Returns}
+Unit's type in string. In this case it's \char`\"{}\-Expert\char`\"{} 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+Reimplemented from \hyperlink{class_course_1_1_unit_base_a5b7353afcd94aa5ad3670ac652fd8ca2}{Course\-::\-Unit\-Base}.
+
+
+
+The documentation for this class was generated from the following files\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Units/expert.\-h\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Units/expert.\-cpp\end{DoxyCompactItemize}

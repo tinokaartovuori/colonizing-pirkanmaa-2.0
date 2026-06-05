@@ -1,0 +1,364 @@
+\hypertarget{class_student_1_1_river}{\section{Student\-:\-:River Class Reference}
+\label{class_student_1_1_river}\index{Student\-::\-River@{Student\-::\-River}}
+}
+
+
+The \hyperlink{class_student_1_1_river}{River} class represents \hyperlink{class_student_1_1_river}{River} in the gameworld.  
+
+
+
+
+{\ttfamily \#include $<$river.\-h$>$}
+
+
+
+Inheritance diagram for Student\-:\-:River\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_student_1_1_river__inherit__graph}
+\end{center}
+\end{figure}
+
+
+Collaboration diagram for Student\-:\-:River\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_student_1_1_river__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_student_1_1_river_a3f3453fb4bcfb61fa9125e491ab1fc53}{\hyperlink{class_student_1_1_river_a3f3453fb4bcfb61fa9125e491ab1fc53}{River} ()=delete}\label{class_student_1_1_river_a3f3453fb4bcfb61fa9125e491ab1fc53}
+
+\begin{DoxyCompactList}\small\item\em Disabled parameterless constructor. \end{DoxyCompactList}\item 
+\hyperlink{class_student_1_1_river_a1c8f0fbd92233816e5a54310272cb8ef}{River} (const \hyperlink{class_course_1_1_coordinate}{Course\-::\-Coordinate} \&location, int size\-\_\-x, int size\-\_\-y, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{Course\-::i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{Course\-::i\-Object\-Manager} $>$ \&objectmanager, const unsigned int \&max\-\_\-units=3, const Course\-::\-Resource\-Map \&production=Course\-::\-Const\-Resource\-Maps\-::\-E\-M\-P\-T\-Y)
+\begin{DoxyCompactList}\small\item\em Constructor for the class. \end{DoxyCompactList}\item 
+\hypertarget{class_student_1_1_river_aeea36cb215f00e260ae4ceed50cc4764}{virtual \hyperlink{class_student_1_1_river_aeea36cb215f00e260ae4ceed50cc4764}{$\sim$\-River} ()=default}\label{class_student_1_1_river_aeea36cb215f00e260ae4ceed50cc4764}
+
+\begin{DoxyCompactList}\small\item\em Default destructor. \end{DoxyCompactList}\item 
+virtual std\-::string \hyperlink{class_student_1_1_river_a227a22ecd8983eb71188fd5256f28068}{get\-Type} () const override
+\begin{DoxyCompactList}\small\item\em Returns the tile's type in string. In this case it's \char`\"{}\-River\char`\"{}. \end{DoxyCompactList}\item 
+virtual std\-::vector$<$ std\-::string $>$ \hyperlink{class_student_1_1_river_a344d4b10bcccb02a45bc9db8e81d5547}{get\-Buildable\-Buildings} () override
+\begin{DoxyCompactList}\small\item\em Returns the building types that can be built on the tile. In this case the only buildings are \char`\"{}\-Bridge\char`\"{} and \char`\"{}\-Hydroelectric Power Plant\char`\"{}. If the tile is a river corner piece there are no buildings that can be built. \end{DoxyCompactList}\item 
+virtual void \hyperlink{class_student_1_1_river_ae5349df4c84b6ec7a6ccf0e31d968dbb}{generate\-Resources} () override
+\begin{DoxyCompactList}\small\item\em Gives or removes resources to the tiles owner. This depends on the building that is on the tile. \end{DoxyCompactList}\item 
+virtual Course\-::\-Resource\-Map \hyperlink{class_student_1_1_river_a11312fc3638a2b69f27291f1cb8a66ed}{get\-Current\-Revenue} () override
+\begin{DoxyCompactList}\small\item\em Returns a resource map of the revenue the river tile will produce when the turn ends. \end{DoxyCompactList}\item 
+virtual std\-::string \hyperlink{class_student_1_1_river_ac4abdccfecd49596efac3bb7fda0c008}{get\-Extra\-Description} () override
+\begin{DoxyCompactList}\small\item\em This function is used by the menu to get extra information about the river tile. The information is showed to the player as a text. \end{DoxyCompactList}\item 
+virtual void \hyperlink{class_student_1_1_river_a93fc1bbc79e0f918d8f8b2e9455709d3}{add\-Unit} (const std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_unit_base}{Course\-::\-Unit\-Base} $>$ \&unit) override
+\begin{DoxyCompactList}\small\item\em Adds an unit on the tile. \end{DoxyCompactList}\item 
+virtual void \hyperlink{class_student_1_1_river_aaf133bf15078e138b4b716a45fa67007}{update\-Unit\-Coordinates} () override
+\begin{DoxyCompactList}\small\item\em Updates the tile relative coordinates of the units. The tile has a 3x2 grid where the units can be placed. The function also checks if the unit is in the water. If so, a unit with a life belt is drawn. \end{DoxyCompactList}\item 
+virtual void \hyperlink{class_student_1_1_river_af2cbaa57c5a4895b7c695219255a486c}{update\-Animation} () override
+\begin{DoxyCompactList}\small\item\em Updates hydroelectric power plant animation. The animation is on only when the power plant is operating. \end{DoxyCompactList}\item 
+int \hyperlink{class_student_1_1_river_abcf15545a01cd0ea767a7d495f17ed56}{get\-River\-Orientation} ()
+\begin{DoxyCompactList}\small\item\em Returns the river orientation. One means the direction is north-\/south, two west-\/east and three that it is a curve. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_river_ab9e66f6bb2745b6c39cf4a72fcf50853}{set\-River\-Orientation} (int ori)
+\begin{DoxyCompactList}\small\item\em Sets the river orientation. One means the direction is north-\/south, two west-\/east and three that it is a curve. \end{DoxyCompactList}\item 
+std\-::string \hyperlink{class_student_1_1_river_a787ccae2e51f6cf8b15daf2b8f3f133c}{get\-River\-Shape} ()
+\begin{DoxyCompactList}\small\item\em Returns the river shape. The shapes are in compass directions for example N\-S (north-\/south) or N\-W (north-\/west) \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_river_a18182b30e591b43265053ab57a49f9af}{set\-River\-Shape} (std\-::string shape)
+\begin{DoxyCompactList}\small\item\em Sets the river shape. The shapes are in compass directions for example N\-S (north-\/south) or N\-W (north-\/west) \end{DoxyCompactList}\end{DoxyCompactItemize}
+\subsection*{Static Public Attributes}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_student_1_1_river_a530dcd2472ac6781b284ef55bb9a1d55}{static const unsigned int {\bfseries M\-A\-X\-\_\-\-B\-U\-I\-L\-D\-I\-N\-G\-S}}\label{class_student_1_1_river_a530dcd2472ac6781b284ef55bb9a1d55}
+
+\item 
+\hypertarget{class_student_1_1_river_a2d08e2c74dc9d98d0b2b20f36e744df5}{static const unsigned int {\bfseries M\-A\-X\-\_\-\-U\-N\-I\-T\-S}}\label{class_student_1_1_river_a2d08e2c74dc9d98d0b2b20f36e744df5}
+
+\item 
+\hypertarget{class_student_1_1_river_a51a700128a1f821f95203816f340e05b}{static const Course\-::\-Resource\-Map {\bfseries B\-A\-S\-E\-\_\-\-P\-R\-O\-D\-U\-C\-T\-I\-O\-N}}\label{class_student_1_1_river_a51a700128a1f821f95203816f340e05b}
+
+\end{DoxyCompactItemize}
+\subsection*{Additional Inherited Members}
+
+
+\subsection{Detailed Description}
+The \hyperlink{class_student_1_1_river}{River} class represents \hyperlink{class_student_1_1_river}{River} in the gameworld. 
+
+A bridge and a hydroelectric power plant can be built on the tile. If the river is a \char`\"{}corner piece\char`\"{}, nothing can be built on it. 
+
+\subsection{Constructor \& Destructor Documentation}
+\hypertarget{class_student_1_1_river_a1c8f0fbd92233816e5a54310272cb8ef}{\index{Student\-::\-River@{Student\-::\-River}!River@{River}}
+\index{River@{River}!Student::River@{Student\-::\-River}}
+\subsubsection[{River}]{\setlength{\rightskip}{0pt plus 5cm}Student\-::\-River\-::\-River (
+\begin{DoxyParamCaption}
+\item[{const {\bf Course\-::\-Coordinate} \&}]{location, }
+\item[{int}]{size\-\_\-x, }
+\item[{int}]{size\-\_\-y, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Course\-::i\-Game\-Event\-Handler} $>$ \&}]{eventhandler, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Course\-::i\-Object\-Manager} $>$ \&}]{objectmanager, }
+\item[{const unsigned int \&}]{max\-\_\-units = {\ttfamily 3}, }
+\item[{const Course\-::\-Resource\-Map \&}]{production = {\ttfamily Course\-:\-:ConstResourceMaps\-:\-:EMPTY}}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_river_a1c8f0fbd92233816e5a54310272cb8ef}
+
+
+Constructor for the class. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em location} & is the Coordinate where the Tile is located in the game. \\
+\hline
+{\em size\-\_\-x} & is how many maps grids wide the tile is (1) \\
+\hline
+{\em size\-\_\-y} & is how many maps grids tall the tile is (1) \\
+\hline
+{\em eventhandler} & points to the \hyperlink{class_student_1_1_game_event_handler}{Game\-Event\-Handler}. \\
+\hline
+{\em objectmanager} & points to the \hyperlink{class_student_1_1_object_manager}{Object\-Manager}. \\
+\hline
+{\em max\-\_\-unit} & tells how many units the tile can have as conquering or non-\/conquering. \\
+\hline
+{\em production} & is the production of the tile (nothing) \\
+\hline
+\end{DoxyParams}
+
+
+\subsection{Member Function Documentation}
+\hypertarget{class_student_1_1_river_a93fc1bbc79e0f918d8f8b2e9455709d3}{\index{Student\-::\-River@{Student\-::\-River}!add\-Unit@{add\-Unit}}
+\index{add\-Unit@{add\-Unit}!Student::River@{Student\-::\-River}}
+\subsubsection[{add\-Unit}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-River\-::add\-Unit (
+\begin{DoxyParamCaption}
+\item[{const std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Unit\-Base} $>$ \&}]{unit}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_river_a93fc1bbc79e0f918d8f8b2e9455709d3}
+
+
+Adds an unit on the tile. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Shared} & pointer to the unit to be added on the tile \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ??????????????????? 
+\end{DoxyPostcond}
+
+
+Reimplemented from \hyperlink{class_course_1_1_tile_base_a652b310be1d952f4fb103836143fb4af}{Course\-::\-Tile\-Base}.
+
+\hypertarget{class_student_1_1_river_ae5349df4c84b6ec7a6ccf0e31d968dbb}{\index{Student\-::\-River@{Student\-::\-River}!generate\-Resources@{generate\-Resources}}
+\index{generate\-Resources@{generate\-Resources}!Student::River@{Student\-::\-River}}
+\subsubsection[{generate\-Resources}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-River\-::generate\-Resources (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_river_ae5349df4c84b6ec7a6ccf0e31d968dbb}
+
+
+Gives or removes resources to the tiles owner. This depends on the building that is on the tile. 
+
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ???????????????????????? 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1_tile_base_a811c64342542fededc8e0dde4680410f}{Course\-::\-Tile\-Base}.
+
+\hypertarget{class_student_1_1_river_a344d4b10bcccb02a45bc9db8e81d5547}{\index{Student\-::\-River@{Student\-::\-River}!get\-Buildable\-Buildings@{get\-Buildable\-Buildings}}
+\index{get\-Buildable\-Buildings@{get\-Buildable\-Buildings}!Student::River@{Student\-::\-River}}
+\subsubsection[{get\-Buildable\-Buildings}]{\setlength{\rightskip}{0pt plus 5cm}std\-::vector$<$ std\-::string $>$ Student\-::\-River\-::get\-Buildable\-Buildings (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_river_a344d4b10bcccb02a45bc9db8e81d5547}
+
+
+Returns the building types that can be built on the tile. In this case the only buildings are \char`\"{}\-Bridge\char`\"{} and \char`\"{}\-Hydroelectric Power Plant\char`\"{}. If the tile is a river corner piece there are no buildings that can be built. 
+
+\begin{DoxyReturn}{Returns}
+List of building types (as a string) in a vector. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1_tile_base_aa268376209fba52b45b4aa7c8a7baf06}{Course\-::\-Tile\-Base}.
+
+\hypertarget{class_student_1_1_river_a11312fc3638a2b69f27291f1cb8a66ed}{\index{Student\-::\-River@{Student\-::\-River}!get\-Current\-Revenue@{get\-Current\-Revenue}}
+\index{get\-Current\-Revenue@{get\-Current\-Revenue}!Student::River@{Student\-::\-River}}
+\subsubsection[{get\-Current\-Revenue}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Resource\-Map Student\-::\-River\-::get\-Current\-Revenue (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_river_a11312fc3638a2b69f27291f1cb8a66ed}
+
+
+Returns a resource map of the revenue the river tile will produce when the turn ends. 
+
+\begin{DoxyReturn}{Returns}
+Resource map of the revenue the river tile will produce when the turn ends 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ????????????????????????????? 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1_tile_base_a07b6e0ed40f3a99bc7997fbba0435bbd}{Course\-::\-Tile\-Base}.
+
+\hypertarget{class_student_1_1_river_ac4abdccfecd49596efac3bb7fda0c008}{\index{Student\-::\-River@{Student\-::\-River}!get\-Extra\-Description@{get\-Extra\-Description}}
+\index{get\-Extra\-Description@{get\-Extra\-Description}!Student::River@{Student\-::\-River}}
+\subsubsection[{get\-Extra\-Description}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Student\-::\-River\-::get\-Extra\-Description (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_river_ac4abdccfecd49596efac3bb7fda0c008}
+
+
+This function is used by the menu to get extra information about the river tile. The information is showed to the player as a text. 
+
+\begin{DoxyReturn}{Returns}
+String of the extra description the tile might have 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1_tile_base_afbf2d7533a9da7492f360b53a11d1432}{Course\-::\-Tile\-Base}.
+
+\hypertarget{class_student_1_1_river_abcf15545a01cd0ea767a7d495f17ed56}{\index{Student\-::\-River@{Student\-::\-River}!get\-River\-Orientation@{get\-River\-Orientation}}
+\index{get\-River\-Orientation@{get\-River\-Orientation}!Student::River@{Student\-::\-River}}
+\subsubsection[{get\-River\-Orientation}]{\setlength{\rightskip}{0pt plus 5cm}int Student\-::\-River\-::get\-River\-Orientation (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_river_abcf15545a01cd0ea767a7d495f17ed56}
+
+
+Returns the river orientation. One means the direction is north-\/south, two west-\/east and three that it is a curve. 
+
+\begin{DoxyReturn}{Returns}
+Integer of the river orientation 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_river_a787ccae2e51f6cf8b15daf2b8f3f133c}{\index{Student\-::\-River@{Student\-::\-River}!get\-River\-Shape@{get\-River\-Shape}}
+\index{get\-River\-Shape@{get\-River\-Shape}!Student::River@{Student\-::\-River}}
+\subsubsection[{get\-River\-Shape}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Student\-::\-River\-::get\-River\-Shape (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_river_a787ccae2e51f6cf8b15daf2b8f3f133c}
+
+
+Returns the river shape. The shapes are in compass directions for example N\-S (north-\/south) or N\-W (north-\/west) 
+
+\begin{DoxyReturn}{Returns}
+String ove the river shape. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_river_a227a22ecd8983eb71188fd5256f28068}{\index{Student\-::\-River@{Student\-::\-River}!get\-Type@{get\-Type}}
+\index{get\-Type@{get\-Type}!Student::River@{Student\-::\-River}}
+\subsubsection[{get\-Type}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Student\-::\-River\-::get\-Type (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_river_a227a22ecd8983eb71188fd5256f28068}
+
+
+Returns the tile's type in string. In this case it's \char`\"{}\-River\char`\"{}. 
+
+\begin{DoxyReturn}{Returns}
+Tile's type in string. In this case it's \char`\"{}\-River\char`\"{} 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+Reimplemented from \hyperlink{class_course_1_1_tile_base_af1a8aaa3407ad3ade7ffe8f2fb421288}{Course\-::\-Tile\-Base}.
+
+\hypertarget{class_student_1_1_river_ab9e66f6bb2745b6c39cf4a72fcf50853}{\index{Student\-::\-River@{Student\-::\-River}!set\-River\-Orientation@{set\-River\-Orientation}}
+\index{set\-River\-Orientation@{set\-River\-Orientation}!Student::River@{Student\-::\-River}}
+\subsubsection[{set\-River\-Orientation}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-River\-::set\-River\-Orientation (
+\begin{DoxyParamCaption}
+\item[{int}]{ori}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_river_ab9e66f6bb2745b6c39cf4a72fcf50853}
+
+
+Sets the river orientation. One means the direction is north-\/south, two west-\/east and three that it is a curve. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Integer} & of the river orientation \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ????????????????????????????? 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_river_a18182b30e591b43265053ab57a49f9af}{\index{Student\-::\-River@{Student\-::\-River}!set\-River\-Shape@{set\-River\-Shape}}
+\index{set\-River\-Shape@{set\-River\-Shape}!Student::River@{Student\-::\-River}}
+\subsubsection[{set\-River\-Shape}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-River\-::set\-River\-Shape (
+\begin{DoxyParamCaption}
+\item[{std\-::string}]{shape}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_river_a18182b30e591b43265053ab57a49f9af}
+
+
+Sets the river shape. The shapes are in compass directions for example N\-S (north-\/south) or N\-W (north-\/west) 
+
+
+\begin{DoxyParams}{Parameters}
+{\em String} & ove the river shape. \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_river_af2cbaa57c5a4895b7c695219255a486c}{\index{Student\-::\-River@{Student\-::\-River}!update\-Animation@{update\-Animation}}
+\index{update\-Animation@{update\-Animation}!Student::River@{Student\-::\-River}}
+\subsubsection[{update\-Animation}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-River\-::update\-Animation (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_river_af2cbaa57c5a4895b7c695219255a486c}
+
+
+Updates hydroelectric power plant animation. The animation is on only when the power plant is operating. 
+
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ????????????????????????????? 
+\end{DoxyPostcond}
+
+
+Reimplemented from \hyperlink{class_course_1_1_tile_base_a3889af6b1fc5f16656f46f030aed34d9}{Course\-::\-Tile\-Base}.
+
+\hypertarget{class_student_1_1_river_aaf133bf15078e138b4b716a45fa67007}{\index{Student\-::\-River@{Student\-::\-River}!update\-Unit\-Coordinates@{update\-Unit\-Coordinates}}
+\index{update\-Unit\-Coordinates@{update\-Unit\-Coordinates}!Student::River@{Student\-::\-River}}
+\subsubsection[{update\-Unit\-Coordinates}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-River\-::update\-Unit\-Coordinates (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_river_aaf133bf15078e138b4b716a45fa67007}
+
+
+Updates the tile relative coordinates of the units. The tile has a 3x2 grid where the units can be placed. The function also checks if the unit is in the water. If so, a unit with a life belt is drawn. 
+
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ??????????????????? 
+\end{DoxyPostcond}
+
+
+Reimplemented from \hyperlink{class_course_1_1_tile_base_a161cb46028a65ca20ece683314a8fa46}{Course\-::\-Tile\-Base}.
+
+
+
+The documentation for this class was generated from the following files\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Tiles/river.\-h\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Tiles/river.\-cpp\end{DoxyCompactItemize}

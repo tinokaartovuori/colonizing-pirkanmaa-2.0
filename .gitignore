@@ -1,0 +1,17 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+.vite/
+.playwright-mcp/
+
+# Rust trainer build artifacts (target, target-mcts, any target*)
+rust-trainer/target*
+
+# NOTE: training checkpoints (rust-trainer/checkpoints-*/) and cnn-backups/ ARE
+# committed intentionally (~32MB total) so the full training history + trained nets
+# travel to other devices. Only the regenerable build target/ is excluded here.
+
+# Model weights blobs are large; the registry + manifests (metadata) ARE tracked.
+# Uncomment to stop tracking the weight blobs themselves:
+# models/**/weights.json

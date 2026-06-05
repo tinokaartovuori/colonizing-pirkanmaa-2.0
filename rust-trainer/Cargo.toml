@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/cp-sim",
+    "crates/cp-ai",
+    "crates/cp-train",
+]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "MIT"
+
+# Profile tuned for the fast headless neuroevolution training loop.
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"

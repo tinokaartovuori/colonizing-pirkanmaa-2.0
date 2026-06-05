@@ -1,0 +1,475 @@
+\hypertarget{class_course_1_1_coordinate}{\section{Course\-:\-:Coordinate Class Reference}
+\label{class_course_1_1_coordinate}\index{Course\-::\-Coordinate@{Course\-::\-Coordinate}}
+}
+
+
+Collaboration diagram for Course\-:\-:Coordinate\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[width=190pt]{class_course_1_1_coordinate__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hyperlink{class_course_1_1_coordinate_af56be76acaf9917f2d1f35cf4ccfbc93}{Coordinate} (int \hyperlink{class_course_1_1_coordinate_a9f680313ef06841f93bd2529dec3ca6b}{x}, int \hyperlink{class_course_1_1_coordinate_aa5bbd123925fc7af30d61b4f11a249d1}{y})
+\begin{DoxyCompactList}\small\item\em Constructor for x, y coordinates. \end{DoxyCompactList}\item 
+\hyperlink{class_course_1_1_coordinate_a18c82259eeef1cb5b3cd6e90d74ba400}{Coordinate} (const \hyperlink{class_course_1_1_coordinate}{Coordinate} \&original)
+\begin{DoxyCompactList}\small\item\em Copy-\/constructor. \end{DoxyCompactList}\item 
+\hyperlink{class_course_1_1_coordinate_a3215c67e9fd4af40dd7682f45103777c}{$\sim$\-Coordinate} ()=default
+\begin{DoxyCompactList}\small\item\em Default destructor. \end{DoxyCompactList}\item 
+int \hyperlink{class_course_1_1_coordinate_a9f680313ef06841f93bd2529dec3ca6b}{x} () const 
+\begin{DoxyCompactList}\small\item\em x Return's the x-\/value \end{DoxyCompactList}\item 
+int \hyperlink{class_course_1_1_coordinate_aa5bbd123925fc7af30d61b4f11a249d1}{y} () const 
+\begin{DoxyCompactList}\small\item\em y Return's the y-\/value \end{DoxyCompactList}\item 
+void \hyperlink{class_course_1_1_coordinate_a077dc894b96ff793ede666ca3b4c6dc2}{set\-\_\-x} (int \hyperlink{class_course_1_1_coordinate_a9f680313ef06841f93bd2529dec3ca6b}{x})
+\begin{DoxyCompactList}\small\item\em set\-\_\-x Sets the x-\/value \end{DoxyCompactList}\item 
+void \hyperlink{class_course_1_1_coordinate_a0308c942bb50d59a216877be0be2599b}{set\-\_\-y} (int \hyperlink{class_course_1_1_coordinate_aa5bbd123925fc7af30d61b4f11a249d1}{y})
+\begin{DoxyCompactList}\small\item\em set\-\_\-y Sets the y-\/value \end{DoxyCompactList}\item 
+\hyperlink{class_course_1_1_coordinate}{Coordinate} \hyperlink{class_course_1_1_coordinate_acb85bffdc4849e12e955072c3d52b9f8}{neighbour\-\_\-at} (Direction direction, int steps=1) const 
+\begin{DoxyCompactList}\small\item\em neighbour\-\_\-at Returns a new \hyperlink{class_course_1_1_coordinate}{Coordinate} object instead of changing the current one \end{DoxyCompactList}\item 
+std\-::vector$<$ \hyperlink{class_course_1_1_coordinate}{Coordinate} $>$ \hyperlink{class_course_1_1_coordinate_ae1e8f50877d1fd6b74cb4645c38c45f9}{neighbours} (const int radius, const int width, const int height) const 
+\begin{DoxyCompactList}\small\item\em neighbours Returns a \hyperlink{class_course_1_1_coordinate}{Coordinate} for each direction. The created vector has the Coordinates in order of the default direction values \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1_coordinate_a3438cd3d4c6e738e12d846d66c024877}{std\-::vector$<$ \hyperlink{class_course_1_1_coordinate}{Coordinate} $>$ {\bfseries neighbouring\-Four} (const int width, const int height) const }\label{class_course_1_1_coordinate_a3438cd3d4c6e738e12d846d66c024877}
+
+\item 
+\hypertarget{class_course_1_1_coordinate_a1410e6c2cf8e3d2696385cdd1c5ae987}{std\-::map$<$ std\-::string, \hyperlink{class_course_1_1_coordinate}{Coordinate} $>$ {\bfseries neighbouring\-Four\-Map} (const int width, const int height) const }\label{class_course_1_1_coordinate_a1410e6c2cf8e3d2696385cdd1c5ae987}
+
+\item 
+\hyperlink{class_course_1_1_coordinate}{Coordinate} \hyperlink{class_course_1_1_coordinate_a7edcfb76ac047152ab2e241833b3109b}{operator+} (const \hyperlink{class_course_1_1_coordinate}{Coordinate} \&other) const 
+\begin{DoxyCompactList}\small\item\em operator + Sums two coordinates' x and y values together and returns a new \hyperlink{class_course_1_1_coordinate}{Coordinate} with the summed values. \end{DoxyCompactList}\item 
+\hyperlink{class_course_1_1_coordinate}{Coordinate} \& \hyperlink{class_course_1_1_coordinate_aa9191a6d4f7093572be0a82764ef972f}{operator+=} (const \hyperlink{class_course_1_1_coordinate}{Coordinate} \&other)
+\begin{DoxyCompactList}\small\item\em operator += Adds other coordinate's x and y values to this. \end{DoxyCompactList}\item 
+\hyperlink{class_course_1_1_coordinate}{Coordinate} \hyperlink{class_course_1_1_coordinate_af88f0780b55f3496322bdde1646d2e7f}{operator-\/} (const \hyperlink{class_course_1_1_coordinate}{Coordinate} \&other) const 
+\begin{DoxyCompactList}\small\item\em operator -\/ Substracts right side coordinate's x and y values from this x and y values. Returns a new \hyperlink{class_course_1_1_coordinate}{Coordinate} with new x and y values \end{DoxyCompactList}\item 
+\hyperlink{class_course_1_1_coordinate}{Coordinate} \& \hyperlink{class_course_1_1_coordinate_ab22b7e48298bdf3c493bdf33f750fc37}{operator-\/=} (const \hyperlink{class_course_1_1_coordinate}{Coordinate} \&other)
+\begin{DoxyCompactList}\small\item\em operator -\/= Substracts other coordinate's x and y values from this \end{DoxyCompactList}\item 
+\hyperlink{class_course_1_1_coordinate}{Coordinate} \& \hyperlink{class_course_1_1_coordinate_a3d564384a0b5e9cf588bddb0f49f22fa}{operator=} (const \hyperlink{class_course_1_1_coordinate}{Coordinate} \&other)
+\begin{DoxyCompactList}\small\item\em operator = Assigns other \hyperlink{class_course_1_1_coordinate}{Coordinate}'s x and y values to this. \end{DoxyCompactList}\item 
+bool \hyperlink{class_course_1_1_coordinate_a55e7cb333955be550dae69e7e32f5f47}{operator==} (const \hyperlink{class_course_1_1_coordinate}{Coordinate} \&other) const 
+\begin{DoxyCompactList}\small\item\em operator == Checks if a coordinate has same x and y values as this \end{DoxyCompactList}\item 
+bool \hyperlink{class_course_1_1_coordinate_aa7574af9c5a7ba98dfda04aebcdd9e40}{operator!=} (const \hyperlink{class_course_1_1_coordinate}{Coordinate} \&other) const 
+\begin{DoxyCompactList}\small\item\em operator == Checks if a coordinate doesnt' have same x and y values as this \end{DoxyCompactList}\item 
+bool \hyperlink{class_course_1_1_coordinate_a2db7e3cfaae46d2e963bf865911c5437}{operator$<$} (const \hyperlink{class_course_1_1_coordinate}{Coordinate} \&other) const 
+\begin{DoxyCompactList}\small\item\em operator $<$ Checks if this has lower value than other. Decision is based on x-\/value. If the x-\/values are equal, decision is based on y-\/value \end{DoxyCompactList}\item 
+bool \hyperlink{class_course_1_1_coordinate_a47cdf0172e4e421857da399624a60c93}{operator$>$} (const \hyperlink{class_course_1_1_coordinate}{Coordinate} \&other) const 
+\begin{DoxyCompactList}\small\item\em operator $<$ Checks if this has higher value than other. Decision is based on x-\/value. If the x-\/values are equal, decision is based on y-\/value \end{DoxyCompactList}\item 
+bool \hyperlink{class_course_1_1_coordinate_ae0d5b38c5e3f645576483db7f93a5e27}{operator$<$=} (const \hyperlink{class_course_1_1_coordinate}{Coordinate} \&other) const 
+\begin{DoxyCompactList}\small\item\em operator $<$= logical-\/\-O\-R with == and $<$ operators \end{DoxyCompactList}\item 
+bool \hyperlink{class_course_1_1_coordinate_abdb1bf21cc8cb30784c88311d9034780}{operator$>$=} (const \hyperlink{class_course_1_1_coordinate}{Coordinate} \&other) const 
+\begin{DoxyCompactList}\small\item\em operator $<$= logical-\/\-O\-R with == and $>$ operators \end{DoxyCompactList}\end{DoxyCompactItemize}
+
+
+\subsection{Constructor \& Destructor Documentation}
+\hypertarget{class_course_1_1_coordinate_af56be76acaf9917f2d1f35cf4ccfbc93}{\index{Course\-::\-Coordinate@{Course\-::\-Coordinate}!Coordinate@{Coordinate}}
+\index{Coordinate@{Coordinate}!Course::Coordinate@{Course\-::\-Coordinate}}
+\subsubsection[{Coordinate}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Coordinate\-::\-Coordinate (
+\begin{DoxyParamCaption}
+\item[{int}]{x, }
+\item[{int}]{y}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_coordinate_af56be76acaf9917f2d1f35cf4ccfbc93}
+
+
+Constructor for x, y coordinates. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em x} & X-\/coordinate \\
+\hline
+{\em y} & Y-\/coordinate \\
+\hline
+\end{DoxyParams}
+\hypertarget{class_course_1_1_coordinate_a18c82259eeef1cb5b3cd6e90d74ba400}{\index{Course\-::\-Coordinate@{Course\-::\-Coordinate}!Coordinate@{Coordinate}}
+\index{Coordinate@{Coordinate}!Course::Coordinate@{Course\-::\-Coordinate}}
+\subsubsection[{Coordinate}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Coordinate\-::\-Coordinate (
+\begin{DoxyParamCaption}
+\item[{const {\bf Coordinate} \&}]{original}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_coordinate_a18c82259eeef1cb5b3cd6e90d74ba400}
+
+
+Copy-\/constructor. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em original} & Reference to a \hyperlink{class_course_1_1_coordinate}{Coordinate} that is being copied \\
+\hline
+\end{DoxyParams}
+\hypertarget{class_course_1_1_coordinate_a3215c67e9fd4af40dd7682f45103777c}{\index{Course\-::\-Coordinate@{Course\-::\-Coordinate}!$\sim$\-Coordinate@{$\sim$\-Coordinate}}
+\index{$\sim$\-Coordinate@{$\sim$\-Coordinate}!Course::Coordinate@{Course\-::\-Coordinate}}
+\subsubsection[{$\sim$\-Coordinate}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Coordinate\-::$\sim$\-Coordinate (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [default]}}}\label{class_course_1_1_coordinate_a3215c67e9fd4af40dd7682f45103777c}
+
+
+Default destructor. 
+
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: Strong 
+\end{DoxyPostcond}
+
+
+\subsection{Member Function Documentation}
+\hypertarget{class_course_1_1_coordinate_acb85bffdc4849e12e955072c3d52b9f8}{\index{Course\-::\-Coordinate@{Course\-::\-Coordinate}!neighbour\-\_\-at@{neighbour\-\_\-at}}
+\index{neighbour\-\_\-at@{neighbour\-\_\-at}!Course::Coordinate@{Course\-::\-Coordinate}}
+\subsubsection[{neighbour\-\_\-at}]{\setlength{\rightskip}{0pt plus 5cm}{\bf Coordinate} Course\-::\-Coordinate\-::neighbour\-\_\-at (
+\begin{DoxyParamCaption}
+\item[{Direction}]{direction, }
+\item[{int}]{steps = {\ttfamily 1}}
+\end{DoxyParamCaption}
+) const}}\label{class_course_1_1_coordinate_acb85bffdc4849e12e955072c3d52b9f8}
+
+
+neighbour\-\_\-at Returns a new \hyperlink{class_course_1_1_coordinate}{Coordinate} object instead of changing the current one 
+
+
+\begin{DoxyParams}{Parameters}
+{\em direction} & Direction in x,y -\/coordinate system \\
+\hline
+{\em steps} & How many increments of the values are done. \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+\hyperlink{class_course_1_1_coordinate}{Coordinate} object that was created 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_coordinate_ae1e8f50877d1fd6b74cb4645c38c45f9}{\index{Course\-::\-Coordinate@{Course\-::\-Coordinate}!neighbours@{neighbours}}
+\index{neighbours@{neighbours}!Course::Coordinate@{Course\-::\-Coordinate}}
+\subsubsection[{neighbours}]{\setlength{\rightskip}{0pt plus 5cm}std\-::vector$<$ {\bf Coordinate} $>$ Course\-::\-Coordinate\-::neighbours (
+\begin{DoxyParamCaption}
+\item[{const int}]{radius, }
+\item[{const int}]{width, }
+\item[{const int}]{height}
+\end{DoxyParamCaption}
+) const}}\label{class_course_1_1_coordinate_ae1e8f50877d1fd6b74cb4645c38c45f9}
+
+
+neighbours Returns a \hyperlink{class_course_1_1_coordinate}{Coordinate} for each direction. The created vector has the Coordinates in order of the default direction values 
+
+\begin{DoxyReturn}{Returns}
+vector of Coordinates in the order of directions. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: Strong 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_coordinate_aa7574af9c5a7ba98dfda04aebcdd9e40}{\index{Course\-::\-Coordinate@{Course\-::\-Coordinate}!operator!=@{operator!=}}
+\index{operator!=@{operator!=}!Course::Coordinate@{Course\-::\-Coordinate}}
+\subsubsection[{operator!=}]{\setlength{\rightskip}{0pt plus 5cm}bool Course\-::\-Coordinate\-::operator!= (
+\begin{DoxyParamCaption}
+\item[{const {\bf Coordinate} \&}]{other}
+\end{DoxyParamCaption}
+) const}}\label{class_course_1_1_coordinate_aa7574af9c5a7ba98dfda04aebcdd9e40}
+
+
+operator == Checks if a coordinate doesnt' have same x and y values as this 
+
+
+\begin{DoxyParams}{Parameters}
+{\em other} & The other \hyperlink{class_course_1_1_coordinate}{Coordinate} \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+True -\/ if the coordinates don't have same values. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_coordinate_a7edcfb76ac047152ab2e241833b3109b}{\index{Course\-::\-Coordinate@{Course\-::\-Coordinate}!operator+@{operator+}}
+\index{operator+@{operator+}!Course::Coordinate@{Course\-::\-Coordinate}}
+\subsubsection[{operator+}]{\setlength{\rightskip}{0pt plus 5cm}{\bf Coordinate} Course\-::\-Coordinate\-::operator+ (
+\begin{DoxyParamCaption}
+\item[{const {\bf Coordinate} \&}]{other}
+\end{DoxyParamCaption}
+) const}}\label{class_course_1_1_coordinate_a7edcfb76ac047152ab2e241833b3109b}
+
+
+operator + Sums two coordinates' x and y values together and returns a new \hyperlink{class_course_1_1_coordinate}{Coordinate} with the summed values. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em other} & The other \hyperlink{class_course_1_1_coordinate}{Coordinate} \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+\hyperlink{class_course_1_1_coordinate}{Coordinate} with x = x(this) + x(other) and y = y(this) + y(other) 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_coordinate_aa9191a6d4f7093572be0a82764ef972f}{\index{Course\-::\-Coordinate@{Course\-::\-Coordinate}!operator+=@{operator+=}}
+\index{operator+=@{operator+=}!Course::Coordinate@{Course\-::\-Coordinate}}
+\subsubsection[{operator+=}]{\setlength{\rightskip}{0pt plus 5cm}{\bf Coordinate} \& Course\-::\-Coordinate\-::operator+= (
+\begin{DoxyParamCaption}
+\item[{const {\bf Coordinate} \&}]{other}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_coordinate_aa9191a6d4f7093572be0a82764ef972f}
+
+
+operator += Adds other coordinate's x and y values to this. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em other} & The other coordinate \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+Reference to self. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_coordinate_af88f0780b55f3496322bdde1646d2e7f}{\index{Course\-::\-Coordinate@{Course\-::\-Coordinate}!operator-\/@{operator-\/}}
+\index{operator-\/@{operator-\/}!Course::Coordinate@{Course\-::\-Coordinate}}
+\subsubsection[{operator-\/}]{\setlength{\rightskip}{0pt plus 5cm}{\bf Coordinate} Course\-::\-Coordinate\-::operator-\/ (
+\begin{DoxyParamCaption}
+\item[{const {\bf Coordinate} \&}]{other}
+\end{DoxyParamCaption}
+) const}}\label{class_course_1_1_coordinate_af88f0780b55f3496322bdde1646d2e7f}
+
+
+operator -\/ Substracts right side coordinate's x and y values from this x and y values. Returns a new \hyperlink{class_course_1_1_coordinate}{Coordinate} with new x and y values 
+
+
+\begin{DoxyParams}{Parameters}
+{\em other} & The other coordinate \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+\hyperlink{class_course_1_1_coordinate}{Coordinate} with x = x(this) -\/ x(other) and y = y(this) -\/ y(other) 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_coordinate_ab22b7e48298bdf3c493bdf33f750fc37}{\index{Course\-::\-Coordinate@{Course\-::\-Coordinate}!operator-\/=@{operator-\/=}}
+\index{operator-\/=@{operator-\/=}!Course::Coordinate@{Course\-::\-Coordinate}}
+\subsubsection[{operator-\/=}]{\setlength{\rightskip}{0pt plus 5cm}{\bf Coordinate} \& Course\-::\-Coordinate\-::operator-\/= (
+\begin{DoxyParamCaption}
+\item[{const {\bf Coordinate} \&}]{other}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_coordinate_ab22b7e48298bdf3c493bdf33f750fc37}
+
+
+operator -\/= Substracts other coordinate's x and y values from this 
+
+
+\begin{DoxyParams}{Parameters}
+{\em other} & The other coordinate \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+Reference to self. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_coordinate_a2db7e3cfaae46d2e963bf865911c5437}{\index{Course\-::\-Coordinate@{Course\-::\-Coordinate}!operator$<$@{operator$<$}}
+\index{operator$<$@{operator$<$}!Course::Coordinate@{Course\-::\-Coordinate}}
+\subsubsection[{operator$<$}]{\setlength{\rightskip}{0pt plus 5cm}bool Course\-::\-Coordinate\-::operator$<$ (
+\begin{DoxyParamCaption}
+\item[{const {\bf Coordinate} \&}]{other}
+\end{DoxyParamCaption}
+) const}}\label{class_course_1_1_coordinate_a2db7e3cfaae46d2e963bf865911c5437}
+
+
+operator $<$ Checks if this has lower value than other. Decision is based on x-\/value. If the x-\/values are equal, decision is based on y-\/value 
+
+
+\begin{DoxyParams}{Parameters}
+{\em other} & The other \hyperlink{class_course_1_1_coordinate}{Coordinate} \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+True -\/ (x(this) $<$ x(other)) or (x(this) == x(other) + y(this) $<$ y(other)) 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_coordinate_ae0d5b38c5e3f645576483db7f93a5e27}{\index{Course\-::\-Coordinate@{Course\-::\-Coordinate}!operator$<$=@{operator$<$=}}
+\index{operator$<$=@{operator$<$=}!Course::Coordinate@{Course\-::\-Coordinate}}
+\subsubsection[{operator$<$=}]{\setlength{\rightskip}{0pt plus 5cm}bool Course\-::\-Coordinate\-::operator$<$= (
+\begin{DoxyParamCaption}
+\item[{const {\bf Coordinate} \&}]{other}
+\end{DoxyParamCaption}
+) const}}\label{class_course_1_1_coordinate_ae0d5b38c5e3f645576483db7f93a5e27}
+
+
+operator $<$= logical-\/\-O\-R with == and $<$ operators 
+
+
+\begin{DoxyParams}{Parameters}
+{\em other} & The other \hyperlink{class_course_1_1_coordinate}{Coordinate} \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_coordinate_a3d564384a0b5e9cf588bddb0f49f22fa}{\index{Course\-::\-Coordinate@{Course\-::\-Coordinate}!operator=@{operator=}}
+\index{operator=@{operator=}!Course::Coordinate@{Course\-::\-Coordinate}}
+\subsubsection[{operator=}]{\setlength{\rightskip}{0pt plus 5cm}{\bf Coordinate} \& Course\-::\-Coordinate\-::operator= (
+\begin{DoxyParamCaption}
+\item[{const {\bf Coordinate} \&}]{other}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_coordinate_a3d564384a0b5e9cf588bddb0f49f22fa}
+
+
+operator = Assigns other \hyperlink{class_course_1_1_coordinate}{Coordinate}'s x and y values to this. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em other} & The other \hyperlink{class_course_1_1_coordinate}{Coordinate} \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+Reference to self. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_coordinate_a55e7cb333955be550dae69e7e32f5f47}{\index{Course\-::\-Coordinate@{Course\-::\-Coordinate}!operator==@{operator==}}
+\index{operator==@{operator==}!Course::Coordinate@{Course\-::\-Coordinate}}
+\subsubsection[{operator==}]{\setlength{\rightskip}{0pt plus 5cm}bool Course\-::\-Coordinate\-::operator== (
+\begin{DoxyParamCaption}
+\item[{const {\bf Coordinate} \&}]{other}
+\end{DoxyParamCaption}
+) const}}\label{class_course_1_1_coordinate_a55e7cb333955be550dae69e7e32f5f47}
+
+
+operator == Checks if a coordinate has same x and y values as this 
+
+
+\begin{DoxyParams}{Parameters}
+{\em other} & The other \hyperlink{class_course_1_1_coordinate}{Coordinate} \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+True -\/ if the coordinates have same values. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_coordinate_a47cdf0172e4e421857da399624a60c93}{\index{Course\-::\-Coordinate@{Course\-::\-Coordinate}!operator$>$@{operator$>$}}
+\index{operator$>$@{operator$>$}!Course::Coordinate@{Course\-::\-Coordinate}}
+\subsubsection[{operator$>$}]{\setlength{\rightskip}{0pt plus 5cm}bool Course\-::\-Coordinate\-::operator$>$ (
+\begin{DoxyParamCaption}
+\item[{const {\bf Coordinate} \&}]{other}
+\end{DoxyParamCaption}
+) const}}\label{class_course_1_1_coordinate_a47cdf0172e4e421857da399624a60c93}
+
+
+operator $<$ Checks if this has higher value than other. Decision is based on x-\/value. If the x-\/values are equal, decision is based on y-\/value 
+
+
+\begin{DoxyParams}{Parameters}
+{\em other} & The other \hyperlink{class_course_1_1_coordinate}{Coordinate} \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+True -\/ (x(this) $>$ x(other)) or (x(this) == x(other) + y(this) $>$ y(other)) 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_coordinate_abdb1bf21cc8cb30784c88311d9034780}{\index{Course\-::\-Coordinate@{Course\-::\-Coordinate}!operator$>$=@{operator$>$=}}
+\index{operator$>$=@{operator$>$=}!Course::Coordinate@{Course\-::\-Coordinate}}
+\subsubsection[{operator$>$=}]{\setlength{\rightskip}{0pt plus 5cm}bool Course\-::\-Coordinate\-::operator$>$= (
+\begin{DoxyParamCaption}
+\item[{const {\bf Coordinate} \&}]{other}
+\end{DoxyParamCaption}
+) const}}\label{class_course_1_1_coordinate_abdb1bf21cc8cb30784c88311d9034780}
+
+
+operator $<$= logical-\/\-O\-R with == and $>$ operators 
+
+
+\begin{DoxyParams}{Parameters}
+{\em other} & The other \hyperlink{class_course_1_1_coordinate}{Coordinate} \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_coordinate_a077dc894b96ff793ede666ca3b4c6dc2}{\index{Course\-::\-Coordinate@{Course\-::\-Coordinate}!set\-\_\-x@{set\-\_\-x}}
+\index{set\-\_\-x@{set\-\_\-x}!Course::Coordinate@{Course\-::\-Coordinate}}
+\subsubsection[{set\-\_\-x}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Coordinate\-::set\-\_\-x (
+\begin{DoxyParamCaption}
+\item[{int}]{x}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_coordinate_a077dc894b96ff793ede666ca3b4c6dc2}
+
+
+set\-\_\-x Sets the x-\/value 
+
+
+\begin{DoxyParams}{Parameters}
+{\em x} & New x-\/value \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_coordinate_a0308c942bb50d59a216877be0be2599b}{\index{Course\-::\-Coordinate@{Course\-::\-Coordinate}!set\-\_\-y@{set\-\_\-y}}
+\index{set\-\_\-y@{set\-\_\-y}!Course::Coordinate@{Course\-::\-Coordinate}}
+\subsubsection[{set\-\_\-y}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Coordinate\-::set\-\_\-y (
+\begin{DoxyParamCaption}
+\item[{int}]{y}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_coordinate_a0308c942bb50d59a216877be0be2599b}
+
+
+set\-\_\-y Sets the y-\/value 
+
+
+\begin{DoxyParams}{Parameters}
+{\em y} & New y-\/value \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_coordinate_a9f680313ef06841f93bd2529dec3ca6b}{\index{Course\-::\-Coordinate@{Course\-::\-Coordinate}!x@{x}}
+\index{x@{x}!Course::Coordinate@{Course\-::\-Coordinate}}
+\subsubsection[{x}]{\setlength{\rightskip}{0pt plus 5cm}int Course\-::\-Coordinate\-::x (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const}}\label{class_course_1_1_coordinate_a9f680313ef06841f93bd2529dec3ca6b}
+
+
+x Return's the x-\/value 
+
+\begin{DoxyReturn}{Returns}
+x-\/coordinate 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_coordinate_aa5bbd123925fc7af30d61b4f11a249d1}{\index{Course\-::\-Coordinate@{Course\-::\-Coordinate}!y@{y}}
+\index{y@{y}!Course::Coordinate@{Course\-::\-Coordinate}}
+\subsubsection[{y}]{\setlength{\rightskip}{0pt plus 5cm}int Course\-::\-Coordinate\-::y (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const}}\label{class_course_1_1_coordinate_aa5bbd123925fc7af30d61b4f11a249d1}
+
+
+y Return's the y-\/value 
+
+\begin{DoxyReturn}{Returns}
+y-\/coordinate 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+The documentation for this class was generated from the following files\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Core/coordinate.\-h\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Core/coordinate.\-cpp\end{DoxyCompactItemize}

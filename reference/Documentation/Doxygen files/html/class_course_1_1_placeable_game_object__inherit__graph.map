@@ -1,0 +1,18 @@
+<map id="Course::PlaceableGameObject" name="Course::PlaceableGameObject">
+<area shape="rect" id="node5" href="$class_course_1_1_building_base.html" title="The BuildingBase class is a base&#45;class for different buildings in the game. " alt="" coords="817,809,996,1047"/>
+<area shape="rect" id="node15" href="$class_course_1_1_unit_base.html" title="The UnitBase class is aa base&#45;class for Unit&#45;objects. " alt="" coords="1711,816,1883,1040"/>
+<area shape="rect" id="node2" href="$class_course_1_1_game_object.html" title="The GameObject class is base&#45;class that contain&#39;s general information on different Objects in game..." alt="" coords="1276,336,1441,531"/>
+<area shape="rect" id="node3" href="$class_course_1_1_base_object.html" title="The BaseObject class is base&#45;class that contain&#39;s general information on different Objects in game..." alt="" coords="1167,5,1339,288"/>
+<area shape="rect" id="node6" href="$class_course_1_1_farm.html" title="The Farm class represents a farm building in the game. " alt="" coords="5,1096,160,1261"/>
+<area shape="rect" id="node7" href="$class_course_1_1_head_quarters.html" title="The HeadQuarters class represents player&#39;s headquarters in the game. " alt="" coords="184,1096,360,1261"/>
+<area shape="rect" id="node8" href="$class_course_1_1_outpost.html" title="The Outpost class represents an outpost in the game. " alt="" coords="384,1111,560,1247"/>
+<area shape="rect" id="node9" href="$class_student_1_1_bridge.html" title="The Bridge class represents a bridge in the game. " alt="" coords="584,1118,707,1239"/>
+<area shape="rect" id="node10" href="$class_student_1_1_hydro_power.html" title="The HydroPower class represents a hydroelectric power plant in the game. " alt="" coords="731,1118,889,1239"/>
+<area shape="rect" id="node11" href="$class_student_1_1_mikontalo.html" title="The Mikontalo class represents a Mikontalo in the game. " alt="" coords="915,1111,1091,1247"/>
+<area shape="rect" id="node12" href="$class_student_1_1_mine.html" title="The Mine class represents a mine in the game. " alt="" coords="1115,1118,1225,1239"/>
+<area shape="rect" id="node13" href="$class_student_1_1_nuclear_plant.html" title="The NuclearPlant class represents a nuclear power plant in the game. " alt="" coords="1251,1118,1413,1239"/>
+<area shape="rect" id="node14" href="$class_student_1_1_village.html" title="The Village class represents a village in the game. " alt="" coords="1437,1111,1613,1247"/>
+<area shape="rect" id="node16" href="$class_course_1_1_basic_worker.html" title="The BasicWorker class represents a &quot;BasicWorker&quot; in the game. " alt="" coords="1638,1096,1793,1261"/>
+<area shape="rect" id="node17" href="$class_student_1_1_expert.html" title="The Expert class represents an expert in the game. " alt="" coords="1819,1096,1941,1261"/>
+<area shape="rect" id="node18" href="$class_student_1_1_soldier.html" title="The Soldier class represents a soldier in the game. " alt="" coords="1965,1096,2091,1261"/>
+</map>

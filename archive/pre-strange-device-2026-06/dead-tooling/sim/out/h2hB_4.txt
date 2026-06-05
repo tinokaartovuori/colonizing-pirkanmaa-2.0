@@ -1,0 +1,14 @@
+mode=h2h games/config=150 players=4 map=16x16 roundCap=120
+champion override: {"assaultsPerTurn":8,"maxOutposts":5,"strikeForce":12,"maxActions":32,"garrison":3}
+
+=== 4 players (challenger=seat0)  (n=150) ===
+  decisive:   63.3%  (domination 14.7%, last-standing 48.7%)
+  tie:        0.0%   timeout: 36.7%   crashed: 0
+  bankruptcy: 0.0% of games had >=1 player go negative
+  rounds:     mean 96.9  (decisive games mean 83.6)
+  wins/seat:  [45.3%, 17.9%, 23.2%, 13.7%]
+  winner econ: tiles 108.0, cap 20.4, soldiers 3.1
+  >> challenger wins: 28.7% of ALL games (fair share = 25.0%);
+     among decisive games: 45.3%;  challenger bankrupt in 0 games
+
+elapsed 597.645s

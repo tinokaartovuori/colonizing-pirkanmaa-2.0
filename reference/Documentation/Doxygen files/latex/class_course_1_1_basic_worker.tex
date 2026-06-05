@@ -1,0 +1,185 @@
+\hypertarget{class_course_1_1_basic_worker}{\section{Course\-:\-:Basic\-Worker Class Reference}
+\label{class_course_1_1_basic_worker}\index{Course\-::\-Basic\-Worker@{Course\-::\-Basic\-Worker}}
+}
+
+
+The \hyperlink{class_course_1_1_basic_worker}{Basic\-Worker} class represents a \char`\"{}\-Basic\-Worker\char`\"{} in the game.  
+
+
+
+
+{\ttfamily \#include $<$basicworker.\-h$>$}
+
+
+
+Inheritance diagram for Course\-:\-:Basic\-Worker\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_course_1_1_basic_worker__inherit__graph}
+\end{center}
+\end{figure}
+
+
+Collaboration diagram for Course\-:\-:Basic\-Worker\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=550pt]{class_course_1_1_basic_worker__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_course_1_1_basic_worker_a066d86fca7e3f10e9ff2bd9f0a2167ff}{\hyperlink{class_course_1_1_basic_worker_a066d86fca7e3f10e9ff2bd9f0a2167ff}{Basic\-Worker} ()=delete}\label{class_course_1_1_basic_worker_a066d86fca7e3f10e9ff2bd9f0a2167ff}
+
+\begin{DoxyCompactList}\small\item\em Disabled parameterless constructor. \end{DoxyCompactList}\item 
+\hyperlink{class_course_1_1_basic_worker_aec09b8ef7b8bc7a9159c5fe870b058c5}{Basic\-Worker} (const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{i\-Object\-Manager} $>$ \&objectmanager, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_student_1_1_game_settings_manager}{Student\-::\-Game\-Settings\-Manager} $>$ \&gamesettingsmanager, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Player\-Base} $>$ \&owner, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1_tile_base}{Course\-::\-Tile\-Base} $>$ \&tile)
+\begin{DoxyCompactList}\small\item\em Constructor for the class. \end{DoxyCompactList}\item 
+\hyperlink{class_course_1_1_basic_worker_a465f7c5e534a262704a24b18eb0a4bfc}{Basic\-Worker} (const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{i\-Object\-Manager} $>$ \&objectmanager, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_student_1_1_game_settings_manager}{Student\-::\-Game\-Settings\-Manager} $>$ \&gamesettingsmanager, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1_player_base}{Player\-Base} $>$ \&owner)
+\begin{DoxyCompactList}\small\item\em Constructor for the class. \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1_basic_worker_a4738d8d4a6c88054355bdd972e1b7aad}{virtual \hyperlink{class_course_1_1_basic_worker_a4738d8d4a6c88054355bdd972e1b7aad}{$\sim$\-Basic\-Worker} ()=default}\label{class_course_1_1_basic_worker_a4738d8d4a6c88054355bdd972e1b7aad}
+
+\begin{DoxyCompactList}\small\item\em Default destructor. \end{DoxyCompactList}\item 
+virtual std\-::string \hyperlink{class_course_1_1_basic_worker_a8396e00dafd128cbb86e479296d75c12}{get\-Type} () const override
+\begin{DoxyCompactList}\small\item\em Returns the unit's type in string. In this case it's \char`\"{}\-Basic\-Worker\char`\"{}. \end{DoxyCompactList}\item 
+virtual Resource\-Map \hyperlink{class_course_1_1_basic_worker_aa1659f8e78b68bb814496327f5ff2f81}{get\-Salary} () override
+\begin{DoxyCompactList}\small\item\em Returns the unit's salary. \end{DoxyCompactList}\item 
+virtual Resource\-Map \hyperlink{class_course_1_1_basic_worker_ad0f7393c8eee967e6d2ce4255bb366b0}{get\-Cost} () override
+\begin{DoxyCompactList}\small\item\em Returns the cost of the unit. \end{DoxyCompactList}\end{DoxyCompactItemize}
+\subsection*{Additional Inherited Members}
+
+
+\subsection{Detailed Description}
+The \hyperlink{class_course_1_1_basic_worker}{Basic\-Worker} class represents a \char`\"{}\-Basic\-Worker\char`\"{} in the game. 
+
+The unit can work in various buildings and is needed to get resources from the buildings. The worker also can cut down forest. Adding the unit costs money and the worker also has a salary that is payed when the round ends. The unit can conquer new areas too if the tile has no owner 
+
+\subsection{Constructor \& Destructor Documentation}
+\hypertarget{class_course_1_1_basic_worker_aec09b8ef7b8bc7a9159c5fe870b058c5}{\index{Course\-::\-Basic\-Worker@{Course\-::\-Basic\-Worker}!Basic\-Worker@{Basic\-Worker}}
+\index{Basic\-Worker@{Basic\-Worker}!Course::BasicWorker@{Course\-::\-Basic\-Worker}}
+\subsubsection[{Basic\-Worker}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Basic\-Worker\-::\-Basic\-Worker (
+\begin{DoxyParamCaption}
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Game\-Event\-Handler} $>$ \&}]{eventhandler, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Object\-Manager} $>$ \&}]{objectmanager, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Student\-::\-Game\-Settings\-Manager} $>$ \&}]{gamesettingsmanager, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Player\-Base} $>$ \&}]{owner, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Course\-::\-Tile\-Base} $>$ \&}]{tile}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_basic_worker_aec09b8ef7b8bc7a9159c5fe870b058c5}
+
+
+Constructor for the class. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em eventhandler} & points to the Game\-Event\-Handler. \\
+\hline
+{\em objectmanager} & points to the Object\-Manager. \\
+\hline
+{\em gamesettingsmanager} & points to the Game\-Settings\-Manager. \\
+\hline
+{\em owner} & is a shared pointer to the owner of the unit \\
+\hline
+{\em tile} & is a shared pointer to the tile the unit is on \\
+\hline
+\end{DoxyParams}
+\hypertarget{class_course_1_1_basic_worker_a465f7c5e534a262704a24b18eb0a4bfc}{\index{Course\-::\-Basic\-Worker@{Course\-::\-Basic\-Worker}!Basic\-Worker@{Basic\-Worker}}
+\index{Basic\-Worker@{Basic\-Worker}!Course::BasicWorker@{Course\-::\-Basic\-Worker}}
+\subsubsection[{Basic\-Worker}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Basic\-Worker\-::\-Basic\-Worker (
+\begin{DoxyParamCaption}
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Game\-Event\-Handler} $>$ \&}]{eventhandler, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Object\-Manager} $>$ \&}]{objectmanager, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Student\-::\-Game\-Settings\-Manager} $>$ \&}]{gamesettingsmanager, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf Player\-Base} $>$ \&}]{owner}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_basic_worker_a465f7c5e534a262704a24b18eb0a4bfc}
+
+
+Constructor for the class. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em eventhandler} & points to the Game\-Event\-Handler. \\
+\hline
+{\em objectmanager} & points to the Object\-Manager. \\
+\hline
+{\em gamesettingsmanager} & points to the Game\-Settings\-Manager. \\
+\hline
+{\em owner} & is a shared pointer to the owner of the unit \\
+\hline
+\end{DoxyParams}
+
+
+\subsection{Member Function Documentation}
+\hypertarget{class_course_1_1_basic_worker_ad0f7393c8eee967e6d2ce4255bb366b0}{\index{Course\-::\-Basic\-Worker@{Course\-::\-Basic\-Worker}!get\-Cost@{get\-Cost}}
+\index{get\-Cost@{get\-Cost}!Course::BasicWorker@{Course\-::\-Basic\-Worker}}
+\subsubsection[{get\-Cost}]{\setlength{\rightskip}{0pt plus 5cm}Resource\-Map Course\-::\-Basic\-Worker\-::get\-Cost (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_course_1_1_basic_worker_ad0f7393c8eee967e6d2ce4255bb366b0}
+
+
+Returns the cost of the unit. 
+
+\begin{DoxyReturn}{Returns}
+Unit's cost as a Resource\-Map 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ?????????????? 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1_unit_base_ab02cc752895ebbdd633554686a04f0e8}{Course\-::\-Unit\-Base}.
+
+\hypertarget{class_course_1_1_basic_worker_aa1659f8e78b68bb814496327f5ff2f81}{\index{Course\-::\-Basic\-Worker@{Course\-::\-Basic\-Worker}!get\-Salary@{get\-Salary}}
+\index{get\-Salary@{get\-Salary}!Course::BasicWorker@{Course\-::\-Basic\-Worker}}
+\subsubsection[{get\-Salary}]{\setlength{\rightskip}{0pt plus 5cm}Resource\-Map Course\-::\-Basic\-Worker\-::get\-Salary (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_course_1_1_basic_worker_aa1659f8e78b68bb814496327f5ff2f81}
+
+
+Returns the unit's salary. 
+
+\begin{DoxyReturn}{Returns}
+Unit's salary as a Resource\-Map 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: ?????????????? 
+\end{DoxyPostcond}
+
+
+Implements \hyperlink{class_course_1_1_unit_base_a960002e7202707497581135df3c56172}{Course\-::\-Unit\-Base}.
+
+\hypertarget{class_course_1_1_basic_worker_a8396e00dafd128cbb86e479296d75c12}{\index{Course\-::\-Basic\-Worker@{Course\-::\-Basic\-Worker}!get\-Type@{get\-Type}}
+\index{get\-Type@{get\-Type}!Course::BasicWorker@{Course\-::\-Basic\-Worker}}
+\subsubsection[{get\-Type}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Course\-::\-Basic\-Worker\-::get\-Type (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_course_1_1_basic_worker_a8396e00dafd128cbb86e479296d75c12}
+
+
+Returns the unit's type in string. In this case it's \char`\"{}\-Basic\-Worker\char`\"{}. 
+
+\begin{DoxyReturn}{Returns}
+Unit's type in string. In this case it's \char`\"{}\-Basic\-Worker\char`\"{} 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+Reimplemented from \hyperlink{class_course_1_1_unit_base_a5b7353afcd94aa5ad3670ac652fd8ca2}{Course\-::\-Unit\-Base}.
+
+
+
+The documentation for this class was generated from the following files\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Units/basicworker.\-h\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Units/basicworker.\-cpp\end{DoxyCompactItemize}

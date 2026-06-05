@@ -1,0 +1,396 @@
+\hypertarget{class_course_1_1_base_object}{\section{Course\-:\-:Base\-Object Class Reference}
+\label{class_course_1_1_base_object}\index{Course\-::\-Base\-Object@{Course\-::\-Base\-Object}}
+}
+
+
+The \hyperlink{class_course_1_1_base_object}{Base\-Object} class is base-\/class that contain's general information on different Objects in game.  
+
+
+
+
+{\ttfamily \#include $<$baseobject.\-h$>$}
+
+
+
+Inheritance diagram for Course\-:\-:Base\-Object\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[width=350pt]{class_course_1_1_base_object__inherit__graph}
+\end{center}
+\end{figure}
+
+
+Collaboration diagram for Course\-:\-:Base\-Object\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[width=208pt]{class_course_1_1_base_object__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hyperlink{class_course_1_1_base_object_a168cc0b164c2f99f991da655109f7627}{Base\-Object} (const \hyperlink{class_course_1_1_base_object}{Base\-Object} \&original)
+\begin{DoxyCompactList}\small\item\em A simple copy-\/constructor for \hyperlink{class_course_1_1_base_object}{Base\-Object}. \end{DoxyCompactList}\item 
+\hyperlink{class_course_1_1_base_object_aab6723fcfe33897629b21eca2a81b55e}{Base\-Object} (const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{i\-Object\-Manager} $>$ \&objectmanager)
+\begin{DoxyCompactList}\small\item\em Constructor that only specifies Game\-Event\-Handler and Object\-Manager. \end{DoxyCompactList}\item 
+\hyperlink{class_course_1_1_base_object_a3da1023281979736d2067b32505baae7}{Base\-Object} (const \hyperlink{class_course_1_1_coordinate}{Coordinate} \&coordinate, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{i\-Object\-Manager} $>$ \&objectmanager)
+\begin{DoxyCompactList}\small\item\em \hyperlink{class_course_1_1_base_object}{Base\-Object} constructor that can specify a coordinate. \end{DoxyCompactList}\item 
+\hyperlink{class_course_1_1_base_object_a6f7d78dba33cc7607acb82136bffa3f1}{Base\-Object} (const \hyperlink{class_course_1_1_coordinate}{Coordinate} \&coordinate, int width, int height, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_game_event_handler}{i\-Game\-Event\-Handler} $>$ \&eventhandler, const std\-::weak\-\_\-ptr$<$ \hyperlink{class_course_1_1i_object_manager}{i\-Object\-Manager} $>$ \&objectmanager)
+\begin{DoxyCompactList}\small\item\em \hyperlink{class_course_1_1_base_object}{Base\-Object} constructor that can specify a coordinate. \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1_base_object_a8a1c9593ebfdb31983b99d22b1ab94bb}{virtual \hyperlink{class_course_1_1_base_object_a8a1c9593ebfdb31983b99d22b1ab94bb}{$\sim$\-Base\-Object} ()=default}\label{class_course_1_1_base_object_a8a1c9593ebfdb31983b99d22b1ab94bb}
+
+\begin{DoxyCompactList}\small\item\em $\sim$\-Base\-Object Default destructor. \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1_base_object_ade45146ca96d06a38f964cefbb6b13cf}{int {\bfseries get\-I\-D} ()}\label{class_course_1_1_base_object_ade45146ca96d06a38f964cefbb6b13cf}
+
+\item 
+void \hyperlink{class_course_1_1_base_object_a32923f23246f3cf3f079e168acb1a068}{set\-Coordinate} (const std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_coordinate}{Coordinate} $>$ \&coordinate)
+\begin{DoxyCompactList}\small\item\em Change \hyperlink{class_course_1_1_base_object}{Base\-Object}'s coordinate with a shared pointer to a coordinate. \end{DoxyCompactList}\item 
+void \hyperlink{class_course_1_1_base_object_a11f86c5557e6ce3e8149c09a2923673d}{set\-Coordinate} (const \hyperlink{class_course_1_1_coordinate}{Coordinate} \&coordinate)
+\begin{DoxyCompactList}\small\item\em Change \hyperlink{class_course_1_1_base_object}{Base\-Object}'s coordinate. \end{DoxyCompactList}\item 
+std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_coordinate}{Coordinate} $>$ \hyperlink{class_course_1_1_base_object_a92b314fdfb389031ad2561cd866dd5c1}{get\-Coordinate\-Ptr} () const 
+\begin{DoxyCompactList}\small\item\em Returns a pointer to a copy of \hyperlink{class_course_1_1_base_object}{Base\-Object}'s coordinate. \end{DoxyCompactList}\item 
+\hyperlink{class_course_1_1_coordinate}{Coordinate} \hyperlink{class_course_1_1_base_object_add84166c5a12a034cb958ece81ebc490}{get\-Coordinate} () const 
+\begin{DoxyCompactList}\small\item\em Returns \hyperlink{class_course_1_1_base_object}{Base\-Object}'s current coordinate. \end{DoxyCompactList}\item 
+virtual std\-::string \hyperlink{class_course_1_1_base_object_ae66880c372a67483fc4205a55839443a}{get\-Type} () const 
+\begin{DoxyCompactList}\small\item\em get\-Type Returns a string describing objects type. \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1_base_object_acbccc554d59c65d3e970aa5d8ce67814}{void {\bfseries set\-Image\-Files} (std\-::vector$<$ std\-::string $>$ image\-Vector)}\label{class_course_1_1_base_object_acbccc554d59c65d3e970aa5d8ce67814}
+
+\item 
+std\-::vector$<$ std\-::string $>$ \hyperlink{class_course_1_1_base_object_a2da7afb60d792da5d3c5659c8c292e28}{get\-Image\-Files} () const 
+\begin{DoxyCompactList}\small\item\em get\-Image\-File Returns a string for the objects image file path. \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1_base_object_a647f38ea83ccd8d421a2d7d3295d3a9e}{void {\bfseries set\-Animation\-Option} (\hyperlink{class_student_1_1_animation_option}{Student\-::\-Animation\-Option} option)}\label{class_course_1_1_base_object_a647f38ea83ccd8d421a2d7d3295d3a9e}
+
+\item 
+\hypertarget{class_course_1_1_base_object_ab7a172a791116c157a5c9ce012a3ddf6}{\hyperlink{class_student_1_1_animation_option}{Student\-::\-Animation\-Option} {\bfseries get\-Animation\-Option} ()}\label{class_course_1_1_base_object_ab7a172a791116c157a5c9ce012a3ddf6}
+
+\item 
+bool \hyperlink{class_course_1_1_base_object_a668c1a428563792cfe6418b85bf91ce0}{has\-Same\-Coordinate\-As} (const std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_base_object}{Base\-Object} $>$ \&other) const 
+\begin{DoxyCompactList}\small\item\em has\-\_\-same\-\_\-coordinate \end{DoxyCompactList}\item 
+\hypertarget{class_course_1_1_base_object_a7831558233bffdec7a23766c31671382}{int {\bfseries get\-Width} ()}\label{class_course_1_1_base_object_a7831558233bffdec7a23766c31671382}
+
+\item 
+\hypertarget{class_course_1_1_base_object_aea13ff4426c2b9d63cfc32e923961517}{int {\bfseries get\-Height} ()}\label{class_course_1_1_base_object_aea13ff4426c2b9d63cfc32e923961517}
+
+\end{DoxyCompactItemize}
+\subsection*{Public Attributes}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_course_1_1_base_object_a1997666c7ed1d0cc9fc0fdcec725ca5e}{const Object\-Id \hyperlink{class_course_1_1_base_object_a1997666c7ed1d0cc9fc0fdcec725ca5e}{I\-D}}\label{class_course_1_1_base_object_a1997666c7ed1d0cc9fc0fdcec725ca5e}
+
+\begin{DoxyCompactList}\small\item\em I\-D is a constant value that can be used to identify Base\-Objects through I\-D numbers. \end{DoxyCompactList}\end{DoxyCompactItemize}
+\subsection*{Protected Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+virtual std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_course_1_1i_game_event_handler}{i\-Game\-Event\-Handler} $>$ \hyperlink{class_course_1_1_base_object_aa3e1888b434e4dc1a538c652db10aecf}{lock\-Event\-Handler} () const final
+\begin{DoxyCompactList}\small\item\em This is the primary method for locking Game\-Event\-Handler inside different Base\-Object-\/classes. \end{DoxyCompactList}\item 
+virtual std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_course_1_1i_object_manager}{i\-Object\-Manager} $>$ \hyperlink{class_course_1_1_base_object_adf7a5b5852467f28f0bd71c155e65718}{lock\-Object\-Manager} () const final
+\begin{DoxyCompactList}\small\item\em This is the primary method for locking Object\-Manager inside different \hyperlink{class_course_1_1_base_object}{Base\-Object} classes. \end{DoxyCompactList}\end{DoxyCompactItemize}
+\subsection*{Protected Attributes}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_course_1_1_base_object_a75ac4505addfb3a86f36abd3608a96a3}{int {\bfseries m\-\_\-width}}\label{class_course_1_1_base_object_a75ac4505addfb3a86f36abd3608a96a3}
+
+\item 
+\hypertarget{class_course_1_1_base_object_a1da94ddf5d0c9167f468cbb5c5afe01f}{int {\bfseries m\-\_\-height}}\label{class_course_1_1_base_object_a1da94ddf5d0c9167f468cbb5c5afe01f}
+
+\end{DoxyCompactItemize}
+
+
+\subsection{Detailed Description}
+The \hyperlink{class_course_1_1_base_object}{Base\-Object} class is base-\/class that contain's general information on different Objects in game. 
+
+
+\begin{DoxyItemize}
+\item I\-D
+\item Possible owner
+\item Possible location coordinate
+\item Metadata in a string-\/$>$string map
+\item Pointers to Game\-Event\-Handler and Object\-Manager
+\end{DoxyItemize}
+
+\begin{DoxyNote}{Note}
+The functions consist mainly of get and set -\/functions that are used to access and store the information specified above. 
+\end{DoxyNote}
+
+
+\subsection{Constructor \& Destructor Documentation}
+\hypertarget{class_course_1_1_base_object_a168cc0b164c2f99f991da655109f7627}{\index{Course\-::\-Base\-Object@{Course\-::\-Base\-Object}!Base\-Object@{Base\-Object}}
+\index{Base\-Object@{Base\-Object}!Course::BaseObject@{Course\-::\-Base\-Object}}
+\subsubsection[{Base\-Object}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Base\-Object\-::\-Base\-Object (
+\begin{DoxyParamCaption}
+\item[{const {\bf Base\-Object} \&}]{original}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_base_object_a168cc0b164c2f99f991da655109f7627}
+
+
+A simple copy-\/constructor for \hyperlink{class_course_1_1_base_object}{Base\-Object}. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em original} & is the original \hyperlink{class_course_1_1_base_object}{Base\-Object} \\
+\hline
+\end{DoxyParams}
+\hypertarget{class_course_1_1_base_object_aab6723fcfe33897629b21eca2a81b55e}{\index{Course\-::\-Base\-Object@{Course\-::\-Base\-Object}!Base\-Object@{Base\-Object}}
+\index{Base\-Object@{Base\-Object}!Course::BaseObject@{Course\-::\-Base\-Object}}
+\subsubsection[{Base\-Object}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Base\-Object\-::\-Base\-Object (
+\begin{DoxyParamCaption}
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Game\-Event\-Handler} $>$ \&}]{eventhandler, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Object\-Manager} $>$ \&}]{objectmanager}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_base_object_aab6723fcfe33897629b21eca2a81b55e}
+
+
+Constructor that only specifies Game\-Event\-Handler and Object\-Manager. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em eventhandler} & a shared pointer to Game's Game\-Event\-Handler. \\
+\hline
+{\em objectmanager} & a shared pointer to Game's Object\-Manager. \\
+\hline
+\end{DoxyParams}
+\hypertarget{class_course_1_1_base_object_a3da1023281979736d2067b32505baae7}{\index{Course\-::\-Base\-Object@{Course\-::\-Base\-Object}!Base\-Object@{Base\-Object}}
+\index{Base\-Object@{Base\-Object}!Course::BaseObject@{Course\-::\-Base\-Object}}
+\subsubsection[{Base\-Object}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Base\-Object\-::\-Base\-Object (
+\begin{DoxyParamCaption}
+\item[{const {\bf Coordinate} \&}]{coordinate, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Game\-Event\-Handler} $>$ \&}]{eventhandler, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Object\-Manager} $>$ \&}]{objectmanager}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_base_object_a3da1023281979736d2067b32505baae7}
+
+
+\hyperlink{class_course_1_1_base_object}{Base\-Object} constructor that can specify a coordinate. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em coordinate} & a shared pointer to coordinates where the object is located. \\
+\hline
+{\em eventhandler} & a shared pointer to Game's Game\-Event\-Handler. \\
+\hline
+{\em objectmanager} & a shared pointer to Game's Object\-Manager. \\
+\hline
+\end{DoxyParams}
+\hypertarget{class_course_1_1_base_object_a6f7d78dba33cc7607acb82136bffa3f1}{\index{Course\-::\-Base\-Object@{Course\-::\-Base\-Object}!Base\-Object@{Base\-Object}}
+\index{Base\-Object@{Base\-Object}!Course::BaseObject@{Course\-::\-Base\-Object}}
+\subsubsection[{Base\-Object}]{\setlength{\rightskip}{0pt plus 5cm}Course\-::\-Base\-Object\-::\-Base\-Object (
+\begin{DoxyParamCaption}
+\item[{const {\bf Coordinate} \&}]{coordinate, }
+\item[{int}]{width, }
+\item[{int}]{height, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Game\-Event\-Handler} $>$ \&}]{eventhandler, }
+\item[{const std\-::weak\-\_\-ptr$<$ {\bf i\-Object\-Manager} $>$ \&}]{objectmanager}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_base_object_a6f7d78dba33cc7607acb82136bffa3f1}
+
+
+\hyperlink{class_course_1_1_base_object}{Base\-Object} constructor that can specify a coordinate. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em coordinate} & a shared pointer to coordinates where the object is located. \\
+\hline
+{\em eventhandler} & a shared pointer to Game's Game\-Event\-Handler. \\
+\hline
+{\em objectmanager} & a shared pointer to Game's Object\-Manager. \\
+\hline
+\end{DoxyParams}
+
+
+\subsection{Member Function Documentation}
+\hypertarget{class_course_1_1_base_object_add84166c5a12a034cb958ece81ebc490}{\index{Course\-::\-Base\-Object@{Course\-::\-Base\-Object}!get\-Coordinate@{get\-Coordinate}}
+\index{get\-Coordinate@{get\-Coordinate}!Course::BaseObject@{Course\-::\-Base\-Object}}
+\subsubsection[{get\-Coordinate}]{\setlength{\rightskip}{0pt plus 5cm}{\bf Coordinate} Course\-::\-Base\-Object\-::get\-Coordinate (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const}}\label{class_course_1_1_base_object_add84166c5a12a034cb958ece81ebc490}
+
+
+Returns \hyperlink{class_course_1_1_base_object}{Base\-Object}'s current coordinate. 
+
+\begin{DoxyPostcond}{Postcondition}
+Exception guaranee\-: Strong 
+\end{DoxyPostcond}
+
+\begin{DoxyExceptions}{Exceptions}
+{\em \hyperlink{class_course_1_1_invalid_pointer}{Invalid\-Pointer}} & -\/ If the \hyperlink{class_course_1_1_base_object}{Base\-Object} doesn't have a coordinate. \\
+\hline
+\end{DoxyExceptions}
+\hypertarget{class_course_1_1_base_object_a92b314fdfb389031ad2561cd866dd5c1}{\index{Course\-::\-Base\-Object@{Course\-::\-Base\-Object}!get\-Coordinate\-Ptr@{get\-Coordinate\-Ptr}}
+\index{get\-Coordinate\-Ptr@{get\-Coordinate\-Ptr}!Course::BaseObject@{Course\-::\-Base\-Object}}
+\subsubsection[{get\-Coordinate\-Ptr}]{\setlength{\rightskip}{0pt plus 5cm}std\-::shared\-\_\-ptr$<$ {\bf Coordinate} $>$ Course\-::\-Base\-Object\-::get\-Coordinate\-Ptr (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const}}\label{class_course_1_1_base_object_a92b314fdfb389031ad2561cd866dd5c1}
+
+
+Returns a pointer to a copy of \hyperlink{class_course_1_1_base_object}{Base\-Object}'s coordinate. 
+
+\begin{DoxyReturn}{Returns}
+Shared-\/pointer copy of the \hyperlink{class_course_1_1_base_object}{Base\-Object}'s coordinate, if the \hyperlink{class_course_1_1_base_object}{Base\-Object} has a coordinate. Null-\/shared-\/pointer if the \hyperlink{class_course_1_1_base_object}{Base\-Object} has no coordinate. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: Strong 
+\end{DoxyPostcond}
+
+\begin{DoxyExceptions}{Exceptions}
+{\em See} & std\-::make\-\_\-shared \\
+\hline
+\end{DoxyExceptions}
+\begin{DoxyNote}{Note}
+To change \hyperlink{class_course_1_1_base_object}{Base\-Object}'s coordinate you must use set\-Coordinate. This prevent unwanted alterations by accident. 
+\end{DoxyNote}
+\hypertarget{class_course_1_1_base_object_a2da7afb60d792da5d3c5659c8c292e28}{\index{Course\-::\-Base\-Object@{Course\-::\-Base\-Object}!get\-Image\-Files@{get\-Image\-Files}}
+\index{get\-Image\-Files@{get\-Image\-Files}!Course::BaseObject@{Course\-::\-Base\-Object}}
+\subsubsection[{get\-Image\-Files}]{\setlength{\rightskip}{0pt plus 5cm}std\-::vector$<$ std\-::string $>$ Course\-::\-Base\-Object\-::get\-Image\-Files (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const}}\label{class_course_1_1_base_object_a2da7afb60d792da5d3c5659c8c292e28}
+
+
+get\-Image\-File Returns a string for the objects image file path. 
+
+\begin{DoxyReturn}{Returns}
+std\-::string that represents Object's image file path 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_base_object_ae66880c372a67483fc4205a55839443a}{\index{Course\-::\-Base\-Object@{Course\-::\-Base\-Object}!get\-Type@{get\-Type}}
+\index{get\-Type@{get\-Type}!Course::BaseObject@{Course\-::\-Base\-Object}}
+\subsubsection[{get\-Type}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Course\-::\-Base\-Object\-::get\-Type (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [virtual]}}}\label{class_course_1_1_base_object_ae66880c372a67483fc4205a55839443a}
+
+
+get\-Type Returns a string describing objects type. 
+
+\begin{DoxyReturn}{Returns}
+std\-::string that represents Object's type. 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+Reimplemented in \hyperlink{class_course_1_1_game_object_a9a7b36c7f9258af82898190ee6ba7222}{Course\-::\-Game\-Object}, \hyperlink{class_course_1_1_tile_base_af1a8aaa3407ad3ade7ffe8f2fb421288}{Course\-::\-Tile\-Base}, \hyperlink{class_course_1_1_basic_worker_a8396e00dafd128cbb86e479296d75c12}{Course\-::\-Basic\-Worker}, \hyperlink{class_course_1_1_unit_base_a5b7353afcd94aa5ad3670ac652fd8ca2}{Course\-::\-Unit\-Base}, \hyperlink{class_course_1_1_building_base_ac2cc44e08dc73d05b1617bf71295baaf}{Course\-::\-Building\-Base}, \hyperlink{class_student_1_1_expert_a103f30e0809cd26e7bafe4ef94a8673d}{Student\-::\-Expert}, \hyperlink{class_student_1_1_soldier_a4339c81cdf40a1dba28f6fcffb555d33}{Student\-::\-Soldier}, \hyperlink{class_student_1_1_nuclear_plant_a2dfb7f93c216ca4c76507a3d4a1fa530}{Student\-::\-Nuclear\-Plant}, \hyperlink{class_student_1_1_village_a02b27bc84f9d250795ec2f9ff72fbe1b}{Student\-::\-Village}, \hyperlink{class_student_1_1_hydro_power_a3d1a591139fdd4f2c014a88fc3dcde59}{Student\-::\-Hydro\-Power}, \hyperlink{class_student_1_1_mikontalo_a71ab64374c57380dd45efea5a5304104}{Student\-::\-Mikontalo}, \hyperlink{class_student_1_1_mine_aa317adabe862ce41077d712d5b4cdf98}{Student\-::\-Mine}, \hyperlink{class_student_1_1_button_a2c69f5dcee1036b11154e799d6621acb}{Student\-::\-Button}, \hyperlink{class_course_1_1_grassland_a0a652bbecdda0216613dad980936e30e}{Course\-::\-Grassland}, \hyperlink{class_course_1_1_outpost_a8c89c67187451e0a49ecd57d4fc80602}{Course\-::\-Outpost}, \hyperlink{class_course_1_1_farm_a54ade72809a36d31e0e426eb79d6251a}{Course\-::\-Farm}, \hyperlink{class_course_1_1_forest_a783378b8f5c1ec5d0c5c4a771291a902}{Course\-::\-Forest}, \hyperlink{class_student_1_1_bridge_a4c3d72252a2d1992e210accadecf5125}{Student\-::\-Bridge}, \hyperlink{class_student_1_1_abundant_forest_a716c3d8cbbaf27a19fb23d95e66405ff}{Student\-::\-Abundant\-Forest}, \hyperlink{class_student_1_1_mountain_a0557d9683574b5d69a69b0477ce10595}{Student\-::\-Mountain}, \hyperlink{class_student_1_1_river_a227a22ecd8983eb71188fd5256f28068}{Student\-::\-River}, \hyperlink{class_course_1_1_head_quarters_a1d9a996a6a87ca31aeb63dff2d41d242}{Course\-::\-Head\-Quarters}, \hyperlink{class_student_1_1_menu_view_a6c9f9c66b86d2772115e0bbb50a977bc}{Student\-::\-Menu\-View}, \hyperlink{class_student_1_1_label_a35e4181d3b859ce8008029b056b79b79}{Student\-::\-Label}, \hyperlink{class_student_1_1_menu_object_ad014a4bd1e775c1be6689ffe018fed6b}{Student\-::\-Menu\-Object}, \hyperlink{class_student_1_1_menu_object_container_aca16734d7c1a5d4445dd8984e5e75463}{Student\-::\-Menu\-Object\-Container}, \hyperlink{class_course_1_1_placeable_game_object_adcd0c91b52ccedd434092380644f210e}{Course\-::\-Placeable\-Game\-Object}, \hyperlink{class_student_1_1_blocked_tile_abad24fdf672b0b40c032b0cbbb227b59}{Student\-::\-Blocked\-Tile}, \hyperlink{class_student_1_1_clicked_tile_border_ae2c10c0a43e0fdf79fa19dfc6bc7fa11}{Student\-::\-Clicked\-Tile\-Border}, and \hyperlink{class_student_1_1_mouse_hover_border_a7b49922f0ab5a473ec3dbcc253cad7fe}{Student\-::\-Mouse\-Hover\-Border}.
+
+\hypertarget{class_course_1_1_base_object_a668c1a428563792cfe6418b85bf91ce0}{\index{Course\-::\-Base\-Object@{Course\-::\-Base\-Object}!has\-Same\-Coordinate\-As@{has\-Same\-Coordinate\-As}}
+\index{has\-Same\-Coordinate\-As@{has\-Same\-Coordinate\-As}!Course::BaseObject@{Course\-::\-Base\-Object}}
+\subsubsection[{has\-Same\-Coordinate\-As}]{\setlength{\rightskip}{0pt plus 5cm}bool Course\-::\-Base\-Object\-::has\-Same\-Coordinate\-As (
+\begin{DoxyParamCaption}
+\item[{const std\-::shared\-\_\-ptr$<$ {\bf Base\-Object} $>$ \&}]{other}
+\end{DoxyParamCaption}
+) const}}\label{class_course_1_1_base_object_a668c1a428563792cfe6418b85bf91ce0}
+
+
+has\-\_\-same\-\_\-coordinate 
+
+
+\begin{DoxyParams}{Parameters}
+{\em other} & The other \hyperlink{class_course_1_1_base_object}{Base\-Object} \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+\par
+True -\/ If coordinates match or both are null \par
+False -\/ If the coordinates don't match \par
+
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: Strong 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_base_object_aa3e1888b434e4dc1a538c652db10aecf}{\index{Course\-::\-Base\-Object@{Course\-::\-Base\-Object}!lock\-Event\-Handler@{lock\-Event\-Handler}}
+\index{lock\-Event\-Handler@{lock\-Event\-Handler}!Course::BaseObject@{Course\-::\-Base\-Object}}
+\subsubsection[{lock\-Event\-Handler}]{\setlength{\rightskip}{0pt plus 5cm}std\-::shared\-\_\-ptr$<$ {\bf i\-Game\-Event\-Handler} $>$ Course\-::\-Base\-Object\-::lock\-Event\-Handler (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [final]}, {\ttfamily [protected]}, {\ttfamily [virtual]}}}\label{class_course_1_1_base_object_aa3e1888b434e4dc1a538c652db10aecf}
+
+
+This is the primary method for locking Game\-Event\-Handler inside different Base\-Object-\/classes. 
+
+\begin{DoxyReturn}{Returns}
+shared pointer to the Game\-Event\-Handler 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_base_object_adf7a5b5852467f28f0bd71c155e65718}{\index{Course\-::\-Base\-Object@{Course\-::\-Base\-Object}!lock\-Object\-Manager@{lock\-Object\-Manager}}
+\index{lock\-Object\-Manager@{lock\-Object\-Manager}!Course::BaseObject@{Course\-::\-Base\-Object}}
+\subsubsection[{lock\-Object\-Manager}]{\setlength{\rightskip}{0pt plus 5cm}std\-::shared\-\_\-ptr$<$ {\bf i\-Object\-Manager} $>$ Course\-::\-Base\-Object\-::lock\-Object\-Manager (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [final]}, {\ttfamily [protected]}, {\ttfamily [virtual]}}}\label{class_course_1_1_base_object_adf7a5b5852467f28f0bd71c155e65718}
+
+
+This is the primary method for locking Object\-Manager inside different \hyperlink{class_course_1_1_base_object}{Base\-Object} classes. 
+
+\begin{DoxyReturn}{Returns}
+shared pointer to the Object\-Manager 
+\end{DoxyReturn}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_course_1_1_base_object_a32923f23246f3cf3f079e168acb1a068}{\index{Course\-::\-Base\-Object@{Course\-::\-Base\-Object}!set\-Coordinate@{set\-Coordinate}}
+\index{set\-Coordinate@{set\-Coordinate}!Course::BaseObject@{Course\-::\-Base\-Object}}
+\subsubsection[{set\-Coordinate}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Base\-Object\-::set\-Coordinate (
+\begin{DoxyParamCaption}
+\item[{const std\-::shared\-\_\-ptr$<$ {\bf Coordinate} $>$ \&}]{coordinate}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_base_object_a32923f23246f3cf3f079e168acb1a068}
+
+
+Change \hyperlink{class_course_1_1_base_object}{Base\-Object}'s coordinate with a shared pointer to a coordinate. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em coordinate} & A shared-\/pointer to the new coordinate. \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\begin{DoxyNote}{Note}
+This creates new \hyperlink{class_course_1_1_coordinate}{Coordinate} based on the coordinate. The \hyperlink{class_course_1_1_coordinate}{Coordinate} can't be modified from outside of the class. 
+
+Can be used to unset coordinate with null-\/shared-\/pointer. 
+\end{DoxyNote}
+\hypertarget{class_course_1_1_base_object_a11f86c5557e6ce3e8149c09a2923673d}{\index{Course\-::\-Base\-Object@{Course\-::\-Base\-Object}!set\-Coordinate@{set\-Coordinate}}
+\index{set\-Coordinate@{set\-Coordinate}!Course::BaseObject@{Course\-::\-Base\-Object}}
+\subsubsection[{set\-Coordinate}]{\setlength{\rightskip}{0pt plus 5cm}void Course\-::\-Base\-Object\-::set\-Coordinate (
+\begin{DoxyParamCaption}
+\item[{const {\bf Coordinate} \&}]{coordinate}
+\end{DoxyParamCaption}
+)}}\label{class_course_1_1_base_object_a11f86c5557e6ce3e8149c09a2923673d}
+
+
+Change \hyperlink{class_course_1_1_base_object}{Base\-Object}'s coordinate. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em coordinate} & The new coordinate. \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+
+
+The documentation for this class was generated from the following files\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Core/baseobject.\-h\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Core/baseobject.\-cpp\end{DoxyCompactItemize}

@@ -1,0 +1,289 @@
+\hypertarget{class_student_1_1_scene_item}{\section{Student\-:\-:Scene\-Item Class Reference}
+\label{class_student_1_1_scene_item}\index{Student\-::\-Scene\-Item@{Student\-::\-Scene\-Item}}
+}
+
+
+The \hyperlink{class_student_1_1_scene_item}{Scene\-Item} class is a custom Q\-Graphics\-Item that has additional features such as animation frames.  
+
+
+
+
+{\ttfamily \#include $<$sceneitem.\-h$>$}
+
+
+
+Inheritance diagram for Student\-:\-:Scene\-Item\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[width=350pt]{class_student_1_1_scene_item__inherit__graph}
+\end{center}
+\end{figure}
+
+
+Collaboration diagram for Student\-:\-:Scene\-Item\-:
+\nopagebreak
+\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[width=333pt]{class_student_1_1_scene_item__coll__graph}
+\end{center}
+\end{figure}
+\subsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\hyperlink{class_student_1_1_scene_item_a60d91353e37f40478c059b30be4c6ed6}{Scene\-Item} (const std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_base_object}{Course\-::\-Base\-Object} $>$ \&obj)
+\begin{DoxyCompactList}\small\item\em Constructor. \end{DoxyCompactList}\item 
+const std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_course_1_1_base_object}{Course\-::\-Base\-Object} $>$ \& \hyperlink{class_student_1_1_scene_item_a7491e26f9280fad9e5af250d0804a787}{get\-Bound\-Object} ()
+\begin{DoxyCompactList}\small\item\em get\-Bound\-Object \end{DoxyCompactList}\item 
+bool \hyperlink{class_student_1_1_scene_item_a2d776aaee48338e664826cc1bf838596}{is\-Same\-Obj} (std\-::shared\-\_\-ptr$<$ \hyperlink{class_course_1_1_base_object}{Course\-::\-Base\-Object} $>$ obj)
+\begin{DoxyCompactList}\small\item\em Checks if the given Game\-Object is represented with this \hyperlink{class_student_1_1_scene_item}{Scene\-Item}. \end{DoxyCompactList}\item 
+virtual Q\-Rect\-F \hyperlink{class_student_1_1_scene_item_a001b7dbcb91dbd7217b8cded7f9fac18}{bounding\-Rect} () const override
+\begin{DoxyCompactList}\small\item\em Returns the rectangle that is surrounding the item. \end{DoxyCompactList}\item 
+\hypertarget{class_student_1_1_scene_item_a424479e044042979058a95357dba3f9b}{void \hyperlink{class_student_1_1_scene_item_a424479e044042979058a95357dba3f9b}{set\-Item\-Pixmap} ()}\label{class_student_1_1_scene_item_a424479e044042979058a95357dba3f9b}
+
+\begin{DoxyCompactList}\small\item\em Sets a pixmap vector for the item that can be accessed later to draw the pixmaps easily. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_scene_item_a2ef741a429d79d915aba9c9be345e3c2}{set\-Animation\-Frame} (int frame)
+\begin{DoxyCompactList}\small\item\em Sets the animation frame manually. This doesn't help much of the item is animated. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_scene_item_a747b9b5b1847c0c34a8270b4fc42c3fd}{set\-Random\-Image\-Index} ()
+\begin{DoxyCompactList}\small\item\em Sets the animation frame manually. This doesn't help much of the item is animated. \end{DoxyCompactList}\item 
+\hypertarget{class_student_1_1_scene_item_a9b9b0626cca4d3748662f7feb043cba4}{void \hyperlink{class_student_1_1_scene_item_a9b9b0626cca4d3748662f7feb043cba4}{change\-Animation\-Frame} ()}\label{class_student_1_1_scene_item_a9b9b0626cca4d3748662f7feb043cba4}
+
+\begin{DoxyCompactList}\small\item\em Changes the animation frame according to the item's animation options. This method is called from the \hyperlink{class_student_1_1_game_scene}{Game\-Scene} method that is connected to the timer. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_scene_item_a946a1fe6fee7bf73d1dfdf2e0711f367}{set\-Grid\-Size} (int grid\-Size)
+\begin{DoxyCompactList}\small\item\em Sets the grid size for the sceneitem. Grid size tells how many pixels wide and tall one grid(tile) is. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_scene_item_a2e32949bb419f6758eabb57d1035bfb9}{set\-Width} (int width)
+\begin{DoxyCompactList}\small\item\em Sets the width of the sceneitem in pixels. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_scene_item_a5ceb9e671693ae10aa100437b72fa4fb}{set\-Height} (int height)
+\begin{DoxyCompactList}\small\item\em Sets the height of the sceneitem in pixels. \end{DoxyCompactList}\item 
+virtual std\-::string \hyperlink{class_student_1_1_scene_item_abeddbd7b240ebfa74579be94de8278a8}{get\-Type} ()
+\begin{DoxyCompactList}\small\item\em Returns the type of the \hyperlink{class_student_1_1_scene_item}{Scene\-Item}. If the item is not derived from this class the type is "\hyperlink{class_student_1_1_scene_item}{Scene\-Item}. \end{DoxyCompactList}\item 
+void \hyperlink{class_student_1_1_scene_item_afcc91d2bb5d9ec13ebc85c2f47413d43}{set\-Animation\-Option} (\hyperlink{class_student_1_1_animation_option}{Animation\-Option} ani)
+\begin{DoxyCompactList}\small\item\em Changes the animation option of the \hyperlink{class_student_1_1_scene_item}{Scene\-Item}. \end{DoxyCompactList}\end{DoxyCompactItemize}
+\subsection*{Protected Attributes}
+\begin{DoxyCompactItemize}
+\item 
+\hypertarget{class_student_1_1_scene_item_aa43fd9928e92d9ec8232642f2dac941f}{const std\-::shared\-\_\-ptr\\*
+$<$ \hyperlink{class_course_1_1_base_object}{Course\-::\-Base\-Object} $>$ {\bfseries base\-Object\-\_\-}}\label{class_student_1_1_scene_item_aa43fd9928e92d9ec8232642f2dac941f}
+
+\item 
+\hypertarget{class_student_1_1_scene_item_a5eef34f9961051e6123639a6e95bf685}{int {\bfseries current\-Image\-Frame\-\_\-}}\label{class_student_1_1_scene_item_a5eef34f9961051e6123639a6e95bf685}
+
+\item 
+\hypertarget{class_student_1_1_scene_item_a720976afecf0ab96b9f946e2a80e72be}{int {\bfseries animation\-Direction\-\_\-}}\label{class_student_1_1_scene_item_a720976afecf0ab96b9f946e2a80e72be}
+
+\item 
+\hypertarget{class_student_1_1_scene_item_ab261e365814e698aa8c36651acb47cf6}{\hyperlink{class_student_1_1_animation_option}{Animation\-Option} {\bfseries animation\-Option\-\_\-}}\label{class_student_1_1_scene_item_ab261e365814e698aa8c36651acb47cf6}
+
+\item 
+\hypertarget{class_student_1_1_scene_item_a237d8eab60e3d344a8cc03ced51181c5}{std\-::vector$<$ Q\-Pixmap $>$ {\bfseries item\-Pixmap\-\_\-}}\label{class_student_1_1_scene_item_a237d8eab60e3d344a8cc03ced51181c5}
+
+\item 
+\hypertarget{class_student_1_1_scene_item_ae314005d9bbf12933551ad15d507ff43}{bool {\bfseries randomize\-Start\-\_\-} = false}\label{class_student_1_1_scene_item_ae314005d9bbf12933551ad15d507ff43}
+
+\item 
+\hypertarget{class_student_1_1_scene_item_add27328b198c6720dd37fb41f7665645}{int {\bfseries width\-\_\-}}\label{class_student_1_1_scene_item_add27328b198c6720dd37fb41f7665645}
+
+\item 
+\hypertarget{class_student_1_1_scene_item_aeff7984d94daff7b604f4dfc80195e31}{int {\bfseries height\-\_\-}}\label{class_student_1_1_scene_item_aeff7984d94daff7b604f4dfc80195e31}
+
+\item 
+\hypertarget{class_student_1_1_scene_item_a56c9acd15ff63812b9ea56a7847470f1}{int {\bfseries grid\-Size\-\_\-}}\label{class_student_1_1_scene_item_a56c9acd15ff63812b9ea56a7847470f1}
+
+\end{DoxyCompactItemize}
+
+
+\subsection{Detailed Description}
+The \hyperlink{class_student_1_1_scene_item}{Scene\-Item} class is a custom Q\-Graphics\-Item that has additional features such as animation frames. 
+
+\subsection{Constructor \& Destructor Documentation}
+\hypertarget{class_student_1_1_scene_item_a60d91353e37f40478c059b30be4c6ed6}{\index{Student\-::\-Scene\-Item@{Student\-::\-Scene\-Item}!Scene\-Item@{Scene\-Item}}
+\index{Scene\-Item@{Scene\-Item}!Student::SceneItem@{Student\-::\-Scene\-Item}}
+\subsubsection[{Scene\-Item}]{\setlength{\rightskip}{0pt plus 5cm}Student\-::\-Scene\-Item\-::\-Scene\-Item (
+\begin{DoxyParamCaption}
+\item[{const std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Base\-Object} $>$ \&}]{obj}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_scene_item_a60d91353e37f40478c059b30be4c6ed6}
+
+
+Constructor. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em obj} & shared\-\_\-ptr to the obj. \\
+\hline
+\end{DoxyParams}
+
+
+\subsection{Member Function Documentation}
+\hypertarget{class_student_1_1_scene_item_a001b7dbcb91dbd7217b8cded7f9fac18}{\index{Student\-::\-Scene\-Item@{Student\-::\-Scene\-Item}!bounding\-Rect@{bounding\-Rect}}
+\index{bounding\-Rect@{bounding\-Rect}!Student::SceneItem@{Student\-::\-Scene\-Item}}
+\subsubsection[{bounding\-Rect}]{\setlength{\rightskip}{0pt plus 5cm}Q\-Rect\-F Student\-::\-Scene\-Item\-::bounding\-Rect (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+) const\hspace{0.3cm}{\ttfamily [override]}, {\ttfamily [virtual]}}}\label{class_student_1_1_scene_item_a001b7dbcb91dbd7217b8cded7f9fac18}
+
+
+Returns the rectangle that is surrounding the item. 
+
+\begin{DoxyReturn}{Returns}
+Q\-Rect\-F 
+\end{DoxyReturn}
+
+
+Reimplemented in \hyperlink{class_student_1_1_map_scene_item_a787b3d644deb4ea6f9708d2233d2fc99}{Student\-::\-Map\-Scene\-Item}, \hyperlink{class_student_1_1_menu_scene_item_a2904ab61b774f21cd2ac24599b222e1c}{Student\-::\-Menu\-Scene\-Item}, and \hyperlink{class_student_1_1_unit_scene_item_ad326c46a9c5491766ab837bab74f7b05}{Student\-::\-Unit\-Scene\-Item}.
+
+\hypertarget{class_student_1_1_scene_item_a7491e26f9280fad9e5af250d0804a787}{\index{Student\-::\-Scene\-Item@{Student\-::\-Scene\-Item}!get\-Bound\-Object@{get\-Bound\-Object}}
+\index{get\-Bound\-Object@{get\-Bound\-Object}!Student::SceneItem@{Student\-::\-Scene\-Item}}
+\subsubsection[{get\-Bound\-Object}]{\setlength{\rightskip}{0pt plus 5cm}const std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Base\-Object} $>$ \& Student\-::\-Scene\-Item\-::get\-Bound\-Object (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_scene_item_a7491e26f9280fad9e5af250d0804a787}
+
+
+get\-Bound\-Object 
+
+\begin{DoxyReturn}{Returns}
+the object this item is bound to. 
+\end{DoxyReturn}
+\hypertarget{class_student_1_1_scene_item_abeddbd7b240ebfa74579be94de8278a8}{\index{Student\-::\-Scene\-Item@{Student\-::\-Scene\-Item}!get\-Type@{get\-Type}}
+\index{get\-Type@{get\-Type}!Student::SceneItem@{Student\-::\-Scene\-Item}}
+\subsubsection[{get\-Type}]{\setlength{\rightskip}{0pt plus 5cm}std\-::string Student\-::\-Scene\-Item\-::get\-Type (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)\hspace{0.3cm}{\ttfamily [virtual]}}}\label{class_student_1_1_scene_item_abeddbd7b240ebfa74579be94de8278a8}
+
+
+Returns the type of the \hyperlink{class_student_1_1_scene_item}{Scene\-Item}. If the item is not derived from this class the type is "\hyperlink{class_student_1_1_scene_item}{Scene\-Item}. 
+
+\begin{DoxyReturn}{Returns}
+string of the type 
+\end{DoxyReturn}
+
+
+Reimplemented in \hyperlink{class_student_1_1_map_scene_item_a6f4badea271ec039183299eaa537c77d}{Student\-::\-Map\-Scene\-Item}, \hyperlink{class_student_1_1_menu_scene_item_accd8c83c00abf1f60b36eb50e133cc27}{Student\-::\-Menu\-Scene\-Item}, and \hyperlink{class_student_1_1_unit_scene_item_ad50fcee7d5cba306787bd8222ff2954f}{Student\-::\-Unit\-Scene\-Item}.
+
+\hypertarget{class_student_1_1_scene_item_a2d776aaee48338e664826cc1bf838596}{\index{Student\-::\-Scene\-Item@{Student\-::\-Scene\-Item}!is\-Same\-Obj@{is\-Same\-Obj}}
+\index{is\-Same\-Obj@{is\-Same\-Obj}!Student::SceneItem@{Student\-::\-Scene\-Item}}
+\subsubsection[{is\-Same\-Obj}]{\setlength{\rightskip}{0pt plus 5cm}bool Student\-::\-Scene\-Item\-::is\-Same\-Obj (
+\begin{DoxyParamCaption}
+\item[{std\-::shared\-\_\-ptr$<$ {\bf Course\-::\-Base\-Object} $>$}]{obj}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_scene_item_a2d776aaee48338e664826cc1bf838596}
+
+
+Checks if the given Game\-Object is represented with this \hyperlink{class_student_1_1_scene_item}{Scene\-Item}. 
+
+\begin{DoxyReturn}{Returns}
+True\-: it is False\-: it isn't 
+\end{DoxyReturn}
+\hypertarget{class_student_1_1_scene_item_a2ef741a429d79d915aba9c9be345e3c2}{\index{Student\-::\-Scene\-Item@{Student\-::\-Scene\-Item}!set\-Animation\-Frame@{set\-Animation\-Frame}}
+\index{set\-Animation\-Frame@{set\-Animation\-Frame}!Student::SceneItem@{Student\-::\-Scene\-Item}}
+\subsubsection[{set\-Animation\-Frame}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Scene\-Item\-::set\-Animation\-Frame (
+\begin{DoxyParamCaption}
+\item[{int}]{frame}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_scene_item_a2ef741a429d79d915aba9c9be345e3c2}
+
+
+Sets the animation frame manually. This doesn't help much of the item is animated. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Integer} & of the frame that is wanted to be set \\
+\hline
+\end{DoxyParams}
+\begin{DoxyPostcond}{Postcondition}
+Exception guarantee\-: No-\/throw 
+\end{DoxyPostcond}
+\hypertarget{class_student_1_1_scene_item_afcc91d2bb5d9ec13ebc85c2f47413d43}{\index{Student\-::\-Scene\-Item@{Student\-::\-Scene\-Item}!set\-Animation\-Option@{set\-Animation\-Option}}
+\index{set\-Animation\-Option@{set\-Animation\-Option}!Student::SceneItem@{Student\-::\-Scene\-Item}}
+\subsubsection[{set\-Animation\-Option}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Scene\-Item\-::set\-Animation\-Option (
+\begin{DoxyParamCaption}
+\item[{{\bf Animation\-Option}}]{ani}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_scene_item_afcc91d2bb5d9ec13ebc85c2f47413d43}
+
+
+Changes the animation option of the \hyperlink{class_student_1_1_scene_item}{Scene\-Item}. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em The} & wanted \hyperlink{class_student_1_1_animation_option}{Animation\-Option} class object to be set \\
+\hline
+\end{DoxyParams}
+\hypertarget{class_student_1_1_scene_item_a946a1fe6fee7bf73d1dfdf2e0711f367}{\index{Student\-::\-Scene\-Item@{Student\-::\-Scene\-Item}!set\-Grid\-Size@{set\-Grid\-Size}}
+\index{set\-Grid\-Size@{set\-Grid\-Size}!Student::SceneItem@{Student\-::\-Scene\-Item}}
+\subsubsection[{set\-Grid\-Size}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Scene\-Item\-::set\-Grid\-Size (
+\begin{DoxyParamCaption}
+\item[{int}]{grid\-Size}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_scene_item_a946a1fe6fee7bf73d1dfdf2e0711f367}
+
+
+Sets the grid size for the sceneitem. Grid size tells how many pixels wide and tall one grid(tile) is. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em grid\-Size} & is an integer of the grid size \\
+\hline
+\end{DoxyParams}
+\hypertarget{class_student_1_1_scene_item_a5ceb9e671693ae10aa100437b72fa4fb}{\index{Student\-::\-Scene\-Item@{Student\-::\-Scene\-Item}!set\-Height@{set\-Height}}
+\index{set\-Height@{set\-Height}!Student::SceneItem@{Student\-::\-Scene\-Item}}
+\subsubsection[{set\-Height}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Scene\-Item\-::set\-Height (
+\begin{DoxyParamCaption}
+\item[{int}]{height}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_scene_item_a5ceb9e671693ae10aa100437b72fa4fb}
+
+
+Sets the height of the sceneitem in pixels. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em integer} & of the height in pixels \\
+\hline
+\end{DoxyParams}
+\hypertarget{class_student_1_1_scene_item_a747b9b5b1847c0c34a8270b4fc42c3fd}{\index{Student\-::\-Scene\-Item@{Student\-::\-Scene\-Item}!set\-Random\-Image\-Index@{set\-Random\-Image\-Index}}
+\index{set\-Random\-Image\-Index@{set\-Random\-Image\-Index}!Student::SceneItem@{Student\-::\-Scene\-Item}}
+\subsubsection[{set\-Random\-Image\-Index}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Scene\-Item\-::set\-Random\-Image\-Index (
+\begin{DoxyParamCaption}
+{}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_scene_item_a747b9b5b1847c0c34a8270b4fc42c3fd}
+
+
+Sets the animation frame manually. This doesn't help much of the item is animated. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Integer} & of the frame that is wanted to be set \\
+\hline
+\end{DoxyParams}
+\hypertarget{class_student_1_1_scene_item_a2e32949bb419f6758eabb57d1035bfb9}{\index{Student\-::\-Scene\-Item@{Student\-::\-Scene\-Item}!set\-Width@{set\-Width}}
+\index{set\-Width@{set\-Width}!Student::SceneItem@{Student\-::\-Scene\-Item}}
+\subsubsection[{set\-Width}]{\setlength{\rightskip}{0pt plus 5cm}void Student\-::\-Scene\-Item\-::set\-Width (
+\begin{DoxyParamCaption}
+\item[{int}]{width}
+\end{DoxyParamCaption}
+)}}\label{class_student_1_1_scene_item_a2e32949bb419f6758eabb57d1035bfb9}
+
+
+Sets the width of the sceneitem in pixels. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em integer} & of the width in pixels \\
+\hline
+\end{DoxyParams}
+
+
+The documentation for this class was generated from the following files\-:\begin{DoxyCompactItemize}
+\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Graphics/sceneitem.\-h\item 
+/home/kaartovu/\-Desktop/\-Cloned\-\_\-\-Otto\-\_\-\-Tino/otto-\/ja-\/tino/\-Game/\-Graphics/sceneitem.\-cpp\end{DoxyCompactItemize}
