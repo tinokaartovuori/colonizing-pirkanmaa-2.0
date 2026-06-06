@@ -216,6 +216,9 @@ function localVec(opts: {
     clamp((M.money(p) - 120 - M.moneyDrainPerRound(p) * 5) / 1000),
     opts.incomeStaffing ? 1 : 0,
     clamp((M.wood(p) - woodNeed - buffer) / 500),
+    // NN feature scale constant — DELIBERATELY left at 50 (no longer == the soldier metal
+    // cost, which was rebalanced 50 → 30 in arc sd3). It is a normalization offset, not a
+    // rule; changing it would shift the feature distribution mid-arc.
     clamp((M.metal(p) - 50) / 500),
     // --- spatial/positional (indices 10–15) ---
     clamp(sp.enemyNeighbors, 0, 1),
@@ -399,7 +402,10 @@ function buildOutpost(ctx: AiCtx): Candidate | null {
   if (om.getTileCountForPlayer(p) < 8) return null;
   if (M.netMoneyPerRound(p) < 0) return null;
   const outposts = M.buildingCounts(p).Outpost;
-  if (M.metalIncomePerRound(p) - (outposts + 1) * 15 < 0) return null;
+  // Per-Outpost metal upkeep gate. The * 5 mirrors the Outpost metal upkeep in resources.ts
+  // (rebalanced -15 → -5, arc sd3) — if left at 15 it would RE-CREATE the unreachability bug.
+  // Parity-locked with build_outpost in rust-trainer/crates/cp-ai/src/candidates.rs.
+  if (M.metalIncomePerRound(p) - (outposts + 1) * 5 < 0) return null;
   const spot = M.ownedTiles(p).find(
     (t) => t instanceof Grassland && t.getBuilding() === null && t.getBuildableBuildings().includes('Outpost'),
   );
@@ -577,7 +583,7 @@ function crackDevice(ctx: AiCtx, enemyCoords: { x: number; y: number }[]): Candi
   const buyable = canBuy
     ? Math.min(
         p.getFreeSoldierAmount(),
-        Math.floor(M.metal(p) / 50),
+        Math.floor(M.metal(p) / 30), // soldier metal cost (rebalanced 50→30, arc sd3; parity-locked)
         Math.floor((M.money(p) - cfg.reserve) / 200),
       )
     : 0;
@@ -605,7 +611,7 @@ function crackDevice(ctx: AiCtx, enemyCoords: { x: number; y: number }[]): Candi
         const spare = findFreeSoldier(p, dev);
         let step = false;
         if (spare) step = ctx.eh.aiMoveUnit(spare.unit, spare.tile, dev);
-        else if (canBuy && p.getFreeSoldierAmount() > 0 && M.metal(p) >= 50 && S.affords(p, SOLDIER_COST, cfg.reserve))
+        else if (canBuy && p.getFreeSoldierAmount() > 0 && M.metal(p) >= 30 /* soldier metal cost (rebalanced 50→30, arc sd3) */ && S.affords(p, SOLDIER_COST, cfg.reserve))
           step = ctx.eh.aiBuyAndPlaceUnit('Soldier', dev);
         if (!step) break;
         did = true;
@@ -664,7 +670,7 @@ function crackHQ(ctx: AiCtx, enemyCoords: { x: number; y: number }[]): Candidate
   const buyable = canBuy
     ? Math.min(
         p.getFreeSoldierAmount(),
-        Math.floor(M.metal(p) / 50),
+        Math.floor(M.metal(p) / 30), // soldier metal cost (rebalanced 50→30, arc sd3; parity-locked)
         Math.floor((M.money(p) - cfg.reserve) / 200),
       )
     : 0;
@@ -686,7 +692,7 @@ function crackHQ(ctx: AiCtx, enemyCoords: { x: number; y: number }[]): Candidate
         const spare = findFreeSoldier(p, hq);
         let step = false;
         if (spare) step = ctx.eh.aiMoveUnit(spare.unit, spare.tile, hq);
-        else if (canBuy && p.getFreeSoldierAmount() > 0 && M.metal(p) >= 50 && S.affords(p, SOLDIER_COST, cfg.reserve))
+        else if (canBuy && p.getFreeSoldierAmount() > 0 && M.metal(p) >= 30 /* soldier metal cost (rebalanced 50→30, arc sd3) */ && S.affords(p, SOLDIER_COST, cfg.reserve))
           step = ctx.eh.aiBuyAndPlaceUnit('Soldier', hq);
         if (!step) break;
         did = true;
@@ -757,7 +763,7 @@ function hireSoldier(ctx: AiCtx): Candidate | null {
   const { player: p, om, cfg } = ctx;
   if (!cfg.military) return null;
   if (p.getFreeSoldierAmount() <= 0) return null;
-  if (M.metal(p) < 50) return null;
+  if (M.metal(p) < 30) return null; // soldier metal cost (rebalanced 50→30, arc sd3; parity-locked)
   if (!S.affords(p, SOLDIER_COST, cfg.reserve) || !S.canAffordUpkeep(p, 30)) return null;
   const hq = om.getHqTile(p);
   const threatened = M.ownedTiles(p).filter((t) => t !== hq && tileThreatened(t, p));
@@ -810,7 +816,7 @@ function attackCandidates(ctx: AiCtx, idx: Map<TileBase, number>, enemyCoords: {
     const buyable = canBuy
       ? Math.min(
           p.getFreeSoldierAmount(),
-          Math.floor(M.metal(p) / 50),
+          Math.floor(M.metal(p) / 30), // soldier metal cost (rebalanced 50→30, arc sd3; parity-locked)
           Math.floor((M.money(p) - cfg.reserve) / 200),
         )
       : 0;
@@ -835,7 +841,7 @@ function attackCandidates(ctx: AiCtx, idx: Map<TileBase, number>, enemyCoords: {
           const spare = findFreeSoldier(p, tile);
           let step = false;
           if (spare) step = ctx.eh.aiMoveUnit(spare.unit, spare.tile, tile);
-          else if (canBuy && p.getFreeSoldierAmount() > 0 && M.metal(p) >= 50 && S.affords(p, SOLDIER_COST, cfg.reserve))
+          else if (canBuy && p.getFreeSoldierAmount() > 0 && M.metal(p) >= 30 /* soldier metal cost (rebalanced 50→30, arc sd3) */ && S.affords(p, SOLDIER_COST, cfg.reserve))
             step = ctx.eh.aiBuyAndPlaceUnit('Soldier', tile);
           if (!step) break;
           did = true;

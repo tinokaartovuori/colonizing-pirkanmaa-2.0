@@ -186,9 +186,17 @@ export const OUTPOST_BUILD_COST: ResourceMap = rmap({
   [BasicResource.STONE]: -200,
   [BasicResource.METAL]: -100,
 });
+// Per-round Outpost upkeep. METAL upkeep REBALANCED -15 → -5 (arc sd2 → sd3, 2026-06-06,
+// "military-economy" pass). The -15 metal/round drain meant a single mine (≈20 metal/round)
+// could barely carry ONE Outpost before going metal-negative, so the soldier-cap → army
+// chain stalled at 1-2 soldiers and military was never fundable (see CLAUDE.md). At -5/round
+// ~1 mine comfortably carries 2-3 Outposts (cap 7-10 soldiers). The -50 money upkeep, the
+// outpost build cost, mine output and the Device soldier-cap halving are all left UNCHANGED
+// so a pure-economy line stays competitive. Mirrors outpost_production() in
+// rust-trainer/crates/cp-sim/src/resources.rs (parity-locked).
 export const OUTPOST_PRODUCTION: ResourceMap = rmap({
   [BasicResource.MONEY]: -50,
-  [BasicResource.METAL]: -15,
+  [BasicResource.METAL]: -5,
 });
 export const OUTPOST_SOLDIER_VALUE = 3;
 
@@ -260,8 +268,16 @@ export const EXPERT_COST: ResourceMap = rmap({ [BasicResource.MONEY]: -250 });
 export const EXPERT_SALARY: ResourceMap = rmap({ [BasicResource.MONEY]: -25 });
 
 // Soldier
+// METAL build cost REBALANCED -50 → -30 (arc sd2 → sd3, 2026-06-06, "military-economy" pass).
+// Paired with the Outpost metal-upkeep cut above so a single-mine economy can actually FIELD
+// an army: at 50 metal/soldier a 4-6 soldier army (200-300 metal) drained most of a mine's
+// output, so soldiers were never massed; at 30 metal/soldier that army costs 120-180 metal
+// and is fundable alongside the (now cheaper) Outpost upkeep. The -200 money build cost and
+// the -30 money salary are left UNCHANGED so soldiers stay a money commitment and pure-economy
+// stays competitive. Mirrors soldier_cost() in rust-trainer/crates/cp-sim/src/resources.rs
+// (parity-locked).
 export const SOLDIER_COST: ResourceMap = rmap({
   [BasicResource.MONEY]: -200,
-  [BasicResource.METAL]: -50,
+  [BasicResource.METAL]: -30,
 });
 export const SOLDIER_SALARY: ResourceMap = rmap({ [BasicResource.MONEY]: -30 });

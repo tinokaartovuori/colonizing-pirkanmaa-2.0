@@ -143,7 +143,9 @@ order fully deterministic (argmax is strict `>`, lowest index wins on ties).
 6. (money - 120 - moneyDrain*5) / 1000 (spend headroom)
 7. incomeStaffing (0/1)
 8. (wood - woodNeed - buffer) / 500 (wood headroom)
-9. (metal - 50) / 500
+9. (metal - 50) / 500  (the 50 is a normalization offset, NOT the soldier metal
+   cost — that was rebalanced 50 → 30 in arc sd3; this scale constant is left at 50
+   to avoid a feature-distribution shift mid-arc)
 Indices 0–9 are clamped to [-3,3] except the 0/1 flags.
 
 **Spatial/positional per-target features (indices 10–15)** — added in schema v3.

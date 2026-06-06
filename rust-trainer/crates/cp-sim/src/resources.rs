@@ -248,8 +248,17 @@ pub fn nuclearpp_production() -> ResourceMap {
 pub fn outpost_build_cost() -> ResourceMap {
     rmap(&[(Money, -500), (Wood, -200), (Stone, -200), (Metal, -100)])
 }
+// Per-round Outpost upkeep. METAL upkeep REBALANCED -15 → -5 (arc sd2 → sd3,
+// 2026-06-06, "military-economy" pass). The -15 metal/round drain meant a single
+// mine (≈20 metal/round) could barely carry ONE Outpost before going metal-negative,
+// so the soldier-cap → army chain stalled at 1-2 soldiers and military was never
+// fundable (see CLAUDE.md "military-economy rebalance"). At -5/round ~1 mine
+// comfortably carries 2-3 Outposts (cap 7-10 soldiers). The -50 money upkeep, the
+// outpost build cost, mine output and the Device soldier-cap halving are all left
+// UNCHANGED so a pure-economy line stays competitive. Mirrors OUTPOST_PRODUCTION in
+// src/core/resources.ts (parity-locked — edit both, re-export goldens, keep parity 8/8).
 pub fn outpost_production() -> ResourceMap {
-    rmap(&[(Money, -50), (Metal, -15)])
+    rmap(&[(Money, -50), (Metal, -5)])
 }
 pub const OUTPOST_SOLDIER_VALUE: i64 = 3;
 
@@ -319,8 +328,16 @@ pub fn expert_salary() -> ResourceMap {
 }
 
 // Soldier
+// METAL build cost REBALANCED -50 → -30 (arc sd2 → sd3, 2026-06-06, "military-economy"
+// pass). Paired with the Outpost metal-upkeep cut above so that a single-mine economy can
+// actually FIELD an army: at 50 metal/soldier a 4-6 soldier army (200-300 metal) drained
+// most of a mine's output, so soldiers were never massed. At 30 metal/soldier the same
+// army costs 120-180 metal and is fundable alongside the (now cheaper) Outpost upkeep.
+// The -200 money build cost and the -30 money salary are left UNCHANGED so soldiers stay a
+// meaningful money commitment and pure-economy stays competitive. Mirrors SOLDIER_COST in
+// src/core/resources.ts (parity-locked — edit both, re-export goldens, keep parity 8/8).
 pub fn soldier_cost() -> ResourceMap {
-    rmap(&[(Money, -200), (Metal, -50)])
+    rmap(&[(Money, -200), (Metal, -30)])
 }
 pub fn soldier_salary() -> ResourceMap {
     rmap(&[(Money, -30)])
@@ -405,5 +422,13 @@ mod tests {
         assert_eq!(hepp_production().get(Money), Some(80));
         assert_eq!(mine_production().get(Metal), Some(20));
         assert_eq!(mine_build_cost().get(Stone), Some(200));
+        // Military-economy rebalance (arc sd2 → sd3): Outpost metal upkeep -15 → -5 and
+        // soldier metal cost -50 → -30 so a ~1-mine economy can field an army. The money
+        // upkeep/cost/salary stay put. Mirrored in src/core/resources.ts (parity-locked).
+        assert_eq!(outpost_production().get(Metal), Some(-5));
+        assert_eq!(outpost_production().get(Money), Some(-50));
+        assert_eq!(soldier_cost().get(Metal), Some(-30));
+        assert_eq!(soldier_cost().get(Money), Some(-200));
+        assert_eq!(soldier_salary().get(Money), Some(-30));
     }
 }

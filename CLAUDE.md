@@ -43,8 +43,10 @@ correctness contract, which the tests lock down:
   unit-slot), Hydro rewards a river (cheaper; 80/worker), Mine is a cheaper material engine
   (build cost lowered, production unchanged to keep the military/metal balance). For these
   three buildings, `reference/` is **no longer** the source of truth. The AI income models
-  (`ai.ts` `netMoneyPerRound`, nn `metrics.ts`) and the plant build-gates mirror these
-  numbers — keep them in sync if you retune.
+  (`ai.ts` `netMoneyPerRound`, nn `metrics.ts`), the plant build-gates, and the hardcoded
+  metal gates in the candidate enumerators (`candidates.rs` / `src/ai/nn/candidates.ts`:
+  the Outpost metal-income gate and the soldier metal-cost gates) mirror these numbers —
+  keep them in sync if you retune.
 - **Deliberate balance divergence (Outpost rebalance, 2026-06-05 — arc bump `sd` → `sd2`):**
   the Outpost cost in `src/core/resources.ts` (`OUTPOST_BUILD_COST`) / `resources.rs`
   (`outpost_build_cost`) was rebalanced **650 money / 300 wood / 300 stone / 300 metal →
@@ -57,6 +59,26 @@ correctness contract, which the tests lock down:
   `src/ai/nn/candidates.ts`) to match the HARD bot (`hard_ai.rs`, already 8). The soldier-cap
   formula (Outpost +3) and map-gen RNG are unchanged. This is parity-affecting: any retune
   must edit BOTH the Rust and TS mirror, re-export goldens, keep parity 8/8, and bump the arc.
+- **Deliberate balance divergence (military-economy rebalance, 2026-06-06 — arc bump
+  `sd2` → `sd3`):** two metal-only knobs were cut so the soldier-cap → army chain is
+  actually fundable on a normal ~1-mine economy (the Outpost-cost rebalance above made the
+  cap REACHABLE, but per-round metal drain still strangled the army). (1) **Outpost per-round
+  METAL upkeep −15 → −5** (`OUTPOST_PRODUCTION` / `outpost_production`): at −15 a single mine
+  (≈20 metal/round) could barely carry ONE Outpost; at −5 it comfortably carries 2-3 (cap
+  7-10 soldiers). (2) **Soldier METAL build cost −50 → −30** (`SOLDIER_COST` / `soldier_cost`):
+  a 4-6 soldier army now costs 120-180 metal instead of 200-300. The money upkeep (−50), money
+  build cost (−200), salary (−30), mine output, Outpost build cost, and the Device soldier-cap
+  halving are all left UNCHANGED so a pure-economy line stays competitive; for these two knobs
+  `reference/` is **no longer** the source of truth. Parity-locked mirrors that MUST move with
+  the knobs (else they re-create the unreachability bug): the Outpost metal-income gate
+  `(outposts + 1) * 15 → * 5` and the soldier metal-cost gates `/ 50 → / 30`, `>= 50 → >= 30`,
+  `< 50 → < 30` in BOTH `candidates.rs` and `src/ai/nn/candidates.ts`, plus the soldier-hire
+  metal gates in `hard_ai.rs`. The NN feature scale `(metal − 50) / 500` is DELIBERATELY left
+  at 50 (a normalization offset, not a rule — moving it would shift the feature distribution
+  mid-arc). This is parity-affecting: any retune must edit BOTH the Rust and TS mirror plus
+  all metal gates, re-export goldens, keep parity 8/8, and bump the arc. NOTE: the scripted
+  league (`hard_ai.rs` `AiParams` presets — reserve / max_outposts / etc.) must be RE-TUNED
+  against this new economy in a separate later phase.
 
 ## Architecture
 

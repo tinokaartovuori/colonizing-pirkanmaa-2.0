@@ -2631,7 +2631,7 @@ impl HardAi {
                 continue;
             }
             if g.free_soldier_amount(player) > 0
-                && self.metal(g, player) >= 50
+                && self.metal(g, player) >= 30 // soldier metal cost (rebalanced 50→30, arc sd3)
                 && (if self.params.fortress {
                     self.fortress_soldier_solvent(g, player)
                 } else {
@@ -2667,7 +2667,8 @@ impl HardAi {
     /// so the follow-up move is short / often unneeded), using the fortress garrison
     /// solvency gate. Returns true on a successful buy.
     fn fortress_buy_soldier(&mut self, g: &mut Game, player: PlayerId) -> bool {
-        if g.free_soldier_amount(player) <= 0 || self.metal(g, player) < 50 || self.budget <= 0 {
+        // soldier metal cost (rebalanced 50→30, arc sd3)
+        if g.free_soldier_amount(player) <= 0 || self.metal(g, player) < 30 || self.budget <= 0 {
             return false;
         }
         // Solvency: same gross-3-round cushion as the garrison hire path.
@@ -2796,7 +2797,9 @@ impl HardAi {
         let mut buys_left = (target - g.current_soldier_amount(player)).min(3).max(0);
         while buys_left > 0
             && g.current_soldier_amount(player) < target
-            && self.metal(g, player) >= 50 + metal_reserve_for_outpost
+            // 30 = soldier metal cost (rebalanced 50→30, arc sd3); the reserve (100) is the
+            // unchanged Outpost build-cost metal, kept aside for the next cap-raise.
+            && self.metal(g, player) >= 30 + metal_reserve_for_outpost
             && self.budget > 0
         {
             if !self.fortress_buy_soldier(g, player) {
@@ -3148,7 +3151,7 @@ impl HardAi {
                 .sum();
             let buyable = if can_buy {
                 g.free_soldier_amount(player)
-                    .min(self.metal(g, player) / 50)
+                    .min(self.metal(g, player) / 30) // soldier metal cost (rebalanced 50→30, arc sd3)
                     .min((self.money(g, player) - self.params.reserve) / 200)
             } else {
                 0
@@ -3163,7 +3166,7 @@ impl HardAi {
                     did = self.do_action(ok);
                 } else if can_buy
                     && g.free_soldier_amount(player) > 0
-                    && self.metal(g, player) >= 50
+                    && self.metal(g, player) >= 30 // soldier metal cost (rebalanced 50→30, arc sd3)
                     && self.affords(g, player, &soldier_cost(), self.params.reserve)
                     && {
                         // SELF-BANKRUPTCY GATE (strike-force hire): +30/round per

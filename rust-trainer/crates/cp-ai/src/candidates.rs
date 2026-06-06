@@ -420,6 +420,9 @@ fn local_vec(g: &Game, p: PlayerId, o: &Local) -> Vec<f64> {
         clamp3((m::money(g, p) as f64 - 120.0 - m::money_drain_per_round(g, p) * 5.0) / 1000.0),
         if o.income_staffing { 1.0 } else { 0.0 },
         clamp3((m::wood(g, p) as f64 - wood_need - buffer) / 500.0),
+        // NN feature scale constant — DELIBERATELY left at 50 (no longer == the soldier
+        // metal cost, which was rebalanced 50 → 30 in arc sd3). It is a normalization
+        // offset, not a rule; changing it would shift the feature distribution mid-arc.
         clamp3((m::metal(g, p) as f64 - 50.0) / 500.0),
         // --- spatial/positional (indices 10–15) ---
         clamp01(o.spatial.enemy_neighbors),
@@ -561,7 +564,10 @@ fn build_outpost(g: &Game, p: PlayerId, cfg: &TierConfig) -> Option<Candidate> {
         return None;
     }
     let outposts = m::building_counts(g, p).outpost;
-    if m::metal_income_per_round(g, p) - (outposts as f64 + 1.0) * 15.0 < 0.0 {
+    // Per-Outpost metal upkeep gate. The * 5.0 mirrors the Outpost metal upkeep in
+    // resources.rs (rebalanced -15 → -5, arc sd3) — if left at 15 it would RE-CREATE the
+    // unreachability bug. Parity-locked with buildOutpost in src/ai/nn/candidates.ts.
+    if m::metal_income_per_round(g, p) - (outposts as f64 + 1.0) * 5.0 < 0.0 {
         return None;
     }
     let spot = m::owned_tiles(g, p).into_iter().find(|&t| {
@@ -889,7 +895,7 @@ fn crack_device(
         .sum();
     let buyable = if can_buy {
         g.free_soldier_amount(p)
-            .min(m::metal(g, p) / 50)
+            .min(m::metal(g, p) / 30) // soldier metal cost (rebalanced 50→30, arc sd3; parity-locked)
             .min((m::money(g, p) - cfg.reserve) / 200)
     } else {
         0
@@ -1004,7 +1010,7 @@ fn crack_hq(
         .sum();
     let buyable = if can_buy {
         g.free_soldier_amount(p)
-            .min(m::metal(g, p) / 50)
+            .min(m::metal(g, p) / 30) // soldier metal cost (rebalanced 50→30, arc sd3; parity-locked)
             .min((m::money(g, p) - cfg.reserve) / 200)
     } else {
         0
@@ -1138,7 +1144,7 @@ fn hire_soldier(g: &Game, p: PlayerId, cfg: &TierConfig) -> Option<Candidate> {
     if g.free_soldier_amount(p) <= 0 {
         return None;
     }
-    if m::metal(g, p) < 50 {
+    if m::metal(g, p) < 30 { // soldier metal cost (rebalanced 50→30, arc sd3; parity-locked)
         return None;
     }
     let cost = soldier_cost();
@@ -1257,7 +1263,7 @@ fn attack(g: &Game, p: PlayerId, cfg: &TierConfig, enemy_coords: &[(i32, i32)]) 
             .sum();
         let buyable = if can_buy {
             g.free_soldier_amount(p)
-                .min(m::metal(g, p) / 50)
+                .min(m::metal(g, p) / 30) // soldier metal cost (rebalanced 50→30, arc sd3; parity-locked)
                 .min((m::money(g, p) - cfg.reserve) / 200)
         } else {
             0
@@ -1559,7 +1565,7 @@ pub fn execute_action(g: &mut Game, p: PlayerId, cfg: &TierConfig, action: &Acti
                     step = g.ai_move_unit(unit, from, *tile);
                 } else if *can_buy
                     && g.free_soldier_amount(p) > 0
-                    && m::metal(g, p) >= 50
+                    && m::metal(g, p) >= 30 // soldier metal cost (rebalanced 50→30, arc sd3)
                     && s::affords(g, p, &soldier_cost(), cfg.reserve)
                 {
                     step = g.ai_buy_and_place_unit("Soldier", *tile);
