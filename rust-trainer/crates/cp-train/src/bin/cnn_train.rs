@@ -3110,8 +3110,9 @@ enum ScriptKind {
     /// LEAGUE-REBUILD canonical FORTRESS (turtle): proactive soldier-cap Outposts, never
     /// marches its wall away, counter-cracks an enemy Device only.
     Fortress,
-    /// LEAGUE-REBUILD canonical STRONG_ARMY (yardstick): masses ≥ 8 soldiers + reaches an
-    /// econ threshold before opening a front; wide, rich, surgical conqueror.
+    /// LEAGUE-REBUILD STEP E v2 canonical STRONG_ARMY (yardstick): HARD-rebased, gates OFF
+    /// (the readiness-gate design deadlocked), tuned (reserve 145 + cut_priority +
+    /// army_builder) to EDGE the HARD mirror; wide, rich, surgical conqueror.
     StrongArmy,
 }
 impl ScriptKind {

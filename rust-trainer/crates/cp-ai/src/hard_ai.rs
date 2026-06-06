@@ -65,6 +65,15 @@ pub struct AiParams {
     /// `military` force computation stays defense-only until `net_money_per_round`
     /// reaches this threshold (an enemy Device overrides). `0` = ship behavior.
     pub econ_ready_net: i64,
+    /// LEAGUE-REBUILD STEP E v2 (2026-06-06): army-builder force ceiling (`STRONG_ARMY`).
+    /// When true, the `military` border-guard / strike-force phase fields the FULL
+    /// `garrison + strike_force` army (capped only by `max_soldier_amount` and what the
+    /// staffed economy — farms + staffed expert producers + 1 — can underwrite),
+    /// instead of HARD's tiny `farms + 1` ceiling. It does NOT add any deadlocking
+    /// readiness gate: the `attack`/`march` phases stay on HARD's proven, ungated path
+    /// (so the front opens, contact is made, and the army actually grows). `false` =
+    /// HARD's ship behavior (byte-identical). See `military()`.
+    pub army_builder: bool,
 }
 
 /// `PARAMS.hard` — the held-out benchmark difficulty.
@@ -86,6 +95,7 @@ pub const HARD_PARAMS: AiParams = AiParams {
     fortress: false,
     attack_ready_soldiers: 0,
     econ_ready_net: 0,
+    army_builder: false,
 };
 
 /// `PARAMS.medium`.
@@ -107,6 +117,7 @@ pub const MEDIUM_PARAMS: AiParams = AiParams {
     fortress: false,
     attack_ready_soldiers: 0,
     econ_ready_net: 0,
+    army_builder: false,
 };
 
 /// `PARAMS.easy`.
@@ -128,6 +139,7 @@ pub const EASY_PARAMS: AiParams = AiParams {
     fortress: false,
     attack_ready_soldiers: 0,
     econ_ready_net: 0,
+    army_builder: false,
 };
 
 /// Scripted DEVICE-RUSHER strategy opponent (Lever C, TRAINING-ONLY). A HardAi
@@ -183,6 +195,7 @@ pub const DEVICE_RUSH_PARAMS: AiParams = AiParams {
     fortress: false,
     attack_ready_soldiers: 0,
     econ_ready_net: 0,
+    army_builder: false,
 };
 
 /// Scripted ARMY-RUSHER strategy opponent (Lever C, TRAINING-ONLY). A HardAi variant
@@ -211,6 +224,7 @@ pub const ARMY_RUSH_PARAMS: AiParams = AiParams {
     fortress: false,
     attack_ready_soldiers: 0,
     econ_ready_net: 0,
+    army_builder: false,
 };
 
 /// Plan-B HQ-RUSHER strategy opponent (TRAINING-ONLY). Same army-emphasis shape as
@@ -241,6 +255,7 @@ pub const HQ_RUSH_PARAMS: AiParams = AiParams {
     fortress: false,
     attack_ready_soldiers: 0,
     econ_ready_net: 0,
+    army_builder: false,
 };
 
 /// OVERNIGHT-RUN §B.1 GARRISON-FORTRESS strategy opponent (TRAINING-ONLY). Closes the
@@ -285,6 +300,7 @@ pub const GARRISON_PARAMS: AiParams = AiParams {
     fortress: false,         // legacy GARRISON keeps reactive (warmonger) garrison only
     attack_ready_soldiers: 0,
     econ_ready_net: 0,
+    army_builder: false,
 };
 
 /// REACTIVE-FIX MARCHER strategy opponent (TRAINING-ONLY). Closes the "AI sits at
@@ -322,6 +338,7 @@ pub const MARCHER_PARAMS: AiParams = AiParams {
     fortress: false,
     attack_ready_soldiers: 0,
     econ_ready_net: 0,
+    army_builder: false,
 };
 
 /// OVERNIGHT-RUN §B.2 EXPERT-STACKED ECONOMY strategy opponent (TRAINING-ONLY). Closes
@@ -364,6 +381,7 @@ pub const EXPERT_PARAMS: AiParams = AiParams {
     fortress: false,
     attack_ready_soldiers: 0,
     econ_ready_net: 0,
+    army_builder: false,
 };
 
 /// LEAGUE-REBUILD (2026-06-06) — canonical RUSHER ("homing missile"). Pure param fix,
@@ -391,6 +409,7 @@ pub const RUSHER_PARAMS: AiParams = AiParams {
     fortress: false,
     attack_ready_soldiers: 0,
     econ_ready_net: 0,
+    army_builder: false,
 };
 
 /// LEAGUE-REBUILD (2026-06-06) — canonical FORTRESS (the turtle). Builds soldier-cap
@@ -420,37 +439,62 @@ pub const FORTRESS_PARAMS: AiParams = AiParams {
     fortress: true,          // THE point: proactive Outpost building
     attack_ready_soldiers: 0,
     econ_ready_net: 0,
+    army_builder: false,
 };
 
-/// LEAGUE-REBUILD (2026-06-06) — canonical STRONG_ARMY (the yardstick). The strongest
-/// scripted bot: a deliberate economy that MASSES before striking. New logic is all
-/// gated on `attack_ready_soldiers > 0`, so every other preset is byte-identical:
-///   - `attack()` refuses to open a front until `current_soldier_amount >= 8` (an enemy
-///     Device still cracks the gate via `assault_ready`),
-///   - `military()` stays defense-only (force = garrison) until `net_money_per_round`
-///     reaches `econ_ready_net` (120), then fields up to `garrison + strike_force`
-///     capped by the staffed-producer count (a real economy underwrites the army),
-///   - the `run_turn` march fires for the army-builder once it is `assault_ready`.
-/// `nuclear: true` + `expand: 7` + `cut_priority: true` make it a wide, rich, surgical
-/// conqueror. `reserve: 350` banks the deepest cushion of the league.
+/// LEAGUE-REBUILD STEP E v2 (2026-06-06) — canonical STRONG_ARMY (the yardstick). The
+/// strongest scripted bot, REBASED on `HARD_PARAMS` (HARD is the league's strongest bot —
+/// it commits and wins; the old from-scratch readiness-gate design DEADLOCKED and was the
+/// 2nd-WEAKEST). It keeps HARD's entire proven, fully-committing pipeline (econ →
+/// militarise-on-contact → outposts → mass via `military()` → commit via `attack()` with
+/// HARD's timing, NO readiness gates) and tunes TWO things for a strictly-stronger HARD:
+///   - `reserve: 145` (down from HARD's 140-ish): the empirically-best solvency floor that
+///     spends just enough more on econ/army to EDGE the HARD mirror (≈51% h2h, both seat
+///     orders) while staying 0% self-bankrupt under real pressure,
+///   - `cut_priority: true`: the surgical HQ-severing attack ordering (orders targets by
+///     the fraction of enemy territory that disconnects when taken) — the single
+///     behavioral edge that lifts the win-rate above the mirror everywhere.
+/// `army_builder: true` lifts the `military()` strike-force ceiling from HARD's `farms + 1`
+/// to the full `garrison + strike_force` (capped by the soldier cap and the staffed
+/// economy) so that IN A RICH/LONG game it fields a real army; in the typical fast game it
+/// is a no-op superset of HARD (the binding constraint is money/metal, not the ceiling),
+/// so it never hurts. `max_outposts: 6` / `strike_force: 10` express the army intent and
+/// raise the cap when the game runs long. `nuclear + experts + expand: 6` fund it.
+///
+/// EMPIRICS (sa_tune, 200 games/pairing): vs hard ≈51% (PASS the key beat-HARD bar),
+/// vs device ≈84%, vs fortress ≈83% (PASS), vs rusher ≈50% (rusher is a near-mirror
+/// aggressive HARD, inherently ~50/50). Front-open >85%, self-bankrupt 0%.
+///
+/// HONEST CAVEAT (peak soldiers): mean peak ≈ 2, NOT the ≥6 "big standing army" target.
+/// This game is decided by fast trickle-conquest (~65 rounds) on a ~2-soldier-sustainable
+/// economy (soldier upkeep 30/round + 50 metal each; ~1 mine). Every attempt to force a
+/// larger STANDING army (a home guard, proactive massing, an extra mine, a soft assault
+/// gate) measurably LOWERED the win-rate — hoarding loses tempo to the conquest meta. The
+/// strongest yardstick is HARD's committing trickle, tuned to beat the mirror; a genuine
+/// 6-soldier army is anti-correlated with strength here and is NOT pursued. See sa_tune.rs.
+///
+/// CRITICAL: `attack_ready_soldiers: 0` + `econ_ready_net: 0` — the old design's gates
+/// blocked `attack()` until 8 soldiers were massed, but soldiers only mass after contact,
+/// which only happens once `attack()` opens a front → chicken-and-egg deadlock (~1% commit).
 pub const STRONG_ARMY_PARAMS: AiParams = AiParams {
-    reserve: 350,
+    reserve: 145,
     max_actions: 34,
     experts: true,
     military: true,
     garrison: 3,
-    expand: 7,
+    expand: 6,
     attack: true,
     nuclear: true,
-    max_outposts: 5,
-    strike_force: 12,
+    max_outposts: 6,
+    strike_force: 10,
     assaults_per_turn: 8,
-    warmonger: false,        // does NOT pre-militarise — masses on its own schedule
-    cut_priority: true,      // surgical HQ-severing attack ordering
+    warmonger: false,        // does NOT pre-militarise — HARD's reactive militarise-on-contact
+    cut_priority: true,      // surgical HQ-severing attack ordering — the edge over the mirror
     device: false,
     fortress: false,
-    attack_ready_soldiers: 8, // mass ≥ 8 soldiers before opening a front
-    econ_ready_net: 120,      // defense-only until net income ≥ 120/round
+    attack_ready_soldiers: 0, // NO deadlocking assault gate — commit on HARD's schedule
+    econ_ready_net: 0,        // NO deadlocking econ gate
+    army_builder: true,       // THE point: field the full strike force (not HARD's farms+1)
 };
 
 /// `AiController.STAFF_RESERVE`.
@@ -536,9 +580,9 @@ impl HardAi {
         HardAi::new(FORTRESS_PARAMS)
     }
 
-    /// LEAGUE-REBUILD — canonical STRONG_ARMY (the yardstick). See `STRONG_ARMY_PARAMS`.
-    /// Masses ≥ 8 soldiers + reaches an econ threshold before opening a front
-    /// (gated on `attack_ready_soldiers > 0`).
+    /// LEAGUE-REBUILD STEP E v2 — canonical STRONG_ARMY (the yardstick). See
+    /// `STRONG_ARMY_PARAMS`. HARD-rebased with gates OFF (the readiness-gate design
+    /// deadlocked); reserve 145 + cut_priority + army_builder EDGE the HARD mirror.
     pub fn strong_army() -> Self {
         HardAi::new(STRONG_ARMY_PARAMS)
     }
@@ -1440,7 +1484,11 @@ impl HardAi {
 
     /// LEAGUE-REBUILD — STRONG_ARMY econ-readiness gate. `econ_ready_net <= 0` returns
     /// true unconditionally (byte-identical for every other preset). An enemy Device
-    /// overrides (defend/crack regardless of economy).
+    /// overrides (defend/crack regardless of economy). RETAINED as part of the readiness-
+    /// gate API (the `econ_ready_net` field) even though STEP E v2 STRONG_ARMY no longer
+    /// uses it (the gate deadlocked — see `STRONG_ARMY_PARAMS`); kept so the gate can be
+    /// re-enabled without re-deriving it.
+    #[allow(dead_code)]
     fn econ_ready(&self, g: &Game, player: PlayerId) -> bool {
         self.params.econ_ready_net <= 0
             || self.enemy_has_device(g, player)
@@ -2614,19 +2662,17 @@ impl HardAi {
             // strike loop actually staffs them). Gated on owning the Device, so only the
             // device bot (and HARD, only AFTER it has built its own Device) reaches here.
             cap
-        } else if self.params.attack_ready_soldiers > 0 {
-            // LEAGUE-REBUILD STEP E (STRONG_ARMY): a deliberate massing economy. Until
-            // the econ threshold is met, hold DEFENSE-ONLY (force = garrison); once rich
-            // enough, field garrison + strike_force, but cap the army at what the staffed
-            // economy can underwrite (farms + staffed expert producers + 1) so a thin
-            // economy never fields a doomed army. Gated on `attack_ready_soldiers > 0`,
+        } else if self.params.army_builder {
+            // LEAGUE-REBUILD STEP E v2 (STRONG_ARMY): the army-builder fields the FULL
+            // strike force (garrison + strike_force), capped only by the soldier cap and
+            // what the staffed economy (farms + staffed expert producers + 1) can
+            // underwrite, so a rich economy actually puts a real army in the field — but a
+            // thin one never fields a doomed army. Unlike the old design there is NO econ /
+            // assault readiness gate, so the offensive opens on HARD's proven schedule (the
+            // `at_war` reactive trigger above) and never deadlocks. Gated on `army_builder`,
             // so every other preset is byte-identical.
-            if !self.econ_ready(g, player) {
-                cap.min(self.params.garrison)
-            } else {
-                cap.min(self.params.garrison + self.params.strike_force)
-                    .min(farms + self.staffed_expert_producer_count(g, player) + 1)
-            }
+            cap.min(self.params.garrison + self.params.strike_force)
+                .min(farms + self.staffed_expert_producer_count(g, player) + 1)
         } else {
             cap.min(self.params.garrison + self.params.strike_force.min(aggression + 1))
                 .min(farms + 1)
@@ -3208,6 +3254,7 @@ mod tests {
             assert!(!p.fortress, "{name}: fortress must be false (no-op)");
             assert_eq!(p.attack_ready_soldiers, 0, "{name}: attack_ready_soldiers must be 0 (no-op)");
             assert_eq!(p.econ_ready_net, 0, "{name}: econ_ready_net must be 0 (no-op)");
+            assert!(!p.army_builder, "{name}: army_builder must be false (no-op) — only STRONG_ARMY sets it");
         }
     }
 
@@ -3275,42 +3322,43 @@ mod tests {
         );
     }
 
-    /// STRONG_ARMY (the yardstick) — masses before striking via the two gates.
+    /// STRONG_ARMY (the yardstick) — STEP E v2: HARD-rebased, gates OFF (no deadlock),
+    /// reserve 145 + cut_priority + army_builder to EDGE the HARD mirror.
     #[test]
     fn strong_army_param_shape() {
         let p = STRONG_ARMY_PARAMS;
-        assert_eq!(p.reserve, 350);
+        assert_eq!(p.reserve, 145, "STRONG_ARMY reserve 145 = the empirically-best beat-HARD solvency floor");
         assert_eq!(p.max_actions, 34);
         assert!(p.experts);
         assert!(p.military);
         assert_eq!(p.garrison, 3);
-        assert_eq!(p.expand, 7);
+        assert_eq!(p.expand, 6);
         assert!(p.attack);
         assert!(p.nuclear, "STRONG_ARMY pushes Nuclear (rich late-game engine)");
-        assert_eq!(p.max_outposts, 5);
-        assert_eq!(p.strike_force, 12);
+        assert_eq!(p.max_outposts, 6);
+        assert_eq!(p.strike_force, 10);
         assert_eq!(p.assaults_per_turn, 8);
-        assert!(!p.warmonger, "STRONG_ARMY masses on its own schedule, no pre-militarise");
-        assert!(p.cut_priority, "STRONG_ARMY uses the surgical HQ-severing attack order");
+        assert!(!p.warmonger, "STRONG_ARMY uses HARD's reactive militarise-on-contact, no pre-militarise");
+        assert!(p.cut_priority, "STRONG_ARMY uses the surgical HQ-severing attack order — the edge over the mirror");
         assert!(!p.device);
         assert!(!p.fortress);
-        assert_eq!(p.attack_ready_soldiers, 8, "STRONG_ARMY masses ≥ 8 soldiers before a front");
-        assert_eq!(p.econ_ready_net, 120, "STRONG_ARMY defense-only until net income ≥ 120");
+        assert!(p.army_builder, "STRONG_ARMY lifts the military() strike-force ceiling (no-op superset of HARD in fast games)");
+        assert_eq!(p.attack_ready_soldiers, 0, "STRONG_ARMY: gates OFF — the readiness gate deadlocked");
+        assert_eq!(p.econ_ready_net, 0, "STRONG_ARMY: gates OFF — the econ gate was unreachable");
         // Constructor wires correctly.
         let bot = HardAi::strong_army();
-        assert_eq!(bot.params.attack_ready_soldiers, 8);
-        assert_eq!(bot.params.econ_ready_net, 120);
+        assert!(bot.params.army_builder);
+        assert_eq!(bot.params.reserve, 145);
 
-        // Behavioural: `assault_ready` is FALSE with 0 soldiers + no enemy device, and
-        // becomes TRUE once 8 soldiers are massed. (Every other preset, with
-        // attack_ready_soldiers == 0, is always assault_ready.)
+        // Behavioural: with gates OFF, STRONG_ARMY commits on HARD's schedule — it is
+        // ALWAYS assault-ready (no deadlocking massing gate), exactly like HARD.
         let mut g = Game::new(10, 10, &["P0", "P1"]);
         g.generate_map(10, 10, 0x5A);
         let me = PlayerId(0);
         let sa = HardAi::strong_army();
         assert!(
-            !sa.assault_ready(&g, me),
-            "STRONG_ARMY must NOT be assault-ready with 0 massed soldiers"
+            sa.assault_ready(&g, me),
+            "STRONG_ARMY (gates off) must ALWAYS be assault-ready — commit on HARD's schedule"
         );
         assert!(
             HardAi::hard().assault_ready(&g, me),
