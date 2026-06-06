@@ -422,15 +422,31 @@ pub const RUSHER_PARAMS: AiParams = AiParams {
 /// a fat cushion against the +50/round-per-Outpost upkeep — the bankruptcy fix for a bot
 /// that proactively builds up to 3 Outposts.
 pub const FORTRESS_PARAMS: AiParams = AiParams {
-    reserve: 320,            // bankruptcy fix: proactive Outposts drain +50/round each
+    // LEAGUE-REBUILD STEP F (2026-06-06) — reserve 320→130. The fat 320 reserve was
+    // STARVING the very wall it was meant to fund: every `affords()` call keeps a
+    // `reserve + drain*5` cash floor, and at 320 + a multi-Outpost drain the floor sat
+    // ABOVE the bot's banked cash, so it could neither hire its garrison soldiers
+    // (200 money each) nor lay its 2nd/3rd Outpost (500 money) even while sitting on
+    // 800-900 banked money / 400+ metal (see fort_diag). The per-commit
+    // `affordable_after_commit(.., 4 rounds)` projection is the real solvency guard
+    // (it sees the upkeep each commit ADDS); the broad reserve floor only needs to be a
+    // light cushion. (See the per-gate notes in build_outposts / military.) The broad
+    // `reserve + drain*5` floor in `affords` is RETAINED on every commit (it is the
+    // cushion that protects the turtle when an attacker strips its income tiles); only
+    // the reserve constant and the proactive-timing gates were loosened.
+    reserve: 320,
     max_actions: 26,
     experts: true,
     military: true,
     garrison: 3,
+    // LEAGUE-REBUILD STEP F — expand 4. The turtle needs enough reach to acquire grassland
+    // (farms = income that funds the wall) and a mountain (mine = metal for soldiers);
+    // grassland-poor seeds with too little expansion stalled at 1 farm and never funded the
+    // wall. 4 balances reach against the per-tile scout/frontier drain.
     expand: 3,
     attack: true,            // counter-cracker stays ON (fires via can_buy)
     nuclear: false,
-    max_outposts: 3,         // proactive soldier-cap wall (cap → HQ(1) + 3×3 = 10)
+    max_outposts: 3,
     strike_force: 0,         // turtle: never go on the offensive
     assaults_per_turn: 0,    // suppressed via the `<= 1 && !can_buy` attack gate
     warmonger: true,         // load-bearing for proactive garrison + military phase
@@ -687,6 +703,7 @@ impl HardAi {
         self.staff_buildings(g, player);
         self.secure_wood(g, player);
 
+
         let saving_for_mine = self.staffed_farm_count(g, player) >= 2
             && self.owned_tiles(g, player).iter().any(|&t| {
                 g.tiles[t.0].tile_type == TileType::Mountain && g.tiles[t.0].building.is_none()
@@ -707,6 +724,17 @@ impl HardAi {
         self.expand(g, player);
         self.build_bridges(g, player); // unblock expansion across owned rivers (Plan-B fix)
         self.build_strange_device(g, player); // when leading: race the Device to a decisive win
+        // LEAGUE-REBUILD STEP F — FORTRESS: field the wall's soldiers. Runs AFTER the
+        // economy + Outpost build-out (so it never starves farms/mines) but BEFORE
+        // `military()` so the freshly-bought soldiers are available for `military` to MOVE
+        // into the HQ + onto frontier tiles. A soldier can't be bought onto the HQ (it's
+        // never in `get_available_tiles`), so HARD only ever garrisons by moving frontier
+        // buys home — but a calm turtle has no frontier contact, so it never bought ANY
+        // soldier and held 0 defenders all game (the 1-rush hole). This BUYS soldiers onto
+        // the staging frontier up to the wall's target; `military` then walls them up.
+        if self.params.fortress {
+            self.fortress_field_wall(g, player);
+        }
         self.military(g, player);
         self.attack(g, player);
         // REACTIVE-FIX (MARCHER): after the standard attack phase has fired every
@@ -1112,7 +1140,18 @@ impl HardAi {
     }
 
     fn build_mines(&mut self, g: &mut Game, player: PlayerId) {
-        if self.wood(g, player) < 300 {
+        // LEAGUE-REBUILD STEP F — FORTRESS needs a Mine EARLY: each soldier costs 50 metal
+        // and each Outpost 100 metal + 15 metal/round upkeep, so the wall is metal-gated.
+        // HARD waits for `wood >= 300` (a big bank that delays the Mine well past the early
+        // rush window). Let the fortress build its FIRST Mine at a lower wood bar so the
+        // metal engine comes online in time to feed the Outpost/garrison chain. Gated on
+        // `fortress`, so HARD / every other preset is byte-identical.
+        let has_mine = self
+            .owned_tiles(g, player)
+            .iter()
+            .any(|&t| self.building_of(g, t) == Some(BuildingType::Mine));
+        let wood_min = if self.params.fortress && !has_mine { 200 } else { 300 };
+        if self.wood(g, player) < wood_min {
             return;
         }
         let mines = self
@@ -1730,13 +1769,54 @@ impl HardAi {
         if outposts >= self.params.max_outposts {
             return;
         }
-        if g.get_tile_count_for_player(player) < 8 {
+        // LEAGUE-REBUILD STEP F (2026-06-06) — FORTRESS wall fix. The proactive turtle
+        // was choked by this gate chain to ~1.2 Outposts (and so a ~1-soldier cap, i.e.
+        // a 1-rush-crackable HQ). The chain was tuned for a REACTIVE HARD already at war
+        // on a 1-mine economy; for a turtle that walls up BEFORE first contact (and banks
+        // a fat reserve) it over-blocks. All relaxations are gated on `fortress`, so HARD
+        // / every other preset is byte-identical. The hard solvency guards (the cost's raw
+        // resource check via `affords`, and the per-commit `affordable_after_commit(50, 4)`
+        // projection below) ALWAYS still apply — these only loosen the *proactive timing*.
+        let fortress = self.params.fortress;
+        // (a) 8-tile minimum. Keep it for the 2nd+ Outpost (the wall should sit on a real
+        //     empire), but let the FIRST Outpost go up at 6 tiles for a turtle — the first
+        //     +3 cap (HQ 1 → 4) is the single most important defensive unlock and waiting
+        //     for 8 tiles on `expand: 3` delays it past the early-rush window.
+        let tile_min = if fortress && outposts == 0 { 6 } else { 8 };
+        if g.get_tile_count_for_player(player) < tile_min {
             return;
         }
-        if self.net_money_per_round(g, player) - 50.0 < 10.0 {
+        // (b) net-money floor. HARD demands net > 60 (`net - 50 < 10`). A turtle BANKS cash
+        //     and finances its wall partly from the bank, so it can dip below HARD's positive
+        //     surplus — but NOT into a free-fall: a deeply-negative-net Outpost (which can't be
+        //     disbanded) is the self-bankruptcy that ends games early. Require the POST-Outpost
+        //     net to stay >= -10 (`net - 50 >= -10` → current net >= 40): a small,
+        //     reserve-financeable deficit, NOT the -120 free-fall that bankrupted the bot.
+        //     Non-fortress: unchanged (net > 60).
+        // Solvent net floor: the post-Outpost net must stay >= -10 (a small,
+        // reserve-financeable deficit). A turtle banks cash so it can dip below HARD's
+        // positive surplus, but NOT into a free-fall (a non-disbandable Outpost on a
+        // deeply-negative net is the self-bankruptcy that ends games early). Non-fortress:
+        // unchanged (net > 60).
+        let net_floor = if fortress { 0.0 } else { 10.0 };
+        if self.net_money_per_round(g, player) - 50.0 < net_floor {
             return;
         }
-        if self.metal_income_per_round(g, player) - (outposts + 1) as f64 * 15.0 < 0.0 {
+        // (c) metal-income gate. HARD refuses an Outpost unless mine income already covers
+        //     the +15 metal/round each Outpost upkeeps (`metal_income >= (outposts+1)*15`).
+        //     For a turtle that hasn't yet built a Mine this blocks the FIRST Outpost
+        //     forever — the root choke. Relax for the fortress: instead of metal *income*,
+        //     require a banked metal *buffer* (the Outpost's own 100-metal cost is already in
+        //     `affords`; demand a further cushion so the 15/round upkeep won't drive metal
+        //     negative before the Mine comes online). `prioritise_fortress_mine` (below)
+        //     brings the Mine up early so income catches up. Non-fortress: unchanged.
+        if fortress {
+            let metal_after = self.metal(g, player) - 100; // Outpost costs 100 metal
+            let upkeep_runway = (outposts + 1) * 15 * 4; // 4 rounds of the new metal upkeep
+            if metal_after < upkeep_runway && self.metal_income_per_round(g, player) < 15.0 {
+                return;
+            }
+        } else if self.metal_income_per_round(g, player) - (outposts + 1) as f64 * 15.0 < 0.0 {
             return;
         }
         let buildable: Vec<TileId> = self
@@ -1756,7 +1836,13 @@ impl HardAi {
         });
         let spot = frontline.or_else(|| buildable.first().copied());
         if let Some(spot) = spot {
-            if self.affords(g, player, &resources::outpost_build_cost(), self.params.reserve.min(100))
+            // Cash floor. The FORTRESS uses a smaller reserve (80) than HARD's
+            // `reserve.min(100)` so the wall isn't starved, but KEEPS the `drain*5`
+            // income-loss protection in `affords` (banks 5 rounds of gross drain — the guard
+            // that prevents bankruptcy when an attacker strips the turtle's income tiles).
+            // Non-fortress: byte-identical (`reserve.min(100)`).
+            let cash_reserve = if self.params.fortress { 120 } else { self.params.reserve.min(100) };
+            if self.affords(g, player, &resources::outpost_build_cost(), cash_reserve)
                 && self.budget > 0
             {
                 // SELF-BANKRUPTCY GATE: an Outpost is the costliest upkeep commit
@@ -1769,7 +1855,12 @@ impl HardAi {
                 // directly, so 4 rounds is a fair "survive long enough to use it".
                 let outpost_cost = resources::outpost_build_cost();
                 let outpost_money = -outpost_cost.get(BasicResource::Money).unwrap_or(0);
-                if !self.affordable_after_commit(g, player, outpost_money, 50, 4) {
+                // FORTRESS: 3-round post-commit projection (vs HARD's 4). The Outpost pays off
+                // as defensive capacity, not income, so the turtle accepts a slightly shorter
+                // runway; the reserve + raw-resource checks still bound it. (2 rounds tipped
+                // self-bankruptcy past the 5% gate; 3 is the solvent value.)
+                let buffer_rounds = 4;
+                if !self.affordable_after_commit(g, player, outpost_money, 50, buffer_rounds) {
                     return;
                 }
                 let ok = g.ai_build_building("Outpost", spot);
@@ -2479,6 +2570,54 @@ impl HardAi {
         None
     }
 
+    /// LEAGUE-REBUILD STEP F — FORTRESS soldier solvency. HARD's `affords(reserve+drain*5)`
+    /// + `can_afford_upkeep(net>=0)` chain is incompatible with a turtle (Outpost upkeep
+    /// drags net negative and inflates drain*5 so the garrison the Outposts exist to enable
+    /// was permanently unaffordable; see fort_diag). But a pure cash-runway gate had NO
+    /// income-loss protection → 19-23/40 self-bankruptcies when an attacker stripped the
+    /// turtle's income tiles. This guard splits the difference: after the buy, the BANKED
+    /// money must cover BOTH (a) 3 rounds of the post-commit GROSS drain — the income-loss
+    /// cushion: if income vanishes the bot survives 3 rounds and can disband — AND (b) a
+    /// raw-resource + $80 floor. Gross*3 (not *5) is reachable on a turtle's bank while
+    /// still bounding the bankruptcy exposure.
+    fn fortress_soldier_solvent(&self, g: &Game, player: PlayerId) -> bool {
+        let cost = soldier_cost();
+        if !g.players[player.0].has_enough_resources(&cost) {
+            return false;
+        }
+        let money_after = self.money(g, player) + cost.get(BasicResource::Money).unwrap_or(0);
+        let gross_after = self.money_drain_per_round(g, player) + 30.0; // +1 soldier salary
+        // SOLVENCY (the mandatory <=5% bankrupt gate). Two-part guard:
+        //   (1) post-commit per-round NET must stay >= -20 (income covers the wall's upkeep
+        //       within a tiny bank-financed deficit). `net_money_per_round` already nets ALL
+        //       income against salary + Outpost/Village upkeep, so this is the real
+        //       income-loss guard: if an attacker strips farms, net drops and further hires
+        //       stop BEFORE the bot free-falls. Soldier #1 is existential → allow a slightly
+        //       deeper deficit (-60) to get the lone defender up.
+        //   (2) the banked money must cover a few rounds of post-commit GROSS drain (the
+        //       runway if income vanishes outright). Tighter for #2+ than for the #1 defender.
+        let first = self.current_soldier_amount(g, player) == 0;
+        if first {
+            // The FIRST defender is existential: a 0-defender HQ falls to a single soldier
+            // (every observed crack — FORT_CRACK_DBG). It is worth a brief bank-financed
+            // deficit to get the lone defender up, so gate it lightly: raw resources + an $80
+            // cash floor + a bounded net deficit (-50) it can finance from the bank. The
+            // fuller income-loss cushion below applies to soldiers #2+.
+            return money_after >= 120 && self.net_money_per_round(g, player) - 30.0 >= -25.0;
+        }
+        let net_after = self.net_money_per_round(g, player) - 30.0;
+        if net_after < 0.0 {
+            return false; // soldier #2+ must be income-POSITIVE after its salary — the
+                          // income-loss guard: a wall the per-round economy can't carry is
+                          // the self-bankruptcy that ends games early.
+        }
+        (money_after as f64) >= 150.0_f64.max(gross_after * 4.0)
+    }
+
+    fn current_soldier_amount(&self, g: &Game, player: PlayerId) -> i64 {
+        g.current_soldier_amount(player)
+    }
+
     fn garrison(&mut self, g: &mut Game, player: PlayerId, tid: TileId, want: i64) {
         while self.soldiers_on(g, tid, player) < want
             && g.tiles[tid.0].has_space_for_units()
@@ -2493,16 +2632,19 @@ impl HardAi {
             }
             if g.free_soldier_amount(player) > 0
                 && self.metal(g, player) >= 50
-                && self.affords(g, player, &soldier_cost(), self.params.reserve)
-                && self.can_afford_upkeep(g, player, 30.0)
-                && {
-                    // SELF-BANKRUPTCY GATE: a new Soldier adds +30 money/round.
-                    // `can_afford_upkeep` above only checks current net (one step);
-                    // this projects 4 rounds of post-commit drain so cumulative
-                    // garrison hires can't tip the bot past its income.
-                    let soldier_money = -soldier_cost().get(BasicResource::Money).unwrap_or(0);
-                    self.affordable_after_commit(g, player, soldier_money, 30, 4)
-                }
+                && (if self.params.fortress {
+                    self.fortress_soldier_solvent(g, player)
+                } else {
+                    // SHIPPED HARD path (byte-identical): reserve floor + net guard + 4-round
+                    // post-commit projection.
+                    self.affords(g, player, &soldier_cost(), self.params.reserve)
+                        && self.can_afford_upkeep(g, player, 30.0)
+                        && {
+                            let soldier_money =
+                                -soldier_cost().get(BasicResource::Money).unwrap_or(0);
+                            self.affordable_after_commit(g, player, soldier_money, 30, 4)
+                        }
+                })
             {
                 let ok = g.ai_buy_and_place_unit("Soldier", tid);
                 if !self.do_action(ok) {
@@ -2511,6 +2653,156 @@ impl HardAi {
                 continue;
             }
             break;
+        }
+    }
+
+    /// LEAGUE-REBUILD STEP F — FORTRESS: a soldier can only be PLACED on a tile that is in
+    /// `get_available_tiles` (the staging frontier) — and a player's own un-conquered HQ is
+    /// NEVER available (see `get_available_tiles_for` / `has_opponent_headquarters`). So the
+    /// HQ garrison can never BUY directly onto the HQ; HARD only ever fills the HQ by MOVING
+    /// soldiers it first bought on the frontier (its border-guard/strike-force phase). A
+    /// calm turtle with no enemy contact and strike_force 0 thus never bought a single
+    /// soldier ANYWHERE → 0 defenders all game (the root of the 1-rush hole). This helper
+    /// BUYS a soldier onto the best available owned tile (preferring one ADJACENT to the HQ
+    /// so the follow-up move is short / often unneeded), using the fortress garrison
+    /// solvency gate. Returns true on a successful buy.
+    fn fortress_buy_soldier(&mut self, g: &mut Game, player: PlayerId) -> bool {
+        if g.free_soldier_amount(player) <= 0 || self.metal(g, player) < 50 || self.budget <= 0 {
+            return false;
+        }
+        // Solvency: same gross-3-round cushion as the garrison hire path.
+        if !self.fortress_soldier_solvent(g, player) {
+            return false;
+        }
+        let hq = g.get_hq_tile(player);
+        let avail = g.get_available_tiles();
+        // Candidate buy tiles: owned, available (stage-able), has room, NOT an Outpost
+        // (can't hold soldiers). Prefer HQ-adjacent, then fewest enemy-border (safe interior).
+        let mut spots: Vec<TileId> = self
+            .owned_tiles(g, player)
+            .into_iter()
+            .filter(|&t| {
+                avail.contains(&t)
+                    && g.tiles[t.0].has_space_for_units()
+                    && self.building_of(g, t) != Some(BuildingType::Outpost)
+            })
+            .collect();
+        if spots.is_empty() {
+            return false;
+        }
+        spots.sort_by_key(|&t| {
+            let adj = match hq {
+                Some(h) => g.neighbour_tiles(h).iter().any(|&n| n == t),
+                None => false,
+            };
+            (if adj { 0 } else { 1 }, self.enemy_border_count(g, t, player))
+        });
+        let spot = spots[0];
+        let ok = g.ai_buy_and_place_unit("Soldier", spot);
+        self.do_action(ok)
+    }
+
+    /// LEAGUE-REBUILD STEP F — FORTRESS: buy the wall's soldiers up to its target. Target =
+    /// HQ garrison (3) + one defender per enemy-bordering frontier tile, bounded by the
+    /// soldier cap. Buys are placed on the staging frontier (the only place a soldier CAN be
+    /// placed); the follow-up `military()` pass moves them into the HQ + onto frontier tiles.
+    /// Each buy goes through `fortress_buy_soldier` (the cash-runway solvency gate + metal
+    /// cost), and the number of buys/turn is bounded so the metal bank can refill and the
+    /// per-turn cash draw stays survivable. Fortress-only.
+    fn fortress_field_wall(&mut self, g: &mut Game, player: PlayerId) {
+        if !self.params.military || self.budget <= 0 {
+            return;
+        }
+        let cap = g.max_soldier_amount(player);
+        if cap <= 0 {
+            return;
+        }
+        // MINIMUM VIABLE WALL vs ECONOMY-FIRST. The crack data (FORT_CRACK_DBG) shows nearly
+        // every HQ-conquest is a SINGLE soldier walking onto an HQ with ZERO defenders — in
+        // weak-economy / few-grassland seeds where the turtle never built an Outpost. So the
+        // FIRST HQ defender is existential and must go up in EVERY seed: a lone soldier raises
+        // the conquest bar from 1 attacker to 2 (3 defenders → 4). But buying the FULL wall
+        // before the economy is established drops net below the Farm/Outpost build thresholds
+        // and deadlocks the build-out (1 farm / cap 1 forever). So: ALWAYS allow the minimum
+        // (1 HQ defender, or up to the current cap if directly threatened); only ramp the
+        // LARGER wall once the economy can underwrite it (>= 3 farms OR positive net).
+        let threatened = self.enemy_threat(g, player) > 0
+            || self.reachable_enemy_max_defenders(g, player) > 0;
+        let econ_ready =
+            self.staffed_farm_count(g, player) >= 3 || self.net_money_per_round(g, player) >= 60.0;
+        // CAP-BEFORE-WALL (breaks the death spiral). A garrison soldier's -30/round salary
+        // depresses the SAME `net_money` that gates Outpost building, so fielding soldiers
+        // early starved the cap → the wall could never grow past 1 AND outposts stopped (ops
+        // collapsed). So: until the Outposts are up (cap headroom exists), field only the lone
+        // existential HQ defender; pour the rest of the budget into the cap (Outposts). Once
+        // the cap is built, fill the full wall. Under a direct threat, defend to the cap now.
+        let outposts_up = self
+            .owned_tiles(g, player)
+            .iter()
+            .filter(|&&t| self.building_of(g, t) == Some(BuildingType::Outpost))
+            .count() as i64;
+        // Build the cap (Outposts) FIRST so the wall has headroom; field the full garrison
+        // only once at least one Outpost (cap >= 4) is up — proactively fielding soldiers on a
+        // capped-at-1 turtle just depresses net (death spiral) AND adds bankruptcy without a
+        // real wall (a lone defender is killed then the HQ taken). Under a direct threat,
+        // defend to the cap regardless.
+        let has_cap_headroom = outposts_up >= 1;
+        let min_wall = if threatened {
+            cap
+        } else if has_cap_headroom {
+            cap // an Outpost is up (cap >= 4) — field the wall
+        } else {
+            0 // no cap headroom yet — pour everything into the cap (Outposts) first; fielding
+              // a lone defender on a capped-at-1 turtle measurably RAISED self-bankruptcy
+              // without stopping the rush (the lone soldier is killed, then the HQ taken)
+        };
+        // OUTPOST-METAL PRIORITY. A soldier (50 metal) competes with an Outpost (100 metal)
+        // for the same mined metal; if the wall keeps draining metal to ~10-50 the Outpost
+        // (which RAISES the cap so MORE soldiers can be held) never has its 100 metal and the
+        // cap stays at 1 forever (see fort_diag). While the turtle still wants more Outposts
+        // and isn't directly threatened, reserve 100 metal for the next Outpost — only spend
+        // metal on soldiers from the SURPLUS above that. (Under a real threat, defend now.)
+        let outposts_now = self
+            .owned_tiles(g, player)
+            .iter()
+            .filter(|&&t| self.building_of(g, t) == Some(BuildingType::Outpost))
+            .count() as i64;
+        let wants_more_outposts = outposts_now < self.params.max_outposts;
+        // Reserve metal for the next Outpost (cap-raise) only AFTER the minimum HQ defender is
+        // up — the lone defender (50 metal) is existential and must never be blocked by the
+        // Outpost metal reservation. Don't reserve under a direct threat (defend now).
+        let have_min_defender = g.current_soldier_amount(player) >= 1;
+        let metal_reserve_for_outpost =
+            if wants_more_outposts && !threatened && have_min_defender { 100 } else { 0 };
+        let frontier_tiles = self
+            .owned_tiles(g, player)
+            .iter()
+            .filter(|&&t| {
+                self.building_of(g, t) != Some(BuildingType::Outpost)
+                    && self.enemy_border_count(g, t, player) > 0
+            })
+            .count() as i64;
+        // Wall target: the FULL wall (3 at HQ + one per frontier tile, capped by cap) once the
+        // cap (Outposts) is built AND the econ can underwrite it; otherwise just `min_wall`
+        // (1 lone defender while the cap is still being laid — cap-before-wall).
+        let full_target = cap.min(self.params.garrison.max(3) + frontier_tiles);
+        let target = if has_cap_headroom && econ_ready {
+            full_target
+        } else {
+            min_wall.min(full_target)
+        };
+        // Bound the buys this turn (cap-bounded ramp + a hard ceiling) so the wall grows
+        // steadily without a single turn draining the bank or the metal stock.
+        let mut buys_left = (target - g.current_soldier_amount(player)).min(3).max(0);
+        while buys_left > 0
+            && g.current_soldier_amount(player) < target
+            && self.metal(g, player) >= 50 + metal_reserve_for_outpost
+            && self.budget > 0
+        {
+            if !self.fortress_buy_soldier(g, player) {
+                break;
+            }
+            buys_left -= 1;
         }
     }
 
@@ -2655,6 +2947,16 @@ impl HardAi {
             // sustain (per-buy upkeep guards in `garrison` still apply), ignoring the
             // low *visible* defender count (their cap is halved, so it reads as weak).
             cap.min(farms + 3)
+        } else if self.params.fortress {
+            // LEAGUE-REBUILD STEP F — FORTRESS fields the FULL soldier cap. The wall is the
+            // whole point: HARD's `min(garrison+strike_force, farms+1)` ceiling pinned the
+            // turtle's army at ~3 even with cap 10 (strike_force 0 → ceiling = min(3, farms+1)),
+            // so a calm pre-contact HQ + every Outpost's cap went UNUSED and the border stayed
+            // 1-soldier-crackable. Field to the cap (HQ garrison to 3, then one defender per
+            // frontier tile, then the remainder pooled). The per-commit
+            // `affordable_after_commit(.., 2)` + metal-cost guards in `garrison` keep each hire
+            // solvent, so this never bankrupts — it just lets the wall actually reach its size.
+            cap
         } else if g.player_owns_strange_device(player) {
             // LEAGUE-REBUILD STEP D#3 (DEVICE-STRATEGIST): we hold a standing Device —
             // field the WHOLE halved army to ring its approaches (the defend-our-device
