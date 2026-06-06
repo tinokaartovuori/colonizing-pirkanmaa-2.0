@@ -198,7 +198,12 @@ impl SpatialNet {
         // (k3, dilation2, pad2 -> same HxW, RF 9x9 once stacked on the dense 5x5 trunk).
         // Same seed offset as the dense conv3 in `new_seeded_arch`.
         let d = net.d;
-        net.conv3 = Some(Conv2d::new_seeded_dilated(d, d, 3, 2, 2, seed.wrapping_add(7)));
+        // Dilation DISABLED for perf: a dilated conv routes through the slow general
+        // path (the k3/pad1 fast path is dilation=1-only) -> ~7x slower self-play. The
+        // C_DIST_TO_ENEMY_HQ/DEVICE gradient planes already give board-spanning vision
+        // per-cell at zero cost, so the wider RF is redundant. Primitive kept + grad-
+        // checked for future use; flip back to new_seeded_dilated(d,d,3,2,2,..) to re-enable.
+        net.conv3 = Some(Conv2d::new_seeded(d, d, 3, 1, seed.wrapping_add(7)));
         net
     }
 
@@ -232,7 +237,11 @@ impl SpatialNet {
         // on the dense conv1 3x3 -> effective 7x7 with no extra params/depth. Same
         // seed offset as the dense conv2 in `new_seeded_arch`.
         let (d1, d) = (net.d1, net.d);
-        net.conv2 = Conv2d::new_seeded_dilated(d1, d, 3, 2, 2, seed.wrapping_add(2));
+        // Dilation DISABLED for perf (see default_with_value_scalars): distance planes
+        // deliver board-spanning vision; primitive kept + grad-checked. Re-enable via
+        // new_seeded_dilated(d1,d,3,2,2,..).
+        let _ = d;
+        net.conv2 = Conv2d::new_seeded(d1, d, 3, 1, seed.wrapping_add(2));
         net
     }
 

@@ -5204,31 +5204,33 @@ fn run_train(tc: &TrainCfg) {
                 let script_pick: Option<ScriptKind> = if tc.script_opponents && tc.script_frac > 0.0 {
                     let mut s_rng = XorShift32::new(seed ^ 0x5C1B_7E5C);
                     if s_rng.next_f64() < tc.script_frac {
-                        // REACTIVE-FIX: 6-way split between DeviceRush / ArmyRush /
-                        // HqRush / GarrisonFortress / EconExpert / Marcher. Default =
-                        // even 1/6 each; with `--script-grade` the split is win-rate-
-                        // weighted (AlphaStar `(1−p_win)²`) so the curriculum tracks
-                        // whichever strategy the learner beats LESS.
-                        let w_dev = if tc.script_grade { pfsp_weight(grade_devrush_w, grade_devrush_n) } else { 1.0 };
-                        let w_army = if tc.script_grade { pfsp_weight(grade_armyrush_w, grade_armyrush_n) } else { 1.0 };
-                        let w_hq = if tc.script_grade { pfsp_weight(grade_hqrush_w, grade_hqrush_n) } else { 1.0 };
-                        let w_garrison = if tc.script_grade { pfsp_weight(grade_garrison_w, grade_garrison_n) } else { 1.0 };
-                        let w_expert = if tc.script_grade { pfsp_weight(grade_expert_w, grade_expert_n) } else { 1.0 };
-                        let w_marcher = if tc.script_grade { pfsp_weight(grade_marcher_w, grade_marcher_n) } else { 1.0 };
-                        let total = (w_dev + w_army + w_hq + w_garrison + w_expert + w_marcher).max(1e-9);
+                        // SD3 LEAGUE: 4-way split over the rebuilt strong archetype
+                        // league — Rusher / Fortress / DeviceRush(rebuilt) / StrongArmy.
+                        // HARD enters separately via `--vs-hard-frac`. Default = even
+                        // 1/4 each; with `--script-grade` the split is win-rate-weighted
+                        // (AlphaStar `(1−p_win)²`) so the curriculum tracks whichever
+                        // strategy the learner beats LESS. (Old kinds ArmyRush/HqRush/
+                        // Garrison/Expert/Marcher are superseded by the rebuilt league
+                        // but remain available via ScriptKind for benchmarking/replays.)
+                        // Even 1/4 split over the SD3 league. (Per-kind win-rate-graded
+                        // weighting via `--script-grade` only tracks `grade_devrush_*`
+                        // today; an even split is used for the foundation run. Add
+                        // grade_rusher/fortress/strongarmy counters if graded league
+                        // sampling is wanted later.)
+                        let w_rush = 1.0f64;
+                        let w_fort = 1.0f64;
+                        let w_dev = 1.0f64;
+                        let w_sarmy = 1.0f64;
+                        let total = (w_rush + w_fort + w_dev + w_sarmy).max(1e-9);
                         let r = s_rng.next_f64() * total;
-                        let pick = if r < w_dev {
+                        let pick = if r < w_rush {
+                            ScriptKind::Rusher
+                        } else if r < w_rush + w_fort {
+                            ScriptKind::Fortress
+                        } else if r < w_rush + w_fort + w_dev {
                             ScriptKind::DeviceRush
-                        } else if r < w_dev + w_army {
-                            ScriptKind::ArmyRush
-                        } else if r < w_dev + w_army + w_hq {
-                            ScriptKind::HqRush
-                        } else if r < w_dev + w_army + w_hq + w_garrison {
-                            ScriptKind::GarrisonFortress
-                        } else if r < w_dev + w_army + w_hq + w_garrison + w_expert {
-                            ScriptKind::EconExpert
                         } else {
-                            ScriptKind::Marcher
+                            ScriptKind::StrongArmy
                         };
                         Some(pick)
                     } else {
