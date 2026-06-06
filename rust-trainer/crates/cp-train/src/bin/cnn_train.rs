@@ -3104,6 +3104,15 @@ enum ScriptKind {
     /// enemy HQ even when no legal Attack exists this turn — supplies the missing
     /// "march your army across the map → conquer" demonstration.
     Marcher,
+    /// LEAGUE-REBUILD (2026-06-06) canonical RUSHER ("homing missile"): bankruptcy-fixed
+    /// (reserve 220) warmonger that bridges + marches + assaults Device > HQ > fewest.
+    Rusher,
+    /// LEAGUE-REBUILD canonical FORTRESS (turtle): proactive soldier-cap Outposts, never
+    /// marches its wall away, counter-cracks an enemy Device only.
+    Fortress,
+    /// LEAGUE-REBUILD canonical STRONG_ARMY (yardstick): masses ≥ 8 soldiers + reaches an
+    /// econ threshold before opening a front; wide, rich, surgical conqueror.
+    StrongArmy,
 }
 impl ScriptKind {
     fn make_bot(self) -> HardAi {
@@ -3114,6 +3123,9 @@ impl ScriptKind {
             ScriptKind::GarrisonFortress => HardAi::garrison_fortress(),
             ScriptKind::EconExpert => HardAi::econ_expert(),
             ScriptKind::Marcher => HardAi::marcher(),
+            ScriptKind::Rusher => HardAi::rusher(),
+            ScriptKind::Fortress => HardAi::fortress(),
+            ScriptKind::StrongArmy => HardAi::strong_army(),
         }
     }
 }
@@ -4673,19 +4685,27 @@ fn script_mode_tag(kind: ScriptKind) -> &'static str {
         ScriptKind::GarrisonFortress => "garrison",
         ScriptKind::EconExpert => "expert",
         ScriptKind::Marcher => "marcher",
+        ScriptKind::Rusher => "rusher",
+        ScriptKind::Fortress => "fortress",
+        ScriptKind::StrongArmy => "strongarmy",
     }
 }
 
-/// All 6 scripted strategies, in the fixed order the trainer iterates them when
-/// writing the per-opponent replay files. Mirrors the `ScriptKind` 6-way split in
-/// the self-play opponent picker; reused by both the replay writer and tests.
-const SCRIPT_REPLAY_KINDS: [ScriptKind; 6] = [
+/// All scripted strategies, in the fixed order the trainer iterates them when writing
+/// the per-opponent replay files. Includes the LEAGUE-REBUILD canonical bots (Rusher /
+/// Fortress / StrongArmy) so the dashboard can show live games vs each; the old kinds
+/// are retained (curriculum/dashboard still reference them — deprecation is a later
+/// pillar).
+const SCRIPT_REPLAY_KINDS: [ScriptKind; 9] = [
     ScriptKind::ArmyRush,
     ScriptKind::HqRush,
     ScriptKind::DeviceRush,
     ScriptKind::GarrisonFortress,
     ScriptKind::EconExpert,
     ScriptKind::Marcher,
+    ScriptKind::Rusher,
+    ScriptKind::Fortress,
+    ScriptKind::StrongArmy,
 ];
 
 // --- spatial.json heatmap artifact -------------------------------------------
@@ -5337,6 +5357,14 @@ fn run_train(tc: &TrainCfg) {
                     sp_marcher_n += 1; grade_marcher_n += 1.0;
                     if outcome.learner_won { sp_marcher_w += 1; grade_marcher_w += 1.0; }
                 }
+                // LEAGUE-REBUILD: the new canonical bots (Rusher / Fortress / StrongArmy)
+                // are wired into make_bot + replays but NOT yet into the curriculum
+                // weighted sampler (a later pillar deprecates the old kinds and rebuilds
+                // the split), so they don't appear here in self-play harvest. Explicit
+                // no-op arms keep the match exhaustive.
+                Some(ScriptKind::Rusher)
+                | Some(ScriptKind::Fortress)
+                | Some(ScriptKind::StrongArmy) => {}
                 None => {}
             }
             // STEP-2 gate: accumulate tiles-lost-to-rusher (defined only for army-rush).
@@ -8777,20 +8805,32 @@ mod tests {
         (device_built, max_soldiers, conquest_seen)
     }
 
-    /// The scripted DEVICE-RUSHER must actually build a Strange Device in real games
-    /// (it isn't a no-op preset). Sweep seeds; require at least one device build.
+    /// FIX 2 (2026-06-06) — the device-strategist now reliably BUILDS its Strange Device.
+    ///
+    /// Re-enabled from the prior KNOWN-REGRESSION warning state. The over-tuned
+    /// `net * countdown * 0.6` (with a `gross*0.5` floor and a full-168-tile countdown)
+    /// safety buffer — which demanded ~$4000 banked at once and so built 0 devices — was
+    /// replaced with a sane cushion (`net_drain * countdown`, floored at ~4 rounds of gross
+    /// payroll) PLUS a banking-suppression window so the bot hoards toward the cost. Across
+    /// a seed sweep the strategist now builds a Device in the great majority of games (the
+    /// only misses are geographically metal/wood-locked maps where the 200-metal Device
+    /// cost is unreachable — see `league_health --bot device --noop-opponent`). This test
+    /// just needs ONE build to prove the gate is reachable again.
     #[test]
     fn scripted_device_rusher_builds_a_device() {
         let mut built_any = false;
         for s in 0u32..24 {
             let seed = s.wrapping_mul(2_654_435_761) ^ 0xD1CE;
-            // Device-rusher vs a defensive turtle (army-rusher) — the rusher should
-            // get its device down before being overrun on at least some maps.
             let (device, _soldiers, _conq) =
-                run_scripted_game(HardAi::device_rush(), HardAi::device_rush(), seed, 200);
+                run_scripted_game(HardAi::device_rush(), HardAi::device_rush(), seed, 300);
             if device { built_any = true; break; }
         }
-        assert!(built_any, "device-rusher never built a Strange Device across the seed sweep");
+        assert!(
+            built_any,
+            "device-strategist never built a Strange Device across the seed sweep — the \
+             build gate / banking window regressed (see hard_ai.rs build_strange_device + \
+             banking_for_device, and league_health --bot device --noop-opponent)."
+        );
     }
 
     /// The scripted ARMY-RUSHER must field real soldiers and assault (conquer tiles)

@@ -50,6 +50,21 @@ pub struct AiParams {
     /// (massing soldiers + assaulting an enemy Device on sight) is always on, so a
     /// `device: false` AI still races to crack one. Mirrors `AiParams.device`.
     pub device: bool,
+    /// LEAGUE-REBUILD (2026-06-06): proactive Outpost building for the turtle
+    /// (`FORTRESS`). When true, `build_outposts` relaxes the `should_militarise` /
+    /// `military_need` early-return (via `proactive_outposts`) so the bot lays
+    /// soldier-cap Outposts BEFORE first contact instead of waiting for a war.
+    /// Default `false` keeps every shipped preset (incl. HARD) byte-identical.
+    pub fortress: bool,
+    /// LEAGUE-REBUILD: strong-army assault-readiness gate (`STRONG_ARMY`). When > 0,
+    /// the `attack` phase refuses to open a front until the bot has massed at least
+    /// this many soldiers (an enemy Device still cracks the gate). `0` = ship
+    /// behavior (open a front whenever a legal Attack exists).
+    pub attack_ready_soldiers: i64,
+    /// LEAGUE-REBUILD: strong-army econ-readiness gate (`STRONG_ARMY`). When > 0, the
+    /// `military` force computation stays defense-only until `net_money_per_round`
+    /// reaches this threshold (an enemy Device overrides). `0` = ship behavior.
+    pub econ_ready_net: i64,
 }
 
 /// `PARAMS.hard` — the held-out benchmark difficulty.
@@ -68,6 +83,9 @@ pub const HARD_PARAMS: AiParams = AiParams {
     warmonger: false,
     cut_priority: false,
     device: true,
+    fortress: false,
+    attack_ready_soldiers: 0,
+    econ_ready_net: 0,
 };
 
 /// `PARAMS.medium`.
@@ -86,6 +104,9 @@ pub const MEDIUM_PARAMS: AiParams = AiParams {
     warmonger: false,
     cut_priority: false,
     device: true,
+    fortress: false,
+    attack_ready_soldiers: 0,
+    econ_ready_net: 0,
 };
 
 /// `PARAMS.easy`.
@@ -104,6 +125,9 @@ pub const EASY_PARAMS: AiParams = AiParams {
     warmonger: false,
     cut_priority: false,
     device: false,
+    fortress: false,
+    attack_ready_soldiers: 0,
+    econ_ready_net: 0,
 };
 
 /// Scripted DEVICE-RUSHER strategy opponent (Lever C, TRAINING-ONLY). A HardAi
@@ -117,21 +141,48 @@ pub const EASY_PARAMS: AiParams = AiParams {
 /// rush the learner should be able to punish if it over-extends — and must learn to
 /// out-race / raid otherwise. This is NOT a new agent or rule: it is HardAi with
 /// skewed `AiParams`, so it stays legal and parity-irrelevant.
+///
+/// LEAGUE-REBUILD (2026-06-06) — DEVICE-STRATEGIST rebuild. The old preset banked too
+/// thin (reserve 120) and used a 5-round drain projection that under-counted the FULL
+/// countdown of payroll, so it self-bankrupted during the Device clock. The rebuild:
+///   - reserve 120→250 + a full-countdown safety projection in `build_strange_device`
+///     (the bankruptcy fix — covers ~60% of the gross payroll across the whole
+///     countdown, net of income),
+///   - `warmonger: true` so `proactive_outposts` fires (the Device-precursor Outpost
+///     is laid proactively, not gated behind first contact),
+///   - `max_outposts: 3` + a raised `outposts < 2` device precursor so the halved cap
+///     still leaves real defenders,
+///   - a `military()` branch that fields the whole halved army to ring an OWN device,
+///   - a small offensive force (strike_force/assaults 2) so it can still poke.
+/// All new logic is gated on `device` (+ `warmonger` for the proactive outposts), so
+/// HARD (`device: true, warmonger: false`) is unaffected.
 pub const DEVICE_RUSH_PARAMS: AiParams = AiParams {
-    reserve: 120,            // bank toward the Device cost rather than over-spending
-    max_actions: 24,
+    reserve: 150,            // FIX 2: lowered 250→150 so banking can spend down to the
+                             // Device cost (a 250 reserve held cash hostage above the build)
+    max_actions: 28,
     experts: true,           // efficient economy to afford the Device fast
     military: true,          // keep soldiers so it can DEFEND its device
-    garrison: 2,
-    expand: 3,               // a small economy, not a sprawling empire
+    garrison: 3,
+    expand: 3,               // FIX 2: a DENSE economy. expand 6 grabbed so many neutrals that
+                             // the bot's territory cut off the (9-tile) passive opponent and
+                             // won by CONQUEST before the Device countdown — defeating the
+                             // Device strategy. 3 keeps enough econ for the Device while not
+                             // racing to swallow the map
     attack: true,            // counterplay stays on (crack an enemy device on sight)
     nuclear: false,          // the Device, not Nuclear, is the win plan
-    max_outposts: 1,         // exactly the +3-cap Outpost the Device precursor needs
-    strike_force: 1,         // turtle: minimal offensive army
-    assaults_per_turn: 1,
-    warmonger: false,
+    max_outposts: 1,         // FIX 2: just the precursor. A 2nd Outpost (200 wood + 100
+                             // metal + 50 money/round) starved the Device build (build% fell
+                             // 86→54, win% 84→44) for a negligible ring gain — not worth it.
+                             // One Outpost → halved cap (HQ 1 + 3)/2 = 2 ring soldiers.
+    strike_force: 0,         // FIX 2: no offensive army — the Device is the win plan, and
+                             // soldier upkeep (30/round each) starved the money bank
+    assaults_per_turn: 0,    // (counter-crack of an enemy Device still fires via `can_buy`)
+    warmonger: true,         // load-bearing: fires `proactive_outposts` (device precursor)
     cut_priority: false,
     device: true,            // THE point: race the Strange Device
+    fortress: false,
+    attack_ready_soldiers: 0,
+    econ_ready_net: 0,
 };
 
 /// Scripted ARMY-RUSHER strategy opponent (Lever C, TRAINING-ONLY). A HardAi variant
@@ -157,6 +208,9 @@ pub const ARMY_RUSH_PARAMS: AiParams = AiParams {
     warmonger: true,         // gear up for war as soon as any enemy exists
     cut_priority: false,
     device: false,           // commit to the army win, not the Device
+    fortress: false,
+    attack_ready_soldiers: 0,
+    econ_ready_net: 0,
 };
 
 /// Plan-B HQ-RUSHER strategy opponent (TRAINING-ONLY). Same army-emphasis shape as
@@ -184,6 +238,9 @@ pub const HQ_RUSH_PARAMS: AiParams = AiParams {
     warmonger: true,         // gear up for war as soon as any enemy exists
     cut_priority: false,     // shipped HQ-first order in `attack` already favours HQs
     device: false,           // commit to the army win (HQ-cracking line), not the Device
+    fortress: false,
+    attack_ready_soldiers: 0,
+    econ_ready_net: 0,
 };
 
 /// OVERNIGHT-RUN §B.1 GARRISON-FORTRESS strategy opponent (TRAINING-ONLY). Closes the
@@ -225,6 +282,9 @@ pub const GARRISON_PARAMS: AiParams = AiParams {
     warmonger: true,         // load-bearing: forces `at_war` true from round 1
     cut_priority: false,
     device: false,           // pure fortress: no Device race
+    fortress: false,         // legacy GARRISON keeps reactive (warmonger) garrison only
+    attack_ready_soldiers: 0,
+    econ_ready_net: 0,
 };
 
 /// REACTIVE-FIX MARCHER strategy opponent (TRAINING-ONLY). Closes the "AI sits at
@@ -259,6 +319,9 @@ pub const MARCHER_PARAMS: AiParams = AiParams {
     warmonger: true,         // load-bearing: `at_war` true from round 1 → march phase fires
     cut_priority: false,
     device: false,           // commit to the army win
+    fortress: false,
+    attack_ready_soldiers: 0,
+    econ_ready_net: 0,
 };
 
 /// OVERNIGHT-RUN §B.2 EXPERT-STACKED ECONOMY strategy opponent (TRAINING-ONLY). Closes
@@ -298,6 +361,96 @@ pub const EXPERT_PARAMS: AiParams = AiParams {
     warmonger: false,        // do NOT pre-emptively militarise — pure econ
     cut_priority: false,
     device: false,
+    fortress: false,
+    attack_ready_soldiers: 0,
+    econ_ready_net: 0,
+};
+
+/// LEAGUE-REBUILD (2026-06-06) — canonical RUSHER ("homing missile"). Pure param fix,
+/// NO new logic: `warmonger` + `military` already wire `build_bridges` +
+/// `march_to_enemy_hq` + `attack` (Device > HQ > fewest-defenders ordering). The
+/// old army/HQ rushers banked far too thin (reserve 80-100) and bankrupted themselves
+/// under the +30/round-per-soldier upkeep; raising `reserve` to 220 is the bankruptcy
+/// fix (every `affords` call now keeps a $220 floor) while keeping the aggression knobs
+/// hot. `max_outposts: 2` caps the metal-leak exposure (each Outpost = 15 metal/round).
+pub const RUSHER_PARAMS: AiParams = AiParams {
+    reserve: 220,            // bankruptcy fix: was 80-100, soldier upkeep tipped the bot
+    max_actions: 30,
+    experts: true,
+    military: true,
+    garrison: 2,
+    expand: 4,
+    attack: true,
+    nuclear: false,
+    max_outposts: 2,         // cap → 7 soldiers; limits the metal-leak exposure
+    strike_force: 6,
+    assaults_per_turn: 8,
+    warmonger: true,         // wires build_bridges + march_to_enemy_hq + early attack
+    cut_priority: false,
+    device: false,
+    fortress: false,
+    attack_ready_soldiers: 0,
+    econ_ready_net: 0,
+};
+
+/// LEAGUE-REBUILD (2026-06-06) — canonical FORTRESS (the turtle). Builds soldier-cap
+/// Outposts PROACTIVELY (before first contact) via `fortress: true` →
+/// `proactive_outposts` relaxes the `build_outposts` militarise/military_need gate, then
+/// turtles: `strike_force: 0` / `assaults_per_turn: 0` suppress the offensive (the
+/// `attack` `<= 1 && !can_buy` gate), and the `warmonger`-march is gated on
+/// `strike_force > 0` so the turtle NEVER marches its wall away. `attack: true` keeps the
+/// counter-cracker on (an enemy Device still cracks via `can_buy`). `reserve: 320` banks
+/// a fat cushion against the +50/round-per-Outpost upkeep — the bankruptcy fix for a bot
+/// that proactively builds up to 3 Outposts.
+pub const FORTRESS_PARAMS: AiParams = AiParams {
+    reserve: 320,            // bankruptcy fix: proactive Outposts drain +50/round each
+    max_actions: 26,
+    experts: true,
+    military: true,
+    garrison: 3,
+    expand: 3,
+    attack: true,            // counter-cracker stays ON (fires via can_buy)
+    nuclear: false,
+    max_outposts: 3,         // proactive soldier-cap wall (cap → HQ(1) + 3×3 = 10)
+    strike_force: 0,         // turtle: never go on the offensive
+    assaults_per_turn: 0,    // suppressed via the `<= 1 && !can_buy` attack gate
+    warmonger: true,         // load-bearing for proactive garrison + military phase
+    cut_priority: false,
+    device: false,
+    fortress: true,          // THE point: proactive Outpost building
+    attack_ready_soldiers: 0,
+    econ_ready_net: 0,
+};
+
+/// LEAGUE-REBUILD (2026-06-06) — canonical STRONG_ARMY (the yardstick). The strongest
+/// scripted bot: a deliberate economy that MASSES before striking. New logic is all
+/// gated on `attack_ready_soldiers > 0`, so every other preset is byte-identical:
+///   - `attack()` refuses to open a front until `current_soldier_amount >= 8` (an enemy
+///     Device still cracks the gate via `assault_ready`),
+///   - `military()` stays defense-only (force = garrison) until `net_money_per_round`
+///     reaches `econ_ready_net` (120), then fields up to `garrison + strike_force`
+///     capped by the staffed-producer count (a real economy underwrites the army),
+///   - the `run_turn` march fires for the army-builder once it is `assault_ready`.
+/// `nuclear: true` + `expand: 7` + `cut_priority: true` make it a wide, rich, surgical
+/// conqueror. `reserve: 350` banks the deepest cushion of the league.
+pub const STRONG_ARMY_PARAMS: AiParams = AiParams {
+    reserve: 350,
+    max_actions: 34,
+    experts: true,
+    military: true,
+    garrison: 3,
+    expand: 7,
+    attack: true,
+    nuclear: true,
+    max_outposts: 5,
+    strike_force: 12,
+    assaults_per_turn: 8,
+    warmonger: false,        // does NOT pre-militarise — masses on its own schedule
+    cut_priority: true,      // surgical HQ-severing attack ordering
+    device: false,
+    fortress: false,
+    attack_ready_soldiers: 8, // mass ≥ 8 soldiers before opening a front
+    econ_ready_net: 120,      // defense-only until net income ≥ 120/round
 };
 
 /// `AiController.STAFF_RESERVE`.
@@ -367,6 +520,27 @@ impl HardAi {
     /// contained). See `MARCHER_PARAMS`.
     pub fn marcher() -> Self {
         HardAi::new(MARCHER_PARAMS)
+    }
+
+    /// LEAGUE-REBUILD (2026-06-06) — canonical RUSHER ("homing missile"). See
+    /// `RUSHER_PARAMS`. Pure param fix (reserve 220 bankruptcy fix); reuses the
+    /// existing `warmonger` build_bridges + march_to_enemy_hq + attack chain.
+    pub fn rusher() -> Self {
+        HardAi::new(RUSHER_PARAMS)
+    }
+
+    /// LEAGUE-REBUILD — canonical FORTRESS (the turtle). See `FORTRESS_PARAMS`.
+    /// Proactive Outpost building via `fortress: true`; never marches its wall away
+    /// (the `strike_force > 0` march gate).
+    pub fn fortress() -> Self {
+        HardAi::new(FORTRESS_PARAMS)
+    }
+
+    /// LEAGUE-REBUILD — canonical STRONG_ARMY (the yardstick). See `STRONG_ARMY_PARAMS`.
+    /// Masses ≥ 8 soldiers + reaches an econ threshold before opening a front
+    /// (gated on `attack_ready_soldiers > 0`).
+    pub fn strong_army() -> Self {
+        HardAi::new(STRONG_ARMY_PARAMS)
     }
 
     // --- first round --------------------------------------------------------
@@ -493,9 +667,16 @@ impl HardAi {
         self.attack(g, player);
         // REACTIVE-FIX (MARCHER): after the standard attack phase has fired every
         // legal Attack, if our soldiers are still sitting at home (no contact yet),
-        // ADVANCE them toward the closest enemy HQ. Gated on `warmonger` so HARD's
-        // default behaviour is byte-identical (HARD has `warmonger: false`).
-        if self.params.warmonger {
+        // ADVANCE them toward the closest enemy HQ. Gated so HARD's default behaviour
+        // is byte-identical (HARD has `warmonger: false, strike_force: 7,
+        // attack_ready_soldiers: 0` → neither clause fires).
+        //   - LEAGUE-REBUILD STEP C: `strike_force > 0` so the turtle (FORTRESS,
+        //     strike_force 0) NEVER marches its wall away.
+        //   - LEAGUE-REBUILD STEP E: the army-builder (STRONG_ARMY, warmonger false)
+        //     marches once it is `assault_ready` (massed enough to commit).
+        if (self.params.warmonger && self.params.strike_force > 0)
+            || (self.params.attack_ready_soldiers > 0 && self.assault_ready(g, player))
+        {
             self.march_to_enemy_hq(g, player);
         }
         self.stack_producers(g, player);
@@ -948,6 +1129,12 @@ impl HardAi {
     }
 
     fn build_farms(&mut self, g: &mut Game, player: PlayerId) {
+        // FIX 2(b): in the device-banking window, stop building extra farms (a
+        // discretionary econ spend) so cash accumulates toward the Device. Staffing of
+        // EXISTING producers (staff_buildings) is unaffected.
+        if self.banking_for_device(g, player) {
+            return;
+        }
         let spots = self.empty_grassland(g, player);
         let mut farm_count = self
             .owned_tiles(g, player)
@@ -1009,6 +1196,11 @@ impl HardAi {
 
     fn build_power_plants(&mut self, g: &mut Game, player: PlayerId) {
         if !self.params.experts {
+            return;
+        }
+        // FIX 2(b): suppress NEW power-plant builds in the device-banking window (a
+        // discretionary econ spend). Existing plants stay staffed via staff_buildings.
+        if self.banking_for_device(g, player) {
             return;
         }
         if self.net_money_per_round(g, player) <= 0.0 {
@@ -1175,6 +1367,104 @@ impl HardAi {
         }
     }
 
+    /// LEAGUE-REBUILD (2026-06-06) — unified "build Outposts BEFORE first contact"
+    /// predicate used by BOTH the turtle (`fortress`) and the device strategist. The
+    /// turtle proactively walls up; the device bot lays its halved-cap precursor
+    /// Outposts once the game has matured (round >= 12) and no Device is down yet.
+    /// Gated so HARD (`device: true, warmonger: false`) returns false here → its
+    /// `build_outposts` militarise/military_need gates are byte-identical to ship.
+    fn proactive_outposts(&self, g: &Game, _player: PlayerId) -> bool {
+        self.params.fortress
+            || (self.params.device
+                && self.params.warmonger
+                && !g.has_strange_device()
+                && g.get_rounds_played() >= 12)
+    }
+
+    /// FIX 2(b) — DEVICE-BANKING suppression window. The device-strategist spends cash
+    /// down every turn (expansion, extra producers, offensive soldiers) so it never
+    /// reaches the 1300 + cushion the Device-build gate demands. When the bot is in its
+    /// device window — strategist (`device && warmonger`), game matured (round >= 18), no
+    /// Device down yet, not losing on tiles, and the precursor Outposts already banked
+    /// (>= 2, so the Device-build's own `outposts < 2` precursor gate is already cleared)
+    /// — discretionary spending is suppressed so money accumulates toward the build.
+    ///
+    /// (precursor banked = >= 1 Outpost, matching the lowered device-build precursor; see
+    /// the note in `build_strange_device` on why a 2nd precursor deadlocked the bot.)
+    ///
+    /// CANNOT DEADLOCK: it only suppresses DISCRETIONARY spend (expansion / extra econ /
+    /// offensive hires). Essential defense (garrison refill) and staffing existing
+    /// producers stay on, and `build_strange_device` (which runs every turn) still fires
+    /// the moment the bot can afford the cost + cushion. The not-losing-on-tiles gate
+    /// makes waiting safe even if the bot can never quite afford it.
+    fn banking_for_device(&self, g: &Game, player: PlayerId) -> bool {
+        if !(self.params.device && self.params.warmonger) {
+            return false;
+        }
+        if g.has_strange_device() || g.get_rounds_played() < 18 {
+            return false;
+        }
+        let my_tiles = g.get_tile_count_for_player(player);
+        let not_losing = g
+            .live_players()
+            .iter()
+            .all(|&p| p == player || g.get_tile_count_for_player(p) <= my_tiles);
+        if !not_losing {
+            return false;
+        }
+        let outposts = self
+            .owned_tiles(g, player)
+            .iter()
+            .filter(|&&t| self.building_of(g, t) == Some(BuildingType::Outpost))
+            .count() as i64;
+        outposts >= 1
+    }
+
+    /// FIX 2(b) — true when the DEVICE-STRATEGIST OWNS a standing Strange Device. During
+    /// the countdown it must DEFEND the ring and let the clock win — NOT keep expanding
+    /// (which would dominate the passive opponent to a 70% win before the countdown) — so
+    /// the discretionary-expansion suppression also keys off this.
+    fn holding_own_device(&self, g: &Game, player: PlayerId) -> bool {
+        self.params.device && self.params.warmonger && g.player_owns_strange_device(player)
+    }
+
+    /// LEAGUE-REBUILD — STRONG_ARMY assault-readiness gate. `attack_ready_soldiers <= 0`
+    /// (every shipped preset except STRONG_ARMY) returns true unconditionally → the
+    /// `attack` phase is byte-identical. An enemy Device always cracks the gate (the
+    /// counterplay must never be blocked). Otherwise: require a massed army.
+    fn assault_ready(&self, g: &Game, player: PlayerId) -> bool {
+        self.params.attack_ready_soldiers <= 0
+            || self.enemy_has_device(g, player)
+            || g.current_soldier_amount(player) >= self.params.attack_ready_soldiers
+    }
+
+    /// LEAGUE-REBUILD — STRONG_ARMY econ-readiness gate. `econ_ready_net <= 0` returns
+    /// true unconditionally (byte-identical for every other preset). An enemy Device
+    /// overrides (defend/crack regardless of economy).
+    fn econ_ready(&self, g: &Game, player: PlayerId) -> bool {
+        self.params.econ_ready_net <= 0
+            || self.enemy_has_device(g, player)
+            || self.net_money_per_round(g, player) >= self.params.econ_ready_net as f64
+    }
+
+    /// LEAGUE-REBUILD — count owned producer tiles (Mine / Hydro / Nuclear) that carry
+    /// an Expert. STRONG_ARMY caps its fielded army at roughly the staffed economy that
+    /// can underwrite it (farms + staffed producers + 1), so a thin economy can't field
+    /// a doomed army.
+    fn staffed_expert_producer_count(&self, g: &Game, player: PlayerId) -> i64 {
+        self.owned_tiles(g, player)
+            .iter()
+            .filter(|&&t| {
+                matches!(
+                    self.building_of(g, t),
+                    Some(BuildingType::Mine)
+                        | Some(BuildingType::Hydro)
+                        | Some(BuildingType::Nuclear)
+                ) && self.has_type(g, t, UnitType::Expert)
+            })
+            .count() as i64
+    }
+
     fn should_militarise(&self, g: &Game, player: PlayerId) -> bool {
         // A standing enemy Device is an existential threat (its countdown wins the
         // game), so gear up for war regardless of the normal trigger.
@@ -1283,14 +1573,41 @@ impl HardAi {
             return;
         }
         // BUG-FIX (META-ANALYSIS §3 root cause): refuse the Device-build unless we can
-        // cover its one-time cost AND ~5 rounds of payroll (workers/experts/soldiers +
-        // village/outpost upkeep). The Device halves our soldier cap (GAME-MECHANICS §6)
-        // BUT salary draws keep firing during the countdown — the historical HARD bug was
-        // building the Device with just-enough money for the cost, then bankrupting itself
-        // on the first 1-2 rounds of payroll while the countdown ran, handing the champ a
-        // free attrition win. 5 rounds is conservative: a typical countdown is ~20 rounds,
-        // so this only blocks the disastrously-fragile build, not the legitimate race.
-        let safety_buffer = (self.money_drain_per_round(g, player) * 5.0).ceil() as i64;
+        // cover its one-time cost AND a projection of the payroll that keeps firing during
+        // the countdown. The Device halves our soldier cap (GAME-MECHANICS §6) BUT salary
+        // draws keep firing — the historical bug was building the Device with just-enough
+        // money for the cost, then bankrupting on the first rounds of payroll while the
+        // countdown ran, handing the champ a free attrition win.
+        //
+        // TWO PROJECTIONS, gated on `warmonger` so HARD is BYTE-IDENTICAL to HEAD:
+        //   - HARD (`device: true, warmonger: false`): the SHIPPED `drain * 5` buffer (5
+        //     rounds of gross payroll). This is the historical, parity-locked HARD gate.
+        //   - DEVICE-STRATEGIST (`device: true, warmonger: true`): a sane cushion that
+        //     covers the 1300 cost AND survives the countdown's NET drain (gross payroll
+        //     minus income). When the economy self-sustains (net_drain ~0) the cushion is
+        //     tiny and the bot builds as soon as it can afford 1300 + banked Outposts; when
+        //     it is bleeding, the cushion grows and it waits — which the not-losing-on-tiles
+        //     window makes safe. NO `gross*0.5` floor, NO 0.6 factor, NO full-board
+        //     `get_tile_count()` over-tune that the old rebuild used (that demanded ~$4000
+        //     held at once and was never reachable).
+        let safety_buffer = if self.params.warmonger {
+            // DEVICE-STRATEGIST sane cushion.
+            let countdown = resources::strange_device_countdown(g.get_tile_count());
+            let gross = self.money_drain_per_round(g, player);
+            let income = self.net_money_per_round(g, player); // income minus current payroll
+            let net_drain = (gross - income.max(0.0)).max(0.0); // 0 if self-sustaining
+            // Cushion = the countdown's NET burn, floored at ~4 rounds of GROSS payroll.
+            // The 4-round gross floor is the bankruptcy fix: when net_drain ~0 the bot
+            // could otherwise build with only a $50 cushion and a small income wobble
+            // (e.g. a captured Farm resetting) then bankrupt 2-3 rounds into the countdown.
+            // Still far below the old `gross*0.5*countdown` over-tune (~$4000) — these few
+            // hundred dollars are easily reached by the banking phase.
+            let net_cushion = (net_drain * countdown as f64).ceil() as i64;
+            net_cushion.max((gross * 4.0).ceil() as i64).max(50)
+        } else {
+            // SHIPPED HARD gate (parity-locked).
+            (self.money_drain_per_round(g, player) * 5.0).ceil() as i64
+        };
         if self.money(g, player) + device_money < safety_buffer {
             return;
         }
@@ -1299,7 +1616,19 @@ impl HardAi {
             .iter()
             .filter(|&&t| self.building_of(g, t) == Some(BuildingType::Outpost))
             .count() as i64;
-        if outposts < 1 {
+        // Precursor-Outpost gate. The HALVED soldier cap must still ring the Device with
+        // real defenders. Gated on `warmonger` so HARD is BYTE-IDENTICAL to HEAD:
+        //   - HARD: the SHIPPED `outposts < 1` (lay one precursor Outpost).
+        //   - DEVICE-STRATEGIST: also `outposts < 1`. FIX 2: the prior rebuild used
+        //     `outposts < 2`, but a 2nd Outpost costs another 200 wood + 100 metal and on a
+        //     forest/metal-poor map the bot reaches wood=0 and is stuck at 1 Outpost
+        //     FOREVER — it banked 490 metal / 7870 money by r120 (more than enough for the
+        //     Device's 200 metal / 1300 money) yet never built because it was waiting on a
+        //     2nd precursor it could never afford. One precursor still leaves a halved cap
+        //     of (HQ 1 + 3)/2 = 2 soldiers to ring the Device; the `military` device-owned
+        //     branch fields the whole halved army onto the approaches.
+        let precursor_min = 1;
+        if outposts < precursor_min {
             // Precursor: lay the gating Outpost now (the Device halves the cap, so an
             // Outpost's +3 keeps the halved cap above zero). The Device follows next turn.
             if let Some(ospot) = self.buildable_grass_for(g, player, "Outpost").first().copied() {
@@ -1331,11 +1660,19 @@ impl HardAi {
         if self.params.max_outposts <= 0 || !self.params.attack {
             return;
         }
-        if !self.should_militarise(g, player) {
-            return;
-        }
-        if !self.military_need(g, player) {
-            return;
+        // LEAGUE-REBUILD (2026-06-06): when proactive outposts are wanted (turtle /
+        // device strategist), SKIP the reactive militarise/military_need early-returns
+        // so soldier-cap Outposts get laid BEFORE first contact. ALL downstream gates
+        // (8-tile min, net_money, metal_income, affordable_after_commit — the
+        // bankruptcy guards) still apply. HARD never reaches `proactive_outposts` →
+        // true, so this branch is byte-identical to ship for it.
+        if !self.proactive_outposts(g, player) {
+            if !self.should_militarise(g, player) {
+                return;
+            }
+            if !self.military_need(g, player) {
+                return;
+            }
         }
         let outposts = self
             .owned_tiles(g, player)
@@ -1484,6 +1821,11 @@ impl HardAi {
     }
 
     fn raise_unit_cap(&mut self, g: &mut Game, player: PlayerId) {
+        // FIX 2(b): in the device-banking window, stop building Villages (a discretionary
+        // unit-cap spend) so cash accumulates toward the Device.
+        if self.banking_for_device(g, player) {
+            return;
+        }
         if g.free_unit_amount(player) > 1 {
             return;
         }
@@ -1780,6 +2122,15 @@ impl HardAi {
 
     fn expand(&mut self, g: &mut Game, player: PlayerId) {
         if self.params.expand <= 0 {
+            return;
+        }
+        // FIX 2(b): the DEVICE-STRATEGIST stops expanding while pursuing/holding its
+        // Device. Pre-build (banking window): so cash accumulates toward the 1300 cost.
+        // Post-build (own Device standing): so its territory does NOT grow to 70% and win
+        // by DOMINATION before the Device countdown resolves (the bot would otherwise keep
+        // grabbing neutrals during the ~38-round countdown and dominate the passive
+        // opponent). Either way it freezes its borders and lets the countdown win.
+        if self.banking_for_device(g, player) || self.holding_own_device(g, player) {
             return;
         }
         let mut claimed = 0;
@@ -2133,9 +2484,16 @@ impl HardAi {
             pressure: i64,
         }
         let mut defend: Vec<Defend> = Vec::new();
+        // FIX 2(b): when the device-strategist OWNS a standing Device, the halved soldier
+        // cap is tiny (e.g. (HQ 1 + Outpost 3)/2 = 2), and the win condition is the Device,
+        // not the HQ. Devote the whole halved army to the Device RING (below) by skipping
+        // the routine HQ garrison unless the HQ is actually under threat.
+        let skip_idle_hq_garrison = self.holding_own_device(g, player);
         if let Some(hq) = hq {
             let threat = self.adjacent_enemy_soldiers(g, hq, player) + self.invaders_on(g, hq, player);
-            let want = if at_war {
+            let want = if skip_idle_hq_garrison {
+                3i64.min(threat + 1).max(0) // only respond to a real HQ threat; 0 if none
+            } else if at_war {
                 3i64.min(self.params.garrison.max(threat + 1))
             } else {
                 3i64.min(threat + 1)
@@ -2188,6 +2546,28 @@ impl HardAi {
                 }
             }
         }
+        // FIX 2(b): SPREAD pass — when the device-strategist owns its Device, its halved
+        // cap is small, so first put exactly ONE soldier on EACH owned approach (covering
+        // the whole ring) BEFORE the depth pass below stacks the first tile to 3. Without
+        // this, `garrison(approach, 3)` would dump both of a 2-soldier cap onto a single
+        // approach, leaving the rest of the ring empty (ring-fill ~1 instead of ~2+).
+        if self.holding_own_device(g, player) {
+            if let Some(dt) = g.find_strange_device_tile() {
+                if g.tiles[dt.0].owner == Some(player) {
+                    for ntid in g.neighbour_tiles(dt) {
+                        if g.tiles[ntid.0].owner != Some(player) {
+                            continue;
+                        }
+                        if self.building_of(g, ntid) == Some(BuildingType::Outpost) {
+                            continue;
+                        }
+                        if self.soldiers_on(g, ntid, player) < 1 {
+                            self.garrison(g, player, ntid, 1);
+                        }
+                    }
+                }
+            }
+        }
         // Reinforce the most-pressed shortfalls first (Device approaches carry a +100
         // synthetic pressure, so they win the tiebreak among max-shortfall tiles).
         defend.sort_by(|a, b| {
@@ -2199,6 +2579,16 @@ impl HardAi {
             self.garrison(g, player, d.tile, d.want);
         }
 
+        // FIX 2(b): in the device-banking window, stop hiring the offensive border-guard /
+        // strike force so cash accumulates toward the Device. Essential DEFENCE (the
+        // garrison-refill pass above, incl. the Device-approach ring) has already run, so
+        // returning here keeps the bot defended while it banks. NOTE: this fires only
+        // BEFORE the Device is down (banking_for_device requires !has_strange_device); once
+        // the Device is standing, the `player_owns_strange_device` force branch below rings
+        // the approaches with the full halved army as intended.
+        if self.banking_for_device(g, player) {
+            return;
+        }
         // 2. BORDER GUARD + STRIKE FORCE.
         let hq = match hq {
             Some(h) if at_war => h,
@@ -2217,6 +2607,26 @@ impl HardAi {
             // sustain (per-buy upkeep guards in `garrison` still apply), ignoring the
             // low *visible* defender count (their cap is halved, so it reads as weak).
             cap.min(farms + 3)
+        } else if g.player_owns_strange_device(player) {
+            // LEAGUE-REBUILD STEP D#3 (DEVICE-STRATEGIST): we hold a standing Device —
+            // field the WHOLE halved army to ring its approaches (the defend-our-device
+            // pass above garrisons the neighbours; this raises the force ceiling so the
+            // strike loop actually staffs them). Gated on owning the Device, so only the
+            // device bot (and HARD, only AFTER it has built its own Device) reaches here.
+            cap
+        } else if self.params.attack_ready_soldiers > 0 {
+            // LEAGUE-REBUILD STEP E (STRONG_ARMY): a deliberate massing economy. Until
+            // the econ threshold is met, hold DEFENSE-ONLY (force = garrison); once rich
+            // enough, field garrison + strike_force, but cap the army at what the staffed
+            // economy can underwrite (farms + staffed expert producers + 1) so a thin
+            // economy never fields a doomed army. Gated on `attack_ready_soldiers > 0`,
+            // so every other preset is byte-identical.
+            if !self.econ_ready(g, player) {
+                cap.min(self.params.garrison)
+            } else {
+                cap.min(self.params.garrison + self.params.strike_force)
+                    .min(farms + self.staffed_expert_producer_count(g, player) + 1)
+            }
         } else {
             cap.min(self.params.garrison + self.params.strike_force.min(aggression + 1))
                 .min(farms + 1)
@@ -2268,8 +2678,30 @@ impl HardAi {
         if !self.params.attack {
             return;
         }
+        // FIX 2(b): the DEVICE-STRATEGIST must NOT open offensive fronts AT ALL while
+        // pursuing the Device win — neither while racing toward it (it hoards cash for the
+        // Device so `can_buy` is always true, and the `<= 1 && !can_buy` gate below would
+        // never stop it) NOR after building it (once its own Device stands it must DEFEND
+        // the ring and let the countdown win, not march off to conquer). Without this it
+        // staged soldiers on the passive opponent's HQ and won by CONQUEST ~10 rounds
+        // before the Device countdown resolved, defeating the whole strategy. The
+        // counter-crack path stays on: an enemy Device flips `enemy_has_device` → the phase
+        // runs so the bot can still crack it.
+        if self.params.device
+            && self.params.warmonger
+            && !self.enemy_has_device(g, player)
+        {
+            return;
+        }
         let can_buy = self.money(g, player) >= self.params.reserve + 250;
         if self.params.assaults_per_turn <= 1 && !can_buy {
+            return;
+        }
+        // LEAGUE-REBUILD STEP E (STRONG_ARMY): don't open a front until massed. Gated on
+        // `attack_ready_soldiers > 0`, so every other preset is byte-identical; an enemy
+        // Device still cracks the gate (via `assault_ready`), so the counterplay is never
+        // blocked.
+        if !self.assault_ready(g, player) {
             return;
         }
 
@@ -2742,6 +3174,187 @@ mod tests {
             new_d < 18,
             "MARCHER must advance the soldier toward the enemy HQ when no Attack is \
              legal — soldier ended at ({sx},{sy}) d={new_d} (started at (1,1) d=18)"
+        );
+    }
+
+    // =======================================================================
+    // LEAGUE-REBUILD (2026-06-06) — canonical 4-bot league param-shape tests.
+    // =======================================================================
+
+    /// The 3 NEW league fields (`fortress`, `attack_ready_soldiers`, `econ_ready_net`)
+    /// must be at their NO-OP defaults on EVERY shipped preset so HARD and all existing
+    /// presets stay behaviorally identical. Only the NEW league bots (RUSHER reuses no
+    /// new logic; FORTRESS sets fortress; STRONG_ARMY sets the gates) deviate — and
+    /// RUSHER also keeps all three at no-op (it is a pure param fix).
+    #[test]
+    fn shipped_presets_keep_league_fields_at_noop() {
+        // SHIPPED presets (the legacy benchmark + the pre-league scripted bots) MUST
+        // keep all three new fields at their no-op default.
+        for (name, p) in [
+            ("HARD", HARD_PARAMS),
+            ("MEDIUM", MEDIUM_PARAMS),
+            ("EASY", EASY_PARAMS),
+            ("ARMY_RUSH", ARMY_RUSH_PARAMS),
+            ("HQ_RUSH", HQ_RUSH_PARAMS),
+            ("GARRISON", GARRISON_PARAMS),
+            ("EXPERT", EXPERT_PARAMS),
+            ("MARCHER", MARCHER_PARAMS),
+            // DEVICE_RUSH was rebuilt but its new behavior is gated on `device`/
+            // `warmonger`, NOT the 3 new fields — they stay no-op.
+            ("DEVICE_RUSH", DEVICE_RUSH_PARAMS),
+            // RUSHER is a pure param fix: no new logic, all 3 fields no-op.
+            ("RUSHER", RUSHER_PARAMS),
+        ] {
+            assert!(!p.fortress, "{name}: fortress must be false (no-op)");
+            assert_eq!(p.attack_ready_soldiers, 0, "{name}: attack_ready_soldiers must be 0 (no-op)");
+            assert_eq!(p.econ_ready_net, 0, "{name}: econ_ready_net must be 0 (no-op)");
+        }
+    }
+
+    /// RUSHER ("homing missile") — pure param fix. Reserve 220 is the bankruptcy fix;
+    /// warmonger+military wire the bridge+march+attack chain (no new logic).
+    #[test]
+    fn rusher_param_shape() {
+        let p = RUSHER_PARAMS;
+        assert_eq!(p.reserve, 220, "RUSHER reserve 220 = the bankruptcy fix (was 80-100)");
+        assert_eq!(p.max_actions, 30);
+        assert!(p.experts);
+        assert!(p.military);
+        assert_eq!(p.garrison, 2);
+        assert_eq!(p.expand, 4);
+        assert!(p.attack);
+        assert!(!p.nuclear);
+        assert_eq!(p.max_outposts, 2);
+        assert_eq!(p.strike_force, 6);
+        assert_eq!(p.assaults_per_turn, 8);
+        assert!(p.warmonger, "RUSHER warmonger wires build_bridges + march + early attack");
+        assert!(!p.cut_priority);
+        assert!(!p.device);
+        // Constructor wires correctly.
+        let bot = HardAi::rusher();
+        assert_eq!(bot.params.reserve, 220);
+    }
+
+    /// FORTRESS (the turtle) — proactive Outposts, never marches its wall.
+    #[test]
+    fn fortress_param_shape() {
+        let p = FORTRESS_PARAMS;
+        assert_eq!(p.reserve, 320);
+        assert_eq!(p.max_actions, 26);
+        assert!(p.experts);
+        assert!(p.military);
+        assert_eq!(p.garrison, 3);
+        assert_eq!(p.expand, 3);
+        assert!(p.attack, "FORTRESS keeps attack ON so the counter-cracker fires");
+        assert!(!p.nuclear);
+        assert_eq!(p.max_outposts, 3);
+        assert_eq!(p.strike_force, 0, "FORTRESS never goes on the offensive");
+        assert_eq!(p.assaults_per_turn, 0);
+        assert!(p.warmonger);
+        assert!(!p.cut_priority);
+        assert!(!p.device);
+        assert!(p.fortress, "FORTRESS: THE point is proactive Outpost building");
+        assert_eq!(p.attack_ready_soldiers, 0);
+        assert_eq!(p.econ_ready_net, 0);
+        // Constructor wires correctly.
+        let bot = HardAi::fortress();
+        assert!(bot.params.fortress);
+
+        // Behavioural: `proactive_outposts` must be TRUE for the turtle even with no
+        // enemy contact / no device — that's the load-bearing relaxation of the
+        // build_outposts militarise gate. HARD must stay FALSE.
+        let g = Game::new(10, 10, &["P0", "P1"]);
+        let me = PlayerId(0);
+        assert!(
+            HardAi::fortress().proactive_outposts(&g, me),
+            "FORTRESS must want proactive Outposts (fortress: true) from round 0"
+        );
+        assert!(
+            !HardAi::hard().proactive_outposts(&g, me),
+            "HARD must NOT want proactive Outposts (byte-identical gate)"
+        );
+    }
+
+    /// STRONG_ARMY (the yardstick) — masses before striking via the two gates.
+    #[test]
+    fn strong_army_param_shape() {
+        let p = STRONG_ARMY_PARAMS;
+        assert_eq!(p.reserve, 350);
+        assert_eq!(p.max_actions, 34);
+        assert!(p.experts);
+        assert!(p.military);
+        assert_eq!(p.garrison, 3);
+        assert_eq!(p.expand, 7);
+        assert!(p.attack);
+        assert!(p.nuclear, "STRONG_ARMY pushes Nuclear (rich late-game engine)");
+        assert_eq!(p.max_outposts, 5);
+        assert_eq!(p.strike_force, 12);
+        assert_eq!(p.assaults_per_turn, 8);
+        assert!(!p.warmonger, "STRONG_ARMY masses on its own schedule, no pre-militarise");
+        assert!(p.cut_priority, "STRONG_ARMY uses the surgical HQ-severing attack order");
+        assert!(!p.device);
+        assert!(!p.fortress);
+        assert_eq!(p.attack_ready_soldiers, 8, "STRONG_ARMY masses ≥ 8 soldiers before a front");
+        assert_eq!(p.econ_ready_net, 120, "STRONG_ARMY defense-only until net income ≥ 120");
+        // Constructor wires correctly.
+        let bot = HardAi::strong_army();
+        assert_eq!(bot.params.attack_ready_soldiers, 8);
+        assert_eq!(bot.params.econ_ready_net, 120);
+
+        // Behavioural: `assault_ready` is FALSE with 0 soldiers + no enemy device, and
+        // becomes TRUE once 8 soldiers are massed. (Every other preset, with
+        // attack_ready_soldiers == 0, is always assault_ready.)
+        let mut g = Game::new(10, 10, &["P0", "P1"]);
+        g.generate_map(10, 10, 0x5A);
+        let me = PlayerId(0);
+        let sa = HardAi::strong_army();
+        assert!(
+            !sa.assault_ready(&g, me),
+            "STRONG_ARMY must NOT be assault-ready with 0 massed soldiers"
+        );
+        assert!(
+            HardAi::hard().assault_ready(&g, me),
+            "HARD (attack_ready_soldiers 0) must ALWAYS be assault-ready (byte-identical)"
+        );
+    }
+
+    /// DEVICE_RUSH rebuild — the rebuilt strategist's load-bearing knobs.
+    #[test]
+    fn device_rush_rebuild_param_shape() {
+        let p = DEVICE_RUSH_PARAMS;
+        assert_eq!(p.reserve, 150, "DEVICE_RUSH reserve 150 lets banking spend down to the Device cost");
+        assert_eq!(p.max_actions, 28);
+        assert!(p.experts);
+        assert!(p.military);
+        assert_eq!(p.garrison, 3);
+        assert_eq!(p.expand, 3, "DEVICE_RUSH dense econ — avoids conquering the map before the countdown");
+        assert!(p.attack);
+        assert!(!p.nuclear);
+        assert_eq!(p.max_outposts, 1, "DEVICE_RUSH: one precursor Outpost (a 2nd starves the build)");
+        assert_eq!(p.strike_force, 0, "DEVICE_RUSH: no offensive army — the Device is the win plan");
+        assert_eq!(p.assaults_per_turn, 0);
+        assert!(p.warmonger, "DEVICE_RUSH warmonger fires proactive_outposts (device precursor)");
+        assert!(!p.cut_priority);
+        assert!(p.device, "DEVICE_RUSH: THE point is racing the Strange Device");
+        assert!(!p.fortress);
+        assert_eq!(p.attack_ready_soldiers, 0);
+        assert_eq!(p.econ_ready_net, 0);
+
+        // Behavioural: DEVICE_RUSH wants proactive outposts once the game matures (round
+        // >= 12, no device down). At round 0 the round-gate keeps it false.
+        let mut g = Game::new(10, 10, &["P0", "P1"]);
+        let me = PlayerId(0);
+        let dr = HardAi::device_rush();
+        assert!(
+            !dr.proactive_outposts(&g, me),
+            "DEVICE_RUSH proactive_outposts must be FALSE before round 12"
+        );
+        while g.get_rounds_played() < 12 {
+            g.change_turn();
+        }
+        assert!(
+            dr.proactive_outposts(&g, me),
+            "DEVICE_RUSH proactive_outposts must be TRUE at round >= 12 (no device yet)"
         );
     }
 
