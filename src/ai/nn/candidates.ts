@@ -17,7 +17,7 @@ import {
   ResourceMap,
   FARM_BUILD_COST, MINE_BUILD_COST, VILLAGE_BUILD_COST, OUTPOST_BUILD_COST,
   NUCLEARPP_BUILD_COST, HEPP_BUILD_COST, BASIC_WORKER_COST, EXPERT_COST, SOLDIER_COST,
-  STRANGE_DEVICE_BUILD_COST,
+  STRANGE_DEVICE_BUILD_COST, BRIDGE_BUILD_COST,
 } from '../../core/resources';
 import type { ObjectManager } from '../../managers/objectmanager';
 import type { PlayerManager } from '../../managers/playermanager';
@@ -67,8 +67,18 @@ export enum Intent {
   // values are unchanged; only the one-hot width (INTENT_COUNT) grows 11→12,
   // which is network-breaking (policy input 63→64) — intended, we retrain.
   BuildStrangeDevice,
+  // Plan-B action-space expansion (DEEP-REDESIGN-MEMO §6.2). Build a Bridge on
+  // an owned River tile. Parity-locked with the Rust mirror.
+  BuildBridge,
+  // Plan-B action-space expansion (DEEP-REDESIGN-MEMO §6.2). Attack-on-Device
+  // as a FIRST-CLASS intent: same Action as Attack but a distinct label so the
+  // value head can learn the cracker line.
+  CrackDevice,
+  // Plan-B addendum. Attack-on-HQ as a FIRST-CLASS intent (same idea as
+  // CrackDevice but for un-conquered enemy Headquarters).
+  CrackHQ,
 }
-export const INTENT_COUNT = Intent.BuildStrangeDevice + 1;
+export const INTENT_COUNT = Intent.CrackHQ + 1;
 export const LOCAL_DIM = 16;
 
 /** Max distinct Expand target tiles emitted as candidates per turn (after sort). */
@@ -451,6 +461,197 @@ function buildStrangeDevice(ctx: AiCtx): Candidate | null {
 }
 
 /**
+ * Plan-B `Intent.BuildBridge` (DEEP-REDESIGN-MEMO §6.2). Build a Bridge on an
+ * owned River tile (no existing building, orientation allows Bridge), with raw
+ * affordability + a small cash floor + wood buffer. Local feature
+ * `targetValue = bridgeUnblockCount` — how many additional 4-neighbour tiles
+ * would enter `getAvailableTiles()` if the river were bridged (cheap
+ * neighbour scan). Mirrors `build_bridge` in
+ * `rust-trainer/crates/cp-ai/src/candidates.rs` (parity-locked).
+ */
+function buildBridge(ctx: AiCtx): Candidate | null {
+  const { player: p, cfg } = ctx;
+  const river = M.ownedTiles(p).find(
+    (t) =>
+      t instanceof River && t.getBuilding() === null && t.getBuildableBuildings().includes('Bridge'),
+  );
+  if (!river) return null;
+  // Raw cost affordability + wood buffer.
+  if (!p.hasEnoughResources(BRIDGE_BUILD_COST)) return null;
+  if (!S.hasWoodBuffer(p, BRIDGE_BUILD_COST)) return null;
+  // Cash floor (mirrors the Outpost/Device terminal-style gate).
+  if (M.money(p) - moneyCost(BRIDGE_BUILD_COST) < cfg.reserve) return null;
+  // bridgeUnblockCount: count orthogonal-4 neighbours of the river tile that are
+  // (a) not owned by `p` and (b) not already in availability — the additive gain
+  // a Bridge here would yield. Matches Rust `bridge_unblock_count`.
+  const preAvail = ctx.om.getAvailableTiles();
+  let unblockCount = 0;
+  for (const n of river.getNeighbourFourTiles()) {
+    if (n.getOwner() === p) continue;
+    if (preAvail.includes(n)) continue;
+    if (n.hasOpponentHeadquarters(p)) unblockCount++;
+  }
+  return {
+    intent: Intent.BuildBridge,
+    local: localVec({ p, cost: BRIDGE_BUILD_COST, netDelta: -5, targetValue: unblockCount }),
+    label: 'BuildBridge',
+    execute: () => ctx.eh.aiBuildBuilding('Bridge', river),
+  };
+}
+
+/**
+ * Plan-B `Intent.CrackDevice` (DEEP-REDESIGN-MEMO §6.2). Enumerate when ANY
+ * enemy owns a standing Strange Device AND the champ can stage ≥1 soldier on it
+ * (the tile enters `getAvailableTiles()` and movable + buyable soldiers ≥ needed).
+ * Action is functionally an Attack against the device tile; the SEPARATE intent
+ * label gives the value head a distinct signal for the single biggest loss
+ * source. Mirrors `crack_device` in
+ * `rust-trainer/crates/cp-ai/src/candidates.rs` (parity-locked).
+ */
+function crackDevice(ctx: AiCtx, enemyCoords: { x: number; y: number }[]): Candidate | null {
+  const { player: p, om, cfg } = ctx;
+  if (!cfg.military) return null;
+  const dev = om.findStrangeDeviceTile();
+  if (!dev) return null;
+  if (dev.getOwner() === p) return null; // we already own it — no crack
+  const avail = om.getAvailableTiles();
+  if (!avail.includes(dev)) return null;
+  if (!dev.hasSpaceForConqueringUnits()) return null;
+  const defenders = dev.getUnits().filter((u) => u.getType() === 'Soldier').length;
+  if (defenders >= 3) return null;
+  const needed = defenders + 1;
+  const placed = dev.getConqueringUnits().filter((u) => u.getOwner() === p && u.getType() === 'Soldier').length;
+  const toAdd = needed - placed;
+  if (toAdd <= 0) return null;
+  const canBuy = M.money(p) >= cfg.reserve + 250;
+  const movable = M.ownedTiles(p).reduce(
+    (n, t) => n + (t === dev ? 0 : t.getUnits().filter((u) => u.getType() === 'Soldier').length),
+    0,
+  );
+  const buyable = canBuy
+    ? Math.min(
+        p.getFreeSoldierAmount(),
+        Math.floor(M.metal(p) / 50),
+        Math.floor((M.money(p) - cfg.reserve) / 200),
+      )
+    : 0;
+  if (movable + buyable < toAdd) return null;
+  // Countdown urgency: lower countdown = higher target_value (capped at 6).
+  // The StrangeDevice subclass carries `getCountdown()`; other building types
+  // don't, hence the optional-chain (we already gated on `findStrangeDeviceTile`
+  // so in practice this is always present).
+  const dBuilding = dev.getBuilding() as { getCountdown?: () => number } | null;
+  const countdown = dBuilding?.getCountdown?.() ?? 0;
+  const spatial = tileSpatial(dev, p, om, enemyCoords);
+  let ownSoldierNeighbors = 0;
+  for (const nb of dev.getNeighbourTiles()) {
+    ownSoldierNeighbors += nb.getUnits().filter((u) => u.getType() === 'Soldier' && u.getOwner() === p).length;
+  }
+  spatial.frontier = ownSoldierNeighbors / 3;
+  return {
+    intent: Intent.CrackDevice,
+    local: localVec({ p, netDelta: 0, targetValue: Math.max(0, 6 - Math.min(6, countdown)), spatial }),
+    label: 'CrackDevice',
+    execute: () => {
+      let cur = placed;
+      let did = false;
+      while (cur < needed) {
+        const spare = findFreeSoldier(p, dev);
+        let step = false;
+        if (spare) step = ctx.eh.aiMoveUnit(spare.unit, spare.tile, dev);
+        else if (canBuy && p.getFreeSoldierAmount() > 0 && M.metal(p) >= 50 && S.affords(p, SOLDIER_COST, cfg.reserve))
+          step = ctx.eh.aiBuyAndPlaceUnit('Soldier', dev);
+        if (!step) break;
+        did = true;
+        cur++;
+      }
+      return did;
+    },
+  };
+}
+
+/**
+ * Plan-B `Intent.CrackHQ` (Plan-B addendum). Enumerate when ANY enemy owns an
+ * un-conquered Headquarters AND the champ can stage ≥1 soldier on it. Action is
+ * functionally an Attack; SEPARATE intent label so the value head sees the
+ * defender count it needs to beat (§3 strict-greater conquest). Mirrors
+ * `crack_hq` in `rust-trainer/crates/cp-ai/src/candidates.rs` (parity-locked).
+ */
+function crackHQ(ctx: AiCtx, enemyCoords: { x: number; y: number }[]): Candidate | null {
+  const { player: p, om, cfg } = ctx;
+  if (!cfg.military) return null;
+  const avail = om.getAvailableTiles();
+  // Find an enemy-owned, un-conquered HQ that's reachable and has space.
+  let hqTile: TileBase | null = null;
+  for (const t of avail) {
+    const b = t.getBuilding();
+    if (
+      b &&
+      b.getType() === 'Headquarters' &&
+      // un-conquered: TS uses Building.isConquered() or the renderer flag; we
+      // check via `hasOpponentHeadquarters` on the enemy owner (matches the
+      // `available_tiles` semantics).
+      t.getOwner() !== null &&
+      t.getOwner() !== p &&
+      t.hasSpaceForConqueringUnits()
+    ) {
+      // A conquered HQ is the captor's own grassland → b.getType() would not be
+      // 'Headquarters' for the captor. So owner!=p + type==Headquarters implies
+      // un-conquered for the enemy.
+      hqTile = t;
+      break;
+    }
+  }
+  if (!hqTile) return null;
+  const hq = hqTile;
+  const defenders = hq.getUnits().filter((u) => u.getType() === 'Soldier').length;
+  if (defenders >= 3) return null;
+  const needed = defenders + 1;
+  const placed = hq.getConqueringUnits().filter((u) => u.getOwner() === p && u.getType() === 'Soldier').length;
+  const toAdd = needed - placed;
+  if (toAdd <= 0) return null;
+  const canBuy = M.money(p) >= cfg.reserve + 250;
+  const movable = M.ownedTiles(p).reduce(
+    (n, t) => n + (t === hq ? 0 : t.getUnits().filter((u) => u.getType() === 'Soldier').length),
+    0,
+  );
+  const buyable = canBuy
+    ? Math.min(
+        p.getFreeSoldierAmount(),
+        Math.floor(M.metal(p) / 50),
+        Math.floor((M.money(p) - cfg.reserve) / 200),
+      )
+    : 0;
+  if (movable + buyable < toAdd) return null;
+  const spatial = tileSpatial(hq, p, om, enemyCoords);
+  let ownSoldierNeighbors = 0;
+  for (const nb of hq.getNeighbourTiles()) {
+    ownSoldierNeighbors += nb.getUnits().filter((u) => u.getType() === 'Soldier' && u.getOwner() === p).length;
+  }
+  spatial.frontier = ownSoldierNeighbors / 3;
+  return {
+    intent: Intent.CrackHQ,
+    local: localVec({ p, netDelta: 0, targetValue: 6, spatial }),
+    label: 'CrackHQ',
+    execute: () => {
+      let cur = placed;
+      let did = false;
+      while (cur < needed) {
+        const spare = findFreeSoldier(p, hq);
+        let step = false;
+        if (spare) step = ctx.eh.aiMoveUnit(spare.unit, spare.tile, hq);
+        else if (canBuy && p.getFreeSoldierAmount() > 0 && M.metal(p) >= 50 && S.affords(p, SOLDIER_COST, cfg.reserve))
+          step = ctx.eh.aiBuyAndPlaceUnit('Soldier', hq);
+        if (!step) break;
+        did = true;
+        cur++;
+      }
+      return did;
+    },
+  };
+}
+
+/**
  * Tile → index in `om.getTiles()`. `getTiles()` is the worldgen generation order
  * (column-major: index = x*height + y), so this map gives a stable, deterministic
  * total-order tie-break independent of map size. Precomputed ONCE per enumerate
@@ -648,9 +849,14 @@ export function enumerate(ctx: AiCtx): Candidate[] {
   if ((c = buildHydro(ctx))) out.push(c);
   if ((c = buildNuclear(ctx))) out.push(c);
   if ((c = buildStrangeDevice(ctx))) out.push(c);
+  if ((c = buildBridge(ctx))) out.push(c);
   out.push(...expandCandidates(ctx, idx, enemyCoords));
   if ((c = hireSoldier(ctx))) out.push(c);
   out.push(...attackCandidates(ctx, idx, enemyCoords));
+  // Plan-B Crack candidates: piggy-back on Attack action but with a distinct
+  // intent label so the value head learns the cracker line.
+  if ((c = crackDevice(ctx, enemyCoords))) out.push(c);
+  if ((c = crackHQ(ctx, enemyCoords))) out.push(c);
   if ((c = stackProducer(ctx))) out.push(c);
   out.push(PASS);
   return out;

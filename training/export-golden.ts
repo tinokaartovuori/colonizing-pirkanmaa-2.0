@@ -45,8 +45,8 @@ const REPO = resolve(__dirname, '..');
 const OUT_DIR = resolve(REPO, 'rust-trainer/golden');
 const CHECKPOINT = resolve(REPO, 'training/checkpoints/champion.json');
 
-const SCHEMA_VERSION = 4; // Strange-Device arc: +BuildStrangeDevice intent, input 63→64
-const POLICY_ARCH = [64, 24, 16, 1];
+const SCHEMA_VERSION = 5; // Plan-B action-space expansion: +BuildBridge/CrackDevice/CrackHQ intents, input 64→67
+const POLICY_ARCH = [67, 24, 16, 1];
 
 // --- headless scene + menu stubs (same pattern as training/harness.ts) -------
 
@@ -458,7 +458,7 @@ executes, with exactly the vectors/candidates/scores the policy saw:
   always Pass.
 - \`scores\`: \`scoreCandidate(genome, globalVec, candidate)\` per candidate, SAME
   index order as \`candidates\`. The network input per candidate is
-  \`[globalVec(36) | intent one-hot(12) | local(16)]\` = 64 dims, fed to the MLP
+  \`[globalVec(36) | intent one-hot(15) | local(16)]\` = 67 dims, fed to the MLP
   (tanh hidden layers, linear scalar head). \`scores[i]\` is that scalar.
 - \`chosenCandidateIndex\`: index into \`candidates\`/\`scores\` of the selected
   candidate (argmax of \`scores\` at temperature 0).
@@ -471,7 +471,7 @@ list. Only the **initial** selection of each loop iteration is recorded as a
 DecisionRecord. Such failures do not occur in deterministic headless replay; the
 \`afterTurn\` fingerprint still captures the true post-turn state regardless.
 
-### Intent enum (integer values 0..11)
+### Intent enum (integer values 0..14)
 | value | intent |
 |---|---|
 | 0 | BuildFarm |
@@ -486,11 +486,14 @@ DecisionRecord. Such failures do not occur in deterministic headless replay; the
 | 9 | StackProducer |
 | 10 | Pass |
 | 11 | BuildStrangeDevice |
+| 12 | BuildBridge |
+| 13 | CrackDevice |
+| 14 | CrackHQ |
 
 \`enumerate()\` evaluates intent builders in this order:
-\`[BuildFarm, BuildMine, BuildVillage, BuildOutpost, BuildHydro, BuildNuclear, BuildStrangeDevice, Expand, HireSoldier, Attack, StackProducer]\`,
+\`[BuildFarm, BuildMine, BuildVillage, BuildOutpost, BuildHydro, BuildNuclear, BuildStrangeDevice, BuildBridge, Expand, HireSoldier, Attack, CrackDevice, CrackHQ, StackProducer]\`,
 appends each that returns a candidate (legal+affordable), then **always appends Pass**.
-Note BuildStrangeDevice has intent VALUE 11 but sits at list POSITION 6 (after BuildNuclear): the one-hot encodes the value; the argmax tie-break uses list position.
+Note BuildStrangeDevice has intent VALUE 11 but sits at list POSITION 6 (after BuildNuclear). BuildBridge (12) sits at position 7. CrackDevice/CrackHQ (13/14) sit after Attack. The one-hot encodes the value; the argmax tie-break uses list position.
 
 Build* / StackProducer / HireSoldier are **single-candidate** (contribute 0 or 1).
 Expand and Attack are **multi-candidate**: each emits one Candidate per plausible

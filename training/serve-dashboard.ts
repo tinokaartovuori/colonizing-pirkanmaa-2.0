@@ -176,6 +176,18 @@ function buildData(dir: string): Record<string, unknown> {
     // vs the HARD bot, and champion vs champion (AI-vs-AI self-play).
     replay: readJsonSafe(join(dir, 'replay.json')),
     replaySelf: readJsonSafe(join(dir, 'replay_selfplay.json')),
+    // Scripted-opponent replays (champion vs one of the 5 Lever-C training strategies).
+    // The trainer writes these alongside `replay.json` every `replay_every` iters; one
+    // heavy MCTS game per strategy. Empty/missing files surface as `null` so the
+    // dashboard's empty-state can render a friendly hint. File names mirror the script
+    // `mode` tag (see `script_mode_tag` in cnn_train.rs) so adding a new strategy is a
+    // single coordinated edit across both files.
+    replayVsArmyRush: readJsonSafe(join(dir, 'replay_vs_armyrush.json')),
+    replayVsHqRush: readJsonSafe(join(dir, 'replay_vs_hqrush.json')),
+    replayVsDeviceRush: readJsonSafe(join(dir, 'replay_vs_devicerush.json')),
+    replayVsGarrison: readJsonSafe(join(dir, 'replay_vs_garrison.json')),
+    replayVsExpert: readJsonSafe(join(dir, 'replay_vs_expert.json')),
+    replayVsMarcher: readJsonSafe(join(dir, 'replay_vs_marcher.json')),
     // CNN spatial heatmap: a representative mid-game board + the net's per-tile
     // policy desirability and value. Written each benchmark by the CNN trainer;
     // null for runs/arcs that don't emit it (panel stays hidden in that case).
@@ -213,6 +225,12 @@ const server = createServer((req, res) => {
         winHistory: [],
         replay: null,
         replaySelf: null,
+        replayVsArmyRush: null,
+        replayVsHqRush: null,
+        replayVsDeviceRush: null,
+        replayVsGarrison: null,
+        replayVsExpert: null,
+        replayVsMarcher: null,
         spatial: null,
         latest: null,
         logMtime: null,
@@ -454,7 +472,9 @@ const PAGE = `<!DOCTYPE html>
 
 <script>
 const POLL_MS = 5000;
-let STATE = { dir: '', updated: null, log: [], benchmark: null, winHistory: [], replay: null, replaySelf: null, spatial: null, latest: null, logMtime: null,
+let STATE = { dir: '', updated: null, log: [], benchmark: null, winHistory: [], replay: null, replaySelf: null,
+              replayVsArmyRush: null, replayVsHqRush: null, replayVsDeviceRush: null, replayVsGarrison: null, replayVsExpert: null, replayVsMarcher: null,
+              spatial: null, latest: null, logMtime: null,
               buildStatus: null, buildLog: [], registry: [], research: [] };
 // CNN spatial-heatmap overlay selection. 'policy' = where the net wants to act,
 // 'delta' = value GAIN over doing nothing (valueAfter − root value; the key view),
@@ -476,17 +496,39 @@ let REPLAY_KEY = '';      // identity of the currently-loaded replay (iter:seed:
 let REPLAY_FRAME = 0;     // current frame index
 let REPLAY_PLAYING = true;
 let REPLAY_FPS = 24;      // playback speed (frames/sec); 24 = 4× (6 = 1×)
-let REPLAY_SRC = 'hard';  // which match to watch: 'hard' (AI vs Hard CPU) or 'self' (AI vs AI)
+let REPLAY_SRC = 'hard';  // which match to watch — see REPLAY_SOURCES below for the 7-way set
 let REPLAY_TIMER = null;  // setInterval handle
 let REPLAY_IDX = 0;       // which of the 5 FRESH games (this iteration) is shown
 let REPLAY_BATCH = '';    // identity of the loaded 5-game batch (snap to game 0 on change)
 
+// All replay sources surfaced in the viewer's toggle row. The order is the order the
+// buttons render in. 'hard' / 'self' are the historical sources (5 games each per iter);
+// the 5 scripted-opponent sources are 1 game each per iter (one per training-curriculum
+// strategy, written by the trainer alongside replay.json / replay_selfplay.json).
+// Each entry: [src-id, button-label, STATE.<field>, side-panel-label].
+const REPLAY_SOURCES = [
+  ['hard',       'AI vs Hard CPU',     'replay',             'Hard CPU'],
+  ['self',       'AI vs AI',           'replaySelf',         'AI #2'],
+  ['armyrush',   'vs Army Rush',       'replayVsArmyRush',   'Army Rush'],
+  ['hqrush',     'vs HQ Rush',         'replayVsHqRush',     'HQ Rush'],
+  ['devicerush', 'vs Device Rush',     'replayVsDeviceRush', 'Device Rush'],
+  ['garrison',   'vs Garrison Fortress','replayVsGarrison',  'Garrison Fortress'],
+  ['expert',     'vs Econ Expert',     'replayVsExpert',     'Econ Expert'],
+  ['marcher',    'vs Marcher',         'replayVsMarcher',    'Marcher'],
+];
+function replaySrcMeta(src) {
+  for (const row of REPLAY_SOURCES) if (row[0] === src) return row;
+  return REPLAY_SOURCES[0];
+}
+
 // The trainer records FIVE fresh games per source each ~5-iter cycle, written as a
 // JSON array, so STATE.replay / STATE.replaySelf are arrays — the user browses the
 // five games from the CURRENT checkpoint with "Seuraava peli". (Old single-object
-// replays are tolerated by wrapping them in a 1-element array.)
+// replays are tolerated by wrapping them in a 1-element array.) Scripted-opponent
+// sources currently write 1-element arrays (one game per opponent per iter).
 function gamesFor(src) {
-  const raw = src === 'self' ? STATE.replaySelf : STATE.replay;
+  const meta = replaySrcMeta(src);
+  const raw = STATE[meta[2]];
   if (Array.isArray(raw)) return raw.filter((g) => g && g.frames && g.frames.length);
   return raw && raw.frames && raw.frames.length ? [raw] : [];
 }
@@ -1182,7 +1224,7 @@ function renderResearch() {
 const STCOLOR = { r: '#14506a', m: '#454b54', f: '#1d3a28', a: '#15301e', g: '#23301a' };
 // Building glyphs/colors for the spatial board — reuse the replay codes (defined
 // below as BGLYPH/BCOLOR) but the spatial data uses 'HQ' (two chars) so map here.
-const SP_BGLYPH = { F: 'F', M: 'M', V: 'V', O: 'O', H: 'H', N: 'N', D: '◆', HQ: '★', K: 'K' };
+const SP_BGLYPH = { F: 'F', M: 'M', V: 'V', O: 'O', H: 'H', N: 'N', B: 'B', D: '◆', HQ: '★', K: 'K' };
 const SP_BCOLOR = { D: '#c792ea', HQ: '#ffcb6b' };
 // Intent → chip color (Attack reddish, Build* greenish, Expand bluish, Pass grey,
 // BuildStrangeDevice purple, Hire* amber).
@@ -1419,7 +1461,7 @@ function spatialLegendHtml(spn) {
       + '<span style="font-variant-numeric:tabular-nums">−' + m.toFixed(3) + ' · 0 · +' + m.toFixed(3) + '</span>'
       + (SPATIAL_MAP === 'delta' ? ' (arvon muutos vs. Pass)' : ' (arvo siirron jälkeen)');
   }
-  const bcodes = 'F=farm M=mine V=village O=outpost H=hydro N=nuclear <span style="color:#c792ea">◆=device</span> <span style="color:#ffcb6b">★=HQ</span>';
+  const bcodes = 'F=farm M=mine V=village O=outpost H=hydro N=nuclear B=bridge <span style="color:#c792ea">◆=device</span> <span style="color:#ffcb6b">★=HQ</span>';
   return '<div class="leg">'
     + 'Maasto: ' + terrLeg + '<br>'
     + 'Omistus: <span class="sw" style="background:#5aa9ff"></span>seat 0 &nbsp; <span class="sw" style="background:#ff6b6b"></span>seat 1 &nbsp; (★ = HQ)<br>'
@@ -1480,7 +1522,7 @@ function renderSpatial(animate) {
 
 // --- live game-replay viewer ----------------------------------------------
 // Building glyphs + per-glyph color overrides (Device/HQ stand out).
-const BGLYPH = { F: 'F', M: 'M', V: 'V', O: 'O', H: 'H', N: 'N', D: '◆', Q: '★', K: 'K' };
+const BGLYPH = { F: 'F', M: 'M', V: 'V', O: 'O', H: 'H', N: 'N', B: 'B', D: '◆', Q: '★', K: 'K' };
 const BCOLOR = { D: '#c792ea', Q: '#ffcb6b' };
 // Terrain base colors — river is unmistakably water-blue so it reads under owner tint.
 const TCOLOR = { r: '#14506a', m: '#454b54', f: '#1d3a28', a: '#15301e', g: '#23301a' };
@@ -1529,27 +1571,38 @@ function drawReplayFrame(canvas, r, fi) {
 
 function replaySideHtml(r, fi) {
   const f = r.frames[fi];
+  // Side label resolution: prefer the replay's own \`mode\` tag (set by the trainer per
+  // source) over the dashboard's current source toggle, so a stale \`STATE.replayVsX\`
+  // file labels correctly even if the toggle changed before the next poll.
+  const meta = replaySrcMeta(REPLAY_SRC);
   const self = r.mode === 'self';
-  const blue = self ? 'AI #1 (sininen)' : 'Meidän AI (sininen)';
-  const red = self ? 'AI #2 (punainen)' : 'Hard CPU (punainen)';
+  const blueLbl = self ? 'AI #1' : 'Meidän AI';
+  const redLbl = self ? 'AI #2' : (r.mode === 'hard' ? 'Hard CPU' : meta[3]);
+  const blue = blueLbl + ' (sininen)';
+  const red = redLbl + ' (punainen)';
   const turn = f.p === 0 ? '<span class="blue">' + blue + '</span>'
     : f.p === 1 ? '<span class="red">' + red + '</span>' : 'asetelma';
   let res;
   if (r.result.winnerSeat === 0) res = '<span class="blue">' + blue + '</span> voitti — ' + escapeHtml(r.result.cause);
   else if (r.result.winnerSeat === 1) res = '<span class="red">' + red + '</span> voitti — ' + escapeHtml(r.result.cause);
   else res = 'ratkeamaton';
-  return '<div class="big">Iteraatio ' + r.iter + (self ? ' · self-play' : ' · vs hard') + '</div>'
+  const modeStr = self ? ' · self-play' : (r.mode === 'hard' ? ' · vs hard' : (' · vs ' + redLbl));
+  return '<div class="big">Iteraatio ' + r.iter + modeStr + '</div>'
     + 'Kierros <b style="color:var(--ink)">' + f.r + '</b> · vuoro: ' + turn + '<br>'
     + 'Ruutu ' + (fi + 1) + '/' + r.frames.length + '<br><br>'
     + '<b style="color:var(--ink)">Lopputulos:</b><br>' + res + ' (' + r.result.rounds + ' kierrosta)';
 }
 
-// Source toggle ('AI vs Hard CPU' / 'AI vs AI'); shown even when one source is empty.
+// Source toggle — one button per entry in REPLAY_SOURCES (hard, self, + 5 scripted
+// opponents). Shown even when a source is empty so the user can see which replays
+// are ABOUT to appear after the next replay-tick.
 function replayToggleHtml() {
-  return '<div class="ctl" style="margin:0 0 10px">'
-    + '<span style="color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-size:11px">Katso</span>'
-    + '<button class="btn rtoggle" data-src="hard">AI vs Hard CPU</button>'
-    + '<button class="btn rtoggle" data-src="self">AI vs AI</button></div>';
+  let html = '<div class="ctl" style="margin:0 0 10px;flex-wrap:wrap">'
+    + '<span style="color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-size:11px">Katso</span>';
+  for (const row of REPLAY_SOURCES) {
+    html += '<button class="btn rtoggle" data-src="' + row[0] + '">' + escapeHtml(row[1]) + '</button>';
+  }
+  return html + '</div>';
 }
 function wireReplayToggle() {
   for (const b of document.querySelectorAll('.rtoggle')) {
@@ -1588,14 +1641,20 @@ function renderReplay() {
   const panel = document.getElementById('replayPanel');
   if (!panel) return;
   const self = REPLAY_SRC === 'self';
+  const meta = replaySrcMeta(REPLAY_SRC);
+  const isScripted = REPLAY_SRC !== 'hard' && REPLAY_SRC !== 'self';
   // A new 5-game batch (next iteration) arrived → snap to the first FRESH game so
   // the viewer is never left on a stale one.
   const batch = batchKeyOf(REPLAY_SRC);
   if (batch !== REPLAY_BATCH) { REPLAY_BATCH = batch; REPLAY_IDX = 0; }
   const r = activeReplay();
   const nGames = gamesFor(REPLAY_SRC).length;
-  const title = '<h2>Live-peli — ' + (self ? 'AI vs AI (self-play)' : 'AI vs Hard CPU')
-    + ' <span class="hint">· ' + (nGames || 5) + ' tuoretta peliä / iteraatio · selaa “Seuraava peli”</span></h2>';
+  // Scripted-opponent files currently write 1 game per iter; vs-hard / self-play write
+  // 5. The hint reflects whichever cadence the source uses (defaults to "5" only when
+  // the file is still missing and the source is the historical hard/self pair).
+  const expectedN = isScripted ? 1 : 5;
+  const title = '<h2>Live-peli — ' + (self ? 'AI vs AI (self-play)' : (isScripted ? ('AI vs ' + meta[3]) : 'AI vs Hard CPU'))
+    + ' <span class="hint">· ' + (nGames || expectedN) + ' tuoretta peliä / iteraatio · selaa “Seuraava peli”</span></h2>';
   // Key includes the game INDEX so "Seuraava peli" re-renders, and the iteration so
   // a fresh batch re-renders.
   const key = REPLAY_SRC + ':' + REPLAY_IDX + ':' + (r && r.frames ? (r.iter + ':' + r.seed + ':' + r.frames.length) : 'none');
@@ -1603,14 +1662,17 @@ function renderReplay() {
   REPLAY_KEY = key;
   REPLAY_FRAME = 0;
   if (!r || !r.frames || !r.frames.length) {
+    const emptyMsg = self
+      ? 'ei self-play-replayta vielä'
+      : (isScripted ? ('ei vielä skriptattua-vastustaja-replayta (' + meta[3] + ')') : 'ei replay.jsonia vielä');
     panel.innerHTML = '<div class="replay">' + title + replayToggleHtml()
-      + '<div class="empty">' + (self ? 'ei self-play-replayta vielä' : 'ei replay.jsonia vielä')
+      + '<div class="empty">' + emptyMsg
       + ' — ilmestyy kun koulutus käynnistyy</div></div>';
     wireReplayToggle();
     return;
   }
   const blueLbl = self ? 'AI #1' : 'meidän AI';
-  const redLbl = self ? 'AI #2' : 'Hard CPU';
+  const redLbl = self ? 'AI #2' : (isScripted ? meta[3] : 'Hard CPU');
   panel.innerHTML =
     '<div class="replay">' + title + replayToggleHtml()
     + '<div class="stage">'
@@ -1626,7 +1688,7 @@ function renderReplay() {
     + '</div>'
     + '<div class="leg">Reuna/sävy: <span style="color:#5aa9ff">sininen = ' + blueLbl + '</span> · <span style="color:#ff6b6b">punainen = ' + redLbl + '</span>'
     + ' · maasto: <span style="color:#3a9fd0">joki</span>, <span style="color:#8a929c">vuori</span>, <span style="color:#3f8a5c">metsä</span>, ruoho '
-    + '· kirjaimet = rakennukset (F farm, M mine, V village, O outpost, H hydro, N nuclear, ★ HQ, <span style="color:#c792ea">◆ Strange Device</span>) · keltainen numero = sotilaat</div>'
+    + '· kirjaimet = rakennukset (F farm, M mine, V village, O outpost, H hydro, N nuclear, B bridge, ★ HQ, <span style="color:#c792ea">◆ Strange Device</span>) · keltainen numero = sotilaat</div>'
     + '</div>';
   wireReplayToggle();
   const playBtn = document.getElementById('replayPlay');
@@ -1821,6 +1883,337 @@ function render() {
       ], { range: [0, 6],
         hint: 'peak fielded soldiers, avg per game · target > 3',
         tip: 'Suurin kentällä ollut sotilasmäärä per peli, keskiarvoistettu. "Fields an army" -signaali — tällä hetkellä 0–3 (sotilaskatto = HQ+1 ilman Outpostia). Tavoite: rutiininomaisesti > 3 (dokumentoitu epäonnistumiskynnys).' }));
+
+      // ★0b-dist Peak-soldier DISTRIBUTION (latest bench). The avg-per-game line
+      // above hides bimodal behaviour — a flat 1.0 mean can be "always 1 soldier"
+      // OR "0 or 3, never 1/2". This panel makes the shape explicit: x-axis bins
+      // [0,1,2,3,4+], y-axis = number of bench games. Reads champSoldierBins
+      // emitted by the Rust trainer; older history lines lacking the field render
+      // the empty state (the surrounding winHist.some(...) gate hides the whole
+      // pair when neither metric is present).
+      var lbDist = winHist.length ? winHist[winHist.length - 1] : null;
+      var dist = lbDist && lbDist.champSoldierBins ? lbDist.champSoldierBins : null;
+      if (dist) {
+        var binOrder = ['0', '1', '2', '3', '4+'];
+        var totalGames = binOrder.reduce(function (s, k) { return s + (num(dist[k]) || 0); }, 0);
+        var rows = binOrder.map(function (k) {
+          var c = num(dist[k]) || 0;
+          var sharePct = totalGames > 0 ? (100 * c / totalGames).toFixed(1) + '%' : '—';
+          return {
+            label: k + (k === '1' ? ' soldier' : ' soldiers'),
+            value: c,
+            text: c + ' / ' + totalGames + ' · ' + sharePct,
+            // Mirror the army-size line colour so the visual link is obvious.
+            color: getColor('--bank'),
+          };
+        });
+        root.appendChild(barListCard(
+          'Per-skill: peak-soldiers distribution (Step 0)',
+          'latest bench · ' + totalGames + ' games',
+          rows,
+          {
+            labelWidth: 110,
+            valWidth: 140,
+            note: 'Bins 0/1/2/3/4+ = number of bench games whose CHAMPION reached that PEAK soldier count. Makes a flat ~1.0 avg distinct from a bimodal one (e.g. "0 or 3, never 1/2"). 4+ stays at 0 until the soldier cap is raised (current cap = HQ+1 without Outpost = 3).',
+          }
+        ));
+      }
+    }
+
+    // ★PB — PLAN-B INTENT ACTIVITY (BuildBridge, CrackDevice, CrackHQ).
+    // The 2026-06-05 redesign added three new first-class intents to break out
+    // of the passivity equilibrium: bridge-builds (cross rivers), device-cracks
+    // (counter HARD's device line), HQ-cracks (directed offence). All three
+    // panels are GATED on field presence so older runs render nothing.
+
+    // PB1 — time-series: bridges / device-crack-successes / HQ-crack-successes
+    // per game, across benches. Memo gate: bridgesPerGame >= 0.3 means the
+    // policy is actually exercising the new BuildBridge action.
+    if (winHist.length && winHist.some(h => num(h.bridgesPerGame) != null || num(h.crackHQSuccesses) != null)) {
+      root.appendChild(chart('Plan-B: uudet intentit per peli (bridges / HQ-crack / device-crack)', winHist, [
+        { label: 'bridgesPerGame', color: getColor('--tile'),
+          values: smooth(winHist.map(h => num(h.bridgesPerGame))), dots: true, thick: true },
+        { label: 'crackHQ-success / game', color: getColor('--bank'),
+          values: smooth(winHist.map(h => {
+            var s = num(h.crackHQSuccesses); var n = num(h.nGames);
+            return (s != null && n) ? s / n : null;
+          })), dots: true, thick: true },
+        { label: 'crackDevice-success / game', color: getColor('--sigma'),
+          values: smooth(winHist.map(h => {
+            var s = num(h.crackDeviceSuccesses); var n = num(h.nGames);
+            return (s != null && n) ? s / n : null;
+          })), dots: true },
+      ], { range: [0, 1.5],
+        hint: 'memo gate: bridgesPerGame >= 0.3 · crackHQ kasvava trend = HQ-suunnattu offence',
+        tip: 'Plan-B uudet first-class -toiminnot. bridgesPerGame = silloja rakennettu / pelimäärä per bench. crackHQ-success / game = pelien osuus joissa champ valloitti vihollisen HQ:n. crackDevice-success / game = pelien osuus joissa champ tuhosi vihollisen Strange Devicen ennen countdownia. Gate: bridgesPerGame >= 0.3 viimeisen 6 benssin keskiarvossa.' }));
+    }
+
+    // PB2 — latest-bench Plan-B intent counts (raw attempts vs successes).
+    // Two-bar comparison per intent (attempts vs successes) to see whether
+    // the policy is using each action AND whether it succeeds when it tries.
+    if (latestBench
+        && (num(latestBench.crackHQAttempts) != null
+            || num(latestBench.crackDeviceAttempts) != null
+            || num(latestBench.bridgesPerGame) != null)) {
+      const ng = num(latestBench.nGames) || 60;
+      const bridges = Math.round((num(latestBench.bridgesPerGame) || 0) * ng);
+      const rows = [
+        { label: 'BuildBridge (count)', value: bridges,
+          text: bridges + ' / ' + ng + ' games',
+          color: getColor('--tile') },
+        { label: 'CrackHQ attempts', value: num(latestBench.crackHQAttempts) || 0,
+          text: (num(latestBench.crackHQAttempts) || 0) + ' attempts',
+          color: getColor('--bank') },
+        { label: 'CrackHQ successes', value: num(latestBench.crackHQSuccesses) || 0,
+          text: (num(latestBench.crackHQSuccesses) || 0) + ' successes',
+          color: getColor('--best') },
+        { label: 'CrackDevice attempts', value: num(latestBench.crackDeviceAttempts) || 0,
+          text: (num(latestBench.crackDeviceAttempts) || 0) + ' attempts',
+          color: getColor('--sigma') },
+        { label: 'CrackDevice successes', value: num(latestBench.crackDeviceSuccesses) || 0,
+          text: (num(latestBench.crackDeviceSuccesses) || 0) + ' successes',
+          color: getColor('--best') },
+      ];
+      root.appendChild(barListCard(
+        'Plan-B: uudet intentit · viimeisin bench (60 peliä)',
+        ng + ' games',
+        rows,
+        {
+          labelWidth: 170,
+          valWidth: 160,
+          note: 'BuildBridge / CrackHQ / CrackDevice toimivat first-class intentteinä Plan-B:n jälkeen. attempts = pelit joissa champ valitsi tämän toiminnon vähintään kerran. successes = sama + vastapuolen kohde menetetty pelin aikana. CrackHQ success-aste on lähellä 100% kun candidate emit:tää (HQ-laatat usein puolustamattomia per §5). gate: kaikki kolme >0 ja kasvavat.',
+        }
+      ));
+    }
+
+    // ★M — BEHAVIORAL DIAGNOSTIC PANELS (M1–M9). Each panel is GATED on field
+    // presence so older history lines (cnn-bc2 et al, predating these fields)
+    // render no panel at all. Computed in the Rust bench loop (bench_vs_hard)
+    // and emitted into benchmark-history.jsonl as additive keys. The user wants
+    // these as the next-generation passivity diagnosis tightening: each picks at
+    // a specific failure mode (idle workers, idle soldiers, never-Outpost, etc.).
+
+    // M1 — unit efficiency: % of worker/expert ROUNDS spent on a producer
+    // building (Farm/Mine/Village/Hydro/Nuclear). Farms count even during the
+    // 4-round growth warmup per the user-stated rule. A passive AI that hires
+    // workers and parks them on grassland shows near-0% here.
+    if (winHist.length && winHist.some(h => num(h.unitEfficiency) != null)) {
+      root.appendChild(chart('M1 — yksikön tehokkuus (worker/expert PRODUCING) [legacy]', winHist, [
+        { label: 'unitEfficiency', color: getColor('--best'),
+          values: smooth(winHist.map(h => num(h.unitEfficiency))), thick: true, dots: true },
+      ], { pct: true, range: [0, 1],
+        hint: 'producing_rounds / (producing + idle) · per bench (60 games)',
+        tip: 'M1 (vanhentunut, suppea luokittelija). Osuus kierroksista jonka työläiset/asiantuntijat seisovat tuottavalla RAKENNUKSELLA (Farm / Mine / Village / Hydro / Nuclear). Farm-ruutu lasketaan TUOTTAVAKSI myös 4-kierroksen lämpenemisen aikana. Korvattu alapuolella olevalla USEFUL-vs-USELESS -pylväskuviolla (2026-06-05 käyttäjäpalaute), joka huomioi myös luontaisesti tuottavat maastoruudut ja Expand-tapahtumat. Säilytetty vertailua varten.' }));
+    }
+
+    // M1 (Correction 1, 2026-06-05) — NEW broader USEFUL classifier as a two-bar
+    // raw-count comparison (per user feedback): USEFUL = worker/expert rounds on a
+    // producer building OR on a champ-owned natural-producing tile (Forest with
+    // wood_left > 0 / AbundantForest — Mountain & River need a building so they're
+    // NOT credited) OR a champion Expand event (the worker actively claimed/moved
+    // this round). USELESS = the inverse.
+    if (latestBench
+        && num(latestBench.unitUsefulRounds) != null
+        && num(latestBench.unitUselessRounds) != null) {
+      const useful = num(latestBench.unitUsefulRounds) || 0;
+      const useless = num(latestBench.unitUselessRounds) || 0;
+      const total = useful + useless;
+      const rows = [
+        { label: 'USEFUL', value: useful,
+          text: useful + (total > 0 ? ' · ' + (100 * useful / total).toFixed(0) + '%' : ''),
+          color: getColor('--best') },
+        { label: 'USELESS', value: useless,
+          text: useless + (total > 0 ? ' · ' + (100 * useless / total).toFixed(0) + '%' : ''),
+          color: getColor('--muted') },
+      ];
+      root.appendChild(barListCard(
+        'M1 — yksikön tehokkuus · USEFUL vs USELESS (laaja luokittelija)',
+        'uusin benchmark · raw unit-round counts',
+        rows,
+        { labelWidth: 110, valWidth: 130,
+          note: 'USEFUL = worker/expert tuottavalla rakennuksella (Farm/Mine/Village/Hydro/Nuclear) TAI omalla Forest-ruudulla (wood_left > 0) TAI AbundantForest-ruudulla TAI champion käytti Expand-intentin tällä kierroksella. USELESS = muut. Pylväät ovat raw counts (ei suhde) joten lyhyet pelit eivät peitä trendiä — laske summa molemmista ymmärtääksesi mittakaavan.' }));
+    }
+
+    // M2 — soldier-position split: % of soldier-rounds in each role.
+    // ATTACKING (conquering), DEFENDING (own tile next to enemy), IDLE (interior).
+    if (winHist.length && winHist.some(h => num(h.soldierAttack) != null || num(h.soldierDefend) != null)) {
+      root.appendChild(chart('M2 — sotilaan rooli (attack / defend / idle) [3-luokka]', winHist, [
+        { label: 'attack (staged on enemy)', color: getColor('--bank'),
+          values: smooth(winHist.map(h => num(h.soldierAttack))), dots: true },
+        { label: 'defend (frontier-owned)', color: getColor('--best'),
+          values: smooth(winHist.map(h => num(h.soldierDefend))), dots: true },
+        { label: 'idle (interior)', color: getColor('--muted'),
+          values: smooth(winHist.map(h => num(h.soldierIdle))), dashed: true, dots: true },
+      ], { pct: true, range: [0, 1],
+        hint: 'osuus soldier-rounds per bench',
+        tip: 'M2 (kolmen luokan jakauma, säilytetty yksityiskohtia varten). Sotilaiden roolijakauma (osuus soldier-roundeista per benchmark). ATTACK = conquering_units-listalla (vihollisruudulla staged, §2). DEFEND = omalla ruudulla joka rajoittuu (orth-4) vihollisruutuun (rintama, §4 — siellä sotilaat oikeasti merkitsevät). IDLE = sisämaa-ruudulla. Korkea IDLE = sotilaat eivät pääse / mene rintamaan. Otsikkomittari on alapuolella oleva USEFUL-vs-USELESS -pylväskuvio (2026-06-05 käyttäjäpalaute).' }));
+    }
+
+    // M2 (Correction 2, 2026-06-05) — USEFUL vs USELESS two-bar headline panel
+    // (per user feedback): USEFUL = ATTACK + DEFEND combined; USELESS = IDLE.
+    // The 3-bucket chart above stays for drill-down.
+    if (latestBench
+        && num(latestBench.soldierUsefulRounds) != null
+        && num(latestBench.soldierUselessRounds) != null) {
+      const useful = num(latestBench.soldierUsefulRounds) || 0;
+      const useless = num(latestBench.soldierUselessRounds) || 0;
+      const total = useful + useless;
+      const rows = [
+        { label: 'USEFUL', value: useful,
+          text: useful + (total > 0 ? ' · ' + (100 * useful / total).toFixed(0) + '%' : ''),
+          color: getColor('--best') },
+        { label: 'USELESS', value: useless,
+          text: useless + (total > 0 ? ' · ' + (100 * useless / total).toFixed(0) + '%' : ''),
+          color: getColor('--muted') },
+      ];
+      root.appendChild(barListCard(
+        'M2 — sotilaan rooli · USEFUL vs USELESS',
+        'uusin benchmark · raw soldier-round counts',
+        rows,
+        { labelWidth: 110, valWidth: 130,
+          note: 'USEFUL = ATTACK + DEFEND (sotilaat tekevät jotain). USELESS = IDLE (sisämaa-ruudulla, ei rintamaa). Pylväät raw counts. Tarkempi kolmen luokan erittely yllä olevassa kaaviossa.' }));
+    }
+
+    // M3 / M4 — win-rate split by per-game villages-built / outposts-built.
+    // Each bar is a build-count bin (0 / 1 / 2 / 3+); height = champ win-rate
+    // within that bin. Label includes raw game count so a sparse bin doesn't
+    // mislead. Per the user's spec the bins are 0,1,2,3+.
+    function winByBuildsCard(title, hint, src, color) {
+      if (!src) return null;
+      const bins = ['0', '1', '2', '3+'];
+      const rows = bins.map(k => {
+        const slot = src[k] || { games: 0, wins: 0 };
+        const g = num(slot.games) || 0;
+        const w = num(slot.wins) || 0;
+        const rate = g > 0 ? w / g : null;
+        return {
+          label: k + (k === '1' ? ' rakennettu' : k === '0' ? ' rakennettu' : ' rakennettu'),
+          value: rate == null ? 0 : rate,
+          text: g > 0 ? (100 * w / g).toFixed(0) + '% · ' + w + '/' + g
+                     : '— · ' + g + ' peliä',
+          color: color,
+        };
+      });
+      // The bar list uses the raw value; we pre-scaled rate to [0,1].
+      return barListCard(title, hint, rows, {
+        labelWidth: 140, valWidth: 110,
+        note: 'Pylvään korkeus = champion-voittoprosentti tässä bin:issä. "n / N" = voitot / pelit tässä bin:issä uusimmasta benchistä.',
+      });
+    }
+    if (latestBench && latestBench.winByVillagesBuilt) {
+      const card = winByBuildsCard(
+        'M3 — voittoprosentti vs. rakennettuja Villageja',
+        'uusin benchmark · per peli',
+        latestBench.winByVillagesBuilt, getColor('--tile'));
+      if (card) root.appendChild(card);
+    }
+    if (latestBench && latestBench.winByOutpostsBuilt) {
+      const card = winByBuildsCard(
+        'M4 — voittoprosentti vs. rakennettuja Outposteja',
+        'uusin benchmark · per peli · Outpost = soldier-cap unlock (§5)',
+        latestBench.winByOutpostsBuilt, getColor('--sigma'));
+      if (card) root.appendChild(card);
+    }
+
+    // M5 — AI-vs-AI contact rate (PURE self-play games). A game "made contact"
+    // iff ≥1 Attack intent OR any tile carried ≥1 conquering unit at some point.
+    // From the per-iter log line (updates every iteration, unlike the every-5
+    // benchmark) → faster signal than bench-derived metrics.
+    if (data.length && data.some(r => num(r.spContactRate) != null)) {
+      root.appendChild(chart('M5 — kontaktiprosentti (self-play AI-vs-AI) [trendi]', data, [
+        { label: 'spContactRate', color: getColor('--bank'),
+          values: scol(data, 'spContactRate'), thick: true },
+      ], { pct: true, range: [0, 1],
+        hint: 'self-play · games with ≥1 Attack OR staged conqueror · per iteration',
+        tip: 'M5 (suhde-trendi, säilytetty trendiä varten). Osuus pure-self-play-peleistä joissa AI:t törmäsivät. Lähellä 0 = molemmat pelit kasvavat rinnakkain ilman koskaan kohtaamista (passivity). Otsikkomittari on alapuolella oleva CONTACT-vs-NO-CONTACT pylväskuvio (2026-06-05 käyttäjäpalaute).' }));
+    }
+
+    // M5 (Correction 3, 2026-06-05) — raw counts side-by-side as a two-bar
+    // comparison (per user feedback). spContact + spContactN already exist on the
+    // iter log line. spNoContact = spContactN - spContact.
+    {
+      const latestIter = data.length ? data[data.length - 1] : null;
+      if (latestIter
+          && num(latestIter.spContact) != null
+          && num(latestIter.spContactN) != null) {
+        const contact = num(latestIter.spContact) || 0;
+        const total = num(latestIter.spContactN) || 0;
+        const noContact = Math.max(0, total - contact);
+        const rows = [
+          { label: 'CONTACT', value: contact,
+            text: contact + (total > 0 ? ' · ' + (100 * contact / total).toFixed(0) + '%' : ''),
+            color: getColor('--bank') },
+          { label: 'NO CONTACT', value: noContact,
+            text: noContact + (total > 0 ? ' · ' + (100 * noContact / total).toFixed(0) + '%' : ''),
+            color: getColor('--muted') },
+        ];
+        root.appendChild(barListCard(
+          'M5 — self-play kontakti · CONTACT vs NO-CONTACT',
+          'uusin iter · raw game counts',
+          rows,
+          { labelWidth: 110, valWidth: 140,
+            note: 'CONTACT = pelissä oli ≥1 Attack-intentti TAI ≥1 staged conquering -yksikkö (kummalla tahansa puolella). NO-CONTACT = pelit joissa ei kohdattu lainkaan. Yhteensä = spContactN. Raw counts viimeisestä iteraatiosta.' }));
+      }
+    }
+
+    // M6 — soldier STACKING: per-game peak stack-size on any single tile,
+    // bucketed 1/2/3 (the §2 cap is 3). Bin 0 (= never had a soldier) is already
+    // covered by champSoldierBins. % of bench games per bin.
+    if (latestBench && latestBench.stackBins) {
+      const sb = latestBench.stackBins;
+      const bins = ['1', '2', '3'];
+      const total = bins.reduce((s, k) => s + (num(sb[k]) || 0), 0);
+      const rows = bins.map(k => {
+        const c = num(sb[k]) || 0;
+        const share = total > 0 ? (100 * c / total).toFixed(1) + '%' : '—';
+        return { label: 'max-stack ' + k, value: c,
+                 text: c + ' / ' + total + ' · ' + share,
+                 color: getColor('--bank') };
+      });
+      root.appendChild(barListCard(
+        'M6 — sotilaiden pinoutuminen (peak-stack per peli)',
+        'uusin benchmark · ' + total + ' peliä joissa champ kentällä',
+        rows,
+        { labelWidth: 110, valWidth: 140,
+          note: 'Bin = pelin suurin SAMAN ruudun sotilaspino (oma + valloitus, §2 max 3). Korkea 3:n bin = AI keskittää voimat; pelkkä 1:n bin = sotilaat ovat sirpaloituneet.',
+        }));
+    }
+
+    // M7 — experts hired per game (champion side). User said the AI should learn
+    // experts boost production; currently this is 0 in many runs. Per-bench rate.
+    if (winHist.length && winHist.some(h => num(h.expertsHiredPerGame) != null)) {
+      root.appendChild(chart('M7 — palkattuja Experteja / peli (champ)', winHist, [
+        { label: 'expertsHiredPerGame', color: getColor('--div'),
+          values: smooth(winHist.map(h => num(h.expertsHiredPerGame))), thick: true, dots: true },
+      ], { hint: 'champ side · avg per bench game',
+        tip: 'M7. Kuinka monta Expertia champion palkkasi keskimäärin per benchmark-peli. Expert kaksinkertaistaa tuotannon — käyttäjä haluaa nähdä että AI oppii tämän. 0 = ei koskaan palkkaa.' }));
+    }
+
+    // M8 — frontier ratio: fraction of champ-owned tiles bordering ≥1 enemy
+    // tile, averaged across rounds, averaged across bench games. Proxy for
+    // aggression posture vs turtling.
+    if (winHist.length && winHist.some(h => num(h.frontierRatio) != null)) {
+      root.appendChild(chart('M8 — rintamasuhde (frontier ratio)', winHist, [
+        { label: 'frontierRatio', color: getColor('--accent'),
+          values: smooth(winHist.map(h => num(h.frontierRatio))), thick: true, dots: true },
+      ], { pct: true, range: [0, 1],
+        hint: 'osuus omista ruuduista jotka rajoittuvat viholliseen · avg per peli, avg per bench',
+        tip: 'M8. Keskimäärin per kierros: osuus champion-omistamista ruuduista jotka ovat orthog-4 viholliseen rajoittuvia. Korkea = aggressiivinen ekspansio (rintamaa joka puolella). Matala = kotiintunut puolustus (turtling). Tunnistaa passivity-mallin pelityylin tasolla.' }));
+    }
+
+    // M9 — average game length by champion outcome (win vs loss). A different
+    // lens than per-cause: fast wins = decisive play, long losses = slow attrition.
+    if (winHist.length && winHist.some(h => h.roundsByOutcome
+        && (num(h.roundsByOutcome.win) != null || num(h.roundsByOutcome.loss) != null))) {
+      const winRds = winHist.map(h => num((h.roundsByOutcome || {}).win));
+      const lossRds = winHist.map(h => num((h.roundsByOutcome || {}).loss));
+      root.appendChild(chart('M9 — pelin pituus voitossa vs. tappiossa', winHist, [
+        { label: 'rounds when champ WON', color: getColor('--win'),
+          values: smooth(winRds), thick: true, dots: true },
+        { label: 'rounds when champ LOST', color: getColor('--loss'),
+          values: smooth(lossRds), dashed: true, dots: true },
+      ], { hint: 'avg rounds per bench, split by champ outcome',
+        tip: 'M9. Pelin keskimääräinen pituus eriteltynä champion lopputuloksen mukaan: voitto vs. tappio. Nopea voitto = ratkaisevaa pelaamista; pitkä tappio = kulutussotaa. Eri linssi kuin per-syy (Device/Conquest/...): kertoo pelin DYNAMIIKASTA voiton/tappion takana.' }));
     }
 
     // ★0c device-DENIAL + bankruptcy-share (Step 0). Denial = HARD built a Strange

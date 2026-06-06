@@ -344,7 +344,10 @@ impl Game {
 
     /// `hasOpponentHeadquarters(player)` (the Grassland override; base is always
     /// true). False only for the player's *own* un-conquered HQ tile.
-    fn has_opponent_headquarters(&self, tid: TileId, player: PlayerId) -> bool {
+    /// Made `pub` (Plan-B) so the candidate generator's `build_bridge`
+    /// `bridge_unblock_count` feature can use the same gate as
+    /// `get_available_tiles_for` without duplicating logic.
+    pub fn has_opponent_headquarters(&self, tid: TileId, player: PlayerId) -> bool {
         let tile = &self.tiles[tid.0];
         if tile.tile_type == TileType::Grassland {
             if let Some(b) = &tile.building {

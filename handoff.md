@@ -1,252 +1,284 @@
 # Handoff — Colonizing Pirkanmaa AI training (CONTINUE HERE)
 
-_Last updated 2026-06-05. **Read this first.** Supersedes the prior A2-spatial-CNN handoff.
-This is the entry point for continuing the CURRENT effort — curing the AI's passivity via a
-disciplined, staged training plan — on another device. Self-contained: everything needed is in
-this repo (the design docs travel with the commit)._
+_Last updated 2026-06-06. **Read this first.** Training is paused; continues on a new device.
+Self-contained: everything needed is in this repo (design docs travel with the commit)._
 
 The deployed game is **TS/Phaser** (`src/`). The **Rust trainer** (`rust-trainer/`) trains the
-AlphaZero net that gets deployed back into the TS game. Parity (Rust ⇄ TS) is bit-exact and locked
-by `cargo run -p cp-train --bin parity`.
+AlphaZero net deployed back into the TS game. Parity (Rust ⇄ TS) is bit-exact and locked by
+`cargo run -p cp-train --bin parity --release` (must be 8/8).
 
 ---
 
 ## TL;DR — where we are
 
-After a long arc of failed hypotheses (more net capacity, value-head calibration, curriculum,
-search horizon), the binding problem was finally diagnosed by reading actual replays + the user's
-observation: **the AI is SEVERELY PASSIVE.** It never builds an army (0–3 soldiers all game),
-stalls at ~10–17 tiles, Pass = ~45% of decisions, and its **~0.46 win-rate vs the HARD bot is a
-MIRAGE** — ~30% of its "wins" are free enemy-self-bankruptcy. True skill ≈ 0.31–0.39 (a loser).
+**Best result of the entire 14-run effort: `cnn-asym1`** (script-frac 1.0 + lr 0.003 + epochs 2) —
+peak trueWin **0.52**, last-6-bench mean **0.44**. THE ONLY run that sustained trueWin > 0.50 across
+multiple benches. champion-best.json preserved at `rust-trainer/checkpoints-cnn-asym1/`.
 
-**Root cause = the REWARD**, not capacity and not the value head:
-- A 5.5× bigger net (53.7k params) left win-rate flat → **capacity is not binding** (but that test
-  was run under the passive reward, so it's only refuted *in the passive regime* — revisit in Step 4).
-- The value head was un-squashed (`--record-opp-value`) and win-rate still didn't move → **value
-  calibration is fixable but not the bottleneck.**
-- The potential Φ rewarded only *static* economic health → sitting on a tiny economy MAXED Φ → **Pass
-  was literally Φ-optimal.**
+**The structural problem we've diagnosed across all 14 runs**: every run peaks at trueWin
+0.43–0.53 around gen 10–25, then regresses. Eight major intervention categories have been tried
+(reward shaping, terminal-z mods, action-space expansion, scripted opponents, KL anchors, buffer
+size, learning rate, asymmetric self-play). The asymmetric-self-play fix (cnn-asym1) is the only
+one to genuinely break the regression attractor, but it still hit the 0.45 ceiling.
 
-We pivoted to a disciplined, staged plan with an **HONEST metric**. Design doc:
-**`rust-trainer/TRAINING-APPROACH.md`** (read it — Steps 0–4 with concrete behavioral gates).
-
-Steps 0 and 1 are done; **Step 2 RAN and FAILED — and the failure revealed the real root cause
-(see the DECISION block below).**
+**Two open structural gaps from the CLEAN-SLATE redesign memo (`TRAINING-V2-PROPOSAL.md`)**:
+1. **`Intent::MarchSoldier` does not exist** — all soldier moves are adjacency-gated (Attack /
+   CrackHQ / CrackDevice / Expand-1-tile). The MARCHER scripted opponent demonstrates marching,
+   but the learner CANNOT copy it because the candidate enumerator never proposes "move soldier
+   N tiles toward enemy". This is the load-bearing missing-action gap.
+2. **CNN receptive field is 5×5 (small) / 7×7 (large) on a 14×12 board.** The trunk cannot
+   spatially correlate "my soldier here" with "enemy device 10 tiles away" except via the global
+   average-pool collapse. The user's question "miten näkee sen vaikka se olisi toisella puolella
+   karttaa" has an architectural answer: only via `GlobalAvgPool`, not via the spatial trunk —
+   the fix is precomputed distance-to-enemy-HQ/device planes.
 
 ---
 
 ## ★ START HERE NEXT SESSION ★
 
-**Option B (rebalance the Outpost cost) was chosen, implemented (parity 8/8), and validated — it is
-the confirmed-correct direction but only a PARTIAL fix. Read the result + NEXT STEP at the bottom of
-this block; do NOT re-ask the A/B/C fork (B is done).** The diagnosis that motivated B, still the
-core context:
+**Recommended next move (per `TRAINING-V2-PROPOSAL.md` §7):** implement supervised pretraining +
+KL-anchored RL CORRECTLY (the prior attempt failed due to a dominant-intent diff-heuristic bug
+that always recorded `Pass` as the target). The full design is in §6 of `TRAINING-V2-PROPOSAL.md`.
 
-> **The army is GATE-BLOCKED (the BuildOutpost action is almost never legal/affordable), NOT a
-> reward/learning failure.** The Outpost costs **650 money + 300 wood + 300 stone + 300 METAL at
-> once** (`cp-sim/src/resources.rs:239`). Metal comes ONLY from Mines (20/worker/round); the net
-> builds ~1 mine, so **300 metal never stockpiles** → BuildOutpost is never enumerated → soldier cap
-> is hard-locked at 1 (HQ +1, Outpost +3; `managers.rs:611`) → **no army is mechanically possible.**
-> Secondary: the NN's outpost gate needs **tile_count ≥ 12** (`cp-ai/src/candidates.rs:496`) while
-> HARD builds at **≥ 8** (`hard_ai.rs:1117`) — an asymmetric handicap. Evidence: BuildOutpost chosen
-> 0–4× / 60 games in BOTH Step-1 (s1) and Step-2 (s2); `outpostsPerGame` ≈ 0.10 FLAT over 30 gens
-> (the curve never moves → the action surface, not the reward, is the limiter); even in 28–63-tile
-> games the net builds 0 outposts (isolates the 300-metal cost). The learner works fine where actions
-> ARE legal (Villages/Mines/Farms/HireSoldier all fire). **This explains every prior failure** — we
-> spent Steps 1 & 2 rewarding (`--w-army`, cap-potential) and pressuring (army-rusher) toward an army
-> that is unreachable. **Do NOT invest further in larger `--w-army` or more army-rusher.**
+**Conservative alternative (cheaper, ~5h):** resume `cnn-asym1`'s setup (already proven best),
+plus add the `Intent::MarchSoldier` candidate enumerator and the distance-to-HQ/device planes.
+This is the smallest set of changes that addresses the two structural gaps identified above.
 
-**WHAT WE DID — Option B (DONE, committed, parity 8/8):** rebalanced the Outpost cost
-`650 / 300 wood / 300 stone / 300 metal` → **`500 / 200 / 200 / 100`** (metal **300→100** was the
-binding fix; ~5 mine-rounds instead of ~15) + lowered the NN outpost gate **12→8** (matches HARD).
-Mirrored on BOTH sides (`cp-sim/resources.rs` ⇄ `src/core/resources.ts`, `cp-ai/candidates.rs` ⇄
-`src/ai/nn/candidates.ts`), goldens re-exported, **parity 8/8**, tsc + cargo green, AI income-model
-comment synced, model `arc` bumped `sd → sd2` (registration-time metadata — the NEXT registered model
-must use `--arc sd2`; don't benchmark `sd` vs `sd2`).
+**Most-conservative alternative (just resume what worked):** `cnn-asym2` = same flags as asym1,
+warmstart from `rust-trainer/checkpoints-cnn-asym1/champion-best.json`. Lets the asymmetric
+attractor train for longer.
 
-**VALIDATION (`checkpoints-cnn-b1`, small net, gen 0–49) — PARTIAL SUCCESS, confirms the diagnosis:**
-For the FIRST time in the whole effort the army metrics moved UP — BuildOutpost intent rose to 4–7
-(vs the chronic 0–4), `outpostsPerGame` ~0.20 (2× the old ~0.10), `maxSoldiersPerGame` climbed
-0.73→**0.92** (gen 30), `trueWinVsHard` ~**0.42–0.45** (best yet), Pass% ~31 (lowest). So making the
-Outpost reachable DID start the army chain — **the gate WAS the binding constraint.** BUT: (a) the
-army never reached the gate (maxSold peaked 0.92, target **>3** — it builds the Outpost but barely
-fills the +3 cap with soldiers); and (b) the gains **REGRESSED** over the last ~10 gens (gen 45–49:
-outposts→0.07, maxSold→0.57, trueWin→0.35, back toward baseline) — the net found the army strategy
-mid-training then DRIFTED back to the conquest/economy equilibrium.
-
-**NEXT STEP (resume here):** B opened the gate (necessary, done) but isn't sufficient alone. Two new
-bottlenecks, now ACTIONABLE because the gate is open (the `--w-army`/`--cap-potential` rewards can
-finally bite — they couldn't before, gate-blocked):
-1. **Fill the soldier cap.** Even with outposts (cap → 4), maxSold stays ~1. Investigate the metal
-   economy for SOLDIERS (50 metal each) and whether HireSoldier is prioritized after an Outpost.
-   Retune `--w-army` UP (e.g. 0.6–0.8) and ensure metal supports Outpost + multiple soldiers.
-2. **Stop the regression.** The army strategy isn't a stable attractor yet (peaks ~gen 30, drifts
-   back). Needs stronger/sustained army + curriculum pressure (army-rusher weight, `--w-army`, PFSP)
-   so the net consolidates instead of reverting to conquest/economy.
-   Suggested next run: fresh small net, retuned `--w-army` (higher) + `--cap-potential` + army-rusher
-   emphasis; success = `maxSoldiersPerGame` sustains a climb past ~1.5 WITHOUT regressing, and
-   `trueWinVsHard` rises. Full diagnosis detail in memory `army-gate-blocked.md` (dev machine only;
-   essentials are in this block + `TRAINING-APPROACH.md`).
+Launch command for the most-conservative path (asym2):
+```bash
+./rust-trainer/presets/launch.sh \
+  --out rust-trainer/checkpoints-cnn-asym2 \
+  --init rust-trainer/checkpoints-cnn-asym1/champion-best.json \
+  --iters 300 --bench-every 5 --replay-every 25 \
+  --script-frac 1.0 --lr 0.003 --epochs 2 \
+  --vs-hard-frac 0.4 \
+  --w-army 0.4 --w-expert 0.15 --w-soldier-forward 0.3 \
+  --cap-potential 0.3 --idle-flow-penalty 0.3 \
+  --device-crack-credit 0.25 --hq-crack-credit 0.25 \
+  --turn-search-spend --build-prior-floor 0.06 --sims 64
+```
 
 ---
 
+## What this session shipped (code, parity-locked)
+
+All changes parity 8/8, no arc bump (game-rules unchanged). Goldens re-exported once when
+intents changed (12 → 15).
+
+### Action space (cp-ai/candidates.rs, src/ai/nn/candidates.ts — mirrored)
+- **`Intent::BuildBridge`** (idx 12) — Bridge candidate enumerator, gated on owned river + cost
+- **`Intent::CrackDevice`** (idx 13) — enumerates when enemy device reachable
+- **`Intent::CrackHQ`** (idx 14) — enumerates when enemy un-conquered HQ reachable
+- `INTENT_COUNT` 12 → 15; policy-head dim 64 → 67 (cold-start required for nets predating Plan-B)
+
+### Scripted opponents (cp-ai/hard_ai.rs)
+The 6-way scripted pool (was 3-way pre-Plan-B):
+- **`HQ_RUSH_PARAMS`** (Plan-B addition) — directed HQ-attacks
+- **`GARRISON_PARAMS`** — defensive turtle (warmonger=true forces at_war round 1)
+- **`EXPERT_PARAMS`** — pure-econ Expert-stacking bot
+- **`MARCHER_PARAMS`** — preemptive march-to-enemy-HQ (with bespoke `march_to_enemy_hq` phase
+  gated on warmonger; ARMY_RUSH-like AiParams but marches soldiers each turn when no Attack
+  is legal)
+- Tuned `GARRISON` (reserve 100→300, max_outposts 4→2) and `EXPERT` (reserve 140→200,
+  max_outposts 2→1) to keep self-bankruptcy ≤ 5% across 20-game smokes per variant.
+
+### HARD policy fixes (cp-ai/hard_ai.rs)
+- **`affordable_after_commit` helper** + drain-vs-income checks on every expensive build/hire
+  (Outpost, Soldier×2, Expert, Village). Catches the slow-drain bankruptcy the original
+  Device-only safety-buffer missed.
+- **`build_bridges` phase**: HARD now builds Bridges on owned river tiles when they would
+  unlock ≥1 new neutral tile. Prefers Hydro over Bridge when `experts && nuclear && round > 30`.
+- **`claim_value` priority**: HARD prefers Expand-targets that contain a neutral building
+  (Mine=7, Mikontalo/Nuclear/Village/Outpost=6, Hydro/Farm=5, Bridge=4) over bare terrain.
+
+### Reward / training-config flags (cp-train/cnn_train.rs)
+- **`--w-soldier-forward <f64>`** — Φ term rewarding own soldiers' position-near-enemy-frontier
+  (gradient pulling the army forward). `clamp01(Σ(1 − dist/(W+H)) / 7)` × w.
+- **`--w-expert <f64>`** — Φ term rewarding staffed Experts on Mine/Hydro/Nuclear.
+- **`--bankruptcy-discount <d>`** (Plan-B EXPANDED scope): when winning by Bankruptcy OR
+  Conquest with no Outpost built AND peak-soldier < 2, scale terminal z by (1−d).
+  Default 0.0 = exact no-op.
+- **`--device-crack-credit <c>` / `--hq-crack-credit <c>`** — action-level credit for choosing
+  `CrackDevice` / `CrackHQ` intents in a winning trajectory. Default 0.0 = no-op.
+- **`--kl-anchor <w> --kl-anchor-net <path>`** — adds `w·KL(π_current || π_anchor)` to policy
+  loss. Anchor net is frozen, loaded once. Default 0.0 = no-op.
+- **`--supervised-from-hard` / `--supervised`** — supervised-data-gen + supervised-training
+  modes. **Currently buggy** (dominant-intent diff-heuristic always falls through to Pass
+  because HARD's plan_turn is opaque — see V2 memo §6). Needs per-action HardAi refactor.
+
+### Trainer / scripted dispatch (cnn_train.rs)
+- `ScriptKind` extended to 6 variants (HqRush, GarrisonFortress, EconExpert, Marcher added).
+- `do_replay` writes 5 games per scripted opponent (was 1), one game per variant becoming 5
+  per variant for variance visibility.
+- New behavioural metrics in `benchmark-history.jsonl`: `bridgesPerGame`,
+  `crackDeviceAttempts/Successes`, `crackHQAttempts/Successes`, `champSoldierBins`, plus
+  M1-M9 (unit/soldier-efficiency, win-by-villages/outposts, contact-rate, expert-hires,
+  frontier-ratio, rounds-by-outcome).
+- Per-iter log adds `spVsGarrison`, `spVsExpert`, `spVsHqRush`, `spVsMarcher`, `spContactRate`.
+
+### Dashboard (training/serve-dashboard.ts)
+- 8-button replay viewer: hard, self, vs-armyrush/hqrush/devicerush/garrison/expert/**marcher**.
+- 5 games per scripted opponent in the viewer's batch selector.
+- New panels: Plan-B intent activity (bridges/crackHQ/crackDevice over time + bar comparison),
+  M1-M9 behavioural diagnostics (USEFUL-vs-USELESS unit/soldier bars, contact-vs-no-contact
+  count, peak-soldiers distribution histogram, win-by-villages/outposts bars).
+- Bridge → 'B' glyph in replay frame decoder (was '?'). `building_code` made exhaustive in
+  both cnn_train.rs and alphazero.rs so a future BuildingType variant triggers a compile error.
+
+### Preset system (rust-trainer/presets/)
+- `common.sh` — canonical fixed flag set. Per-experiment knobs stripped (--out, --iters,
+  --vs-hard-frac, --bankruptcy-discount, --script-frac, --w-army, --w-expert, --w-soldier-forward,
+  --cap-potential, --idle-flow-penalty, --build-prior-floor, --sims, --net-size). Always strip
+  a knob from common.sh BEFORE sweeping it — `arg_val` uses FIRST occurrence.
+- `mac-m2.sh` — `THREADS = perf_cores` (8 on M2 Pro; empirical: 66 s/iter at 8 threads beats
+  75 s at 6 — E-core-drag theory falsified).
+- `linux-pc.sh` — `THREADS = max(16, nproc − 4)`, override via `THREADS_OVERRIDE=N`.
+- `launch.sh` — auto-detects OS, sources right preset, supports `--print-cmd` dry-run.
+
 ---
 
-## Key conclusions (established — don't re-litigate)
+## The empirical record — 14 runs
 
-- **Spatial-CNN representation** was the historical unlock (22% → ~50%). KEEP it.
-- **Passivity is the binding constraint; its root is the reward.**
-- **THESIS (load-bearing):** aggression / army-building is a **CURRICULUM / terminal-signal**
-  problem, NOT a shaping problem. Potential-based shaping (Ng-1999) is policy-invariant — it can
-  *accelerate* convergence to the optimum but cannot *create* it. Step 1 confirmed this: the reward-Φ
-  redesign grew the ECONOMY but did NOT create the ARMY.
-- **Honest headline metric = `trueWinVsHard`** = raw win-rate minus bankruptcy-mirage wins. The raw
-  `winRate` has misled us all along — always judge on `trueWinVsHard`.
-- **Measurement discipline:** a 60-game bench ≈ ±12.6% CI → never react to a single bench; judge
-  aggregated trends over ~30–60 iters. Behavioral metrics (Pass%, Outposts, max-soldiers) are tight
-  (~3000 decisions/bench) and are the leading indicators.
-- **Use the SMALL net** (`--net-size small`, 9786 params) for fast iteration — capacity is deferred
-  to Step 4. The small net is the SAME proven spatial CNN, just without the refuted param-bloat.
-- **Leave ~4 CPU cores free** (`--threads`, default cores−4) so the desktop stays usable.
+| Run | Intervention | Peak (gen) | Last-N mean | Notes |
+|----:|---|---:|---:|---|
+| b1 | Outpost cost rebalance (arc sd2) | 0.45 (30) | 0.41 | First post-fix run |
+| i1 | reward retune (idle-flow 0.3→0.05) | 0.47 (15) | 0.40 | refuted: idle-flow not binding |
+| s3 | growth-Φ retune | 0.43 (15) | 0.37 | small regression |
+| c1 | turn-search-spend ON | 0.40 (25) | 0.32 | Pass% blew up to 53.7% |
+| bc1 | --bankruptcy-discount 0.7 | 0.38 (25) | 0.33 | discount too strong; net stalled |
+| bc2 | --bankruptcy-discount 0.4 | 0.40 (30) | 0.36 | bankShare moved, trueWin flat |
+| r1 | Plan-B: BuildBridge/CrackHQ/CrackDevice + HQ_RUSH | 0.45 (15) | 0.34 | CrackHQ 18/18 became HARD-overfit |
+| r2 | Plan-B + KL 0.3 + GARRISON/EXPERT + 400 iters | 0.45 (10) | **0.20** | KL pinned policy; massive regression |
+| r3 | full HARD-fix v1 + MARCHER + Φ-forward | 0.42 (10) | 0.35 | old binary in-memory; partial fix |
+| r4 | full HARD-fix v2 + variant tunes + clean run | **0.53 (10)** | 0.25 | highest-ever PEAK; deep regression to 0.13 |
+| r5 | --buffer 60000 → 15000 | 0.43 (0) | 0.30 | faster cycling → more unstable, not less |
+| kl1 | KL anchor 0.3 to r1 gen-15 net | 0.45 (15) | 0.34 | anchor pinned policy at warmstart |
+| **asym1** | **--script-frac 1.0 + lr 0.003 + epochs 2** | **0.52 (0)** | **0.44** | **only run to sustain >0.50** |
+| aggro1 | asym1 + --w-soldier-forward 0.3 → 1.2 | 0.52 (0) | (paused gen 5) | early bimodal "all-or-nothing" army |
 
----
-
-## Current code state (committed; `cargo build --release` clean; parity 8/8)
-
-All trainer logic is in `rust-trainer/crates/cp-train/src/bin/cnn_train.rs` (trainer/MCTS/reward/PFSP)
-and `rust-trainer/crates/cp-ai/src/` (net: `spatial_net.rs`, `cnn.rs`, `planes.rs`, `candidates.rs`).
-
-- **Step 0 — honest metrics (DONE):** `trueWinVsHard`, `bankruptcyWinShare`, `villagesPerGame`,
-  `outpostsPerGame`, `maxSoldiersPerGame`, `deviceDenialRate` added to `benchmark-history.jsonl` + 4
-  new dashboard panels (`training/serve-dashboard.ts`). (`tiles-lost-to-rusher` deferred to Step 2.)
-- **Step 1 — reward redesign (DONE):** `potential_step1` adds, flag-gated (all default 0 = exact
-  bit-identical no-op):
-  - `--income-lead-potential w` — growth/lead Φ (signed income vs strongest enemy) — can't be maxed by sitting.
-  - `--cap-potential w` — SATURATING soldier-cap term (`clamp(soldier_cap/7)`) → building an Outpost is **+Φ**.
-  - `--idle-flow-penalty w` — idle = unused **FLOW** (unstaffed units + unspent affordable income),
-    **NOT empty slots** → a fresh Outpost adds 0 idle. Resolves the idle-vs-outpost tension that
-    broke earlier runs (test-proven: `building_outpost_does_not_lower_phi_under_step1`).
-  - `--net-size small|large` (default large) — small = 9786-param pre-bloat arch (FD-checked). **Cold-start.**
-- **Prior levers already shipped (all flag-gated):** B "eyes" = 24 spatial planes incl. correct
-  frontier-reachability threat, owned-vs-conquering soldiers, device-defenseless, capacity scalars
-  (see `GAME-MECHANICS.md`); C curriculum = `--script-opponents --script-frac --script-grade`
-  (army-rush + device-rush scripted opponents), `--record-opp-value` (records the winning opponent
-  seat as value-only examples — fixes value-squash), `--device-credit`; A horizon = `--turn-search`
-  (each MCTS edge plays a full turn → reaches the round-90 Device), `--turn-search-spend` (spend the
-  turn budget instead of break-on-Pass).
-- **Speed (all numerically equivalent, parity-safe):** bit-exact conv `get_unchecked` rewrite (~2×),
-  eval-phase saturation (`rayon::join` bench+replay into one pool, merged the 2 sequential replay
-  batches), `--replay-games` default 5 (10 replay games), `--threads N` (default cores−4).
-
-- **Step 2 — combat curriculum: IMPLEMENTED + test-verified, NOW RUNNING (not yet judged).**
-  `--w-army` (FIELDED-soldier emphasis, `clamp(used_soldier/7)`, pays past one Outpost so the
-  Outpost→fill chain pays end-to-end) + `--w-cut` (small defense term, `−w·hq_cut_exposure` =
-  losing/severing tiles lowers Φ) in `potential_step1`; the **army-rusher** is in the scripted-opponent
-  pool (`--script-opponents --script-frac --script-grade`, keep `--record-opp-value`); the
-  **`tilesLostToRusher`** metric is in the training log + dashboard. All flag-gated, defaults
-  bit-identical no-op, parity 8/8, 35 cp-train + 58 cp-ai tests pass. Coordination (no double-count):
-  `--cap-potential` = HAVE cap (/7), `--soldier-cap-potential` = FILLED (/6), `--w-army` continues
-  filling past /6 to /7, `--idle-flow-penalty` keys on unused FLOW not empty slots.
-  **Step-2 RAN (cnn-s2, small net, gen 0–30) and FAILED the gate:** max-soldier stayed ~0.6 (≈0,
-  needed >3), Outposts ~0.10 flat, `vsArmyRush` ~0.1 (not climbing). The failure triggered the
-  diagnosis in the ★ DECISION block above — the army is GATE-BLOCKED, not unrewarded. **Next move
-  depends on the user's A/B/C choice — do NOT auto-run more Step-2-style reward tuning.**
+`b1 mean 0.41` was the previous high-water last-N mean. asym1's 0.44 over 6 benches is the new
+best. **Every other run regressed below its own warmstart.** Two of the most-comprehensive runs
+(r2, r4) regressed catastrophically (-0.25 to -0.40 from peak).
 
 ---
 
-## Step 1 run result (context for the next step)
+## Key design documents (READ THESE)
 
-`checkpoints-cnn-s1` (small net, gen 0–30, the Step-1 launch below): ECONOMY responded — Villages
-0.5→0.75/game, `bankruptcyWinShare` 0.31→0.19 (wins got HONEST), Pass% 45→~37, `trueWinVsHard`
-steady ~0.35. But the ARMY did NOT materialize — Outposts stuck ~0.10/game, max-soldiers ~0.6 (≈0)
-across 30 gens, even with the army-rusher in self-play at frac 0.5. Exactly the thesis: the net
-TURTLES; shaping grows economy but can't create the army optimum. → Step 2's job.
+**Primary** (the V2 redesign — read first):
+- `rust-trainer/TRAINING-V2-PROPOSAL.md` — clean-slate redesign across eyes/actions/reward/curriculum,
+  ~3700 words. Identifies the two structural gaps (MarchSoldier intent, receptive field) and the
+  proposed §7 experiment (supervised + KL-anchor, correctly this time).
 
-(All `checkpoints-*` dirs + `cnn-backups/` ARE committed — full training history + trained nets
-travel. `rust-trainer/target/` is the only large thing gitignored.)
+**Supporting analyses (chronological)**:
+- `rust-trainer/META-ANALYSIS.md` — the 8-run forensic that identified the buffer-cycling
+  positive feedback loop as root cause (later: data-quality fixes raised the peak but didn't
+  break the loop).
+- `rust-trainer/DEEP-REDESIGN-MEMO.md` — the Plan-B action-space proposal (BuildBridge,
+  CrackDevice, CrackHQ).
+- `rust-trainer/REWARD-FIX-PROPOSAL.md` — terminal-z bankruptcy-coupon diagnosis (led to
+  --bankruptcy-discount).
+- `rust-trainer/SEARCH-CURRICULUM-FIX-PROPOSAL.md` — turn-search-spend + build-prior-floor.
+- `rust-trainer/OVERNIGHT-RUN-PLAN.md` — the comprehensive r2 design (and its failure).
+- `rust-trainer/GAME-MECHANICS.md` — USER-VERIFIED canonical game rules.
 
 ---
 
-## How to build & run (on the new device)
+## Diagnoses that have been refuted (don't re-litigate)
+
+- **Net capacity is NOT the binding constraint** — same 9786-param net hit maxSold 0.92 in b1
+  and trueWin 0.53 in r4. The architecture represents winning; training degrades it.
+- **The bankruptcy mirage was real but NOT the root cause** — bc1/bc2/r4 stripped the coupon
+  with no net trueWin lift; Ng-1999 invariance limits Φ-shaping.
+- **Action-space gap was real for BuildBridge/CrackHQ/CrackDevice but did NOT lift trueWin** —
+  r1 added the intents; CrackHQ became a HARD-loose-garrison exploit (18/18 success),
+  bridges = 0.01/g.
+- **Buffer-cycling was suspected but the fix (60k → 15k) made things WORSE** — r5 collapsed
+  faster than r4. Buffer size is NOT the binding lever.
+- **HARD's self-bankruptcies were CORRUPTING training data** — fixed via affordability gates
+  (HARD now self-bankrupts ≤ 5% per variant). r4's gen-0 trueWin jumped to 0.45 just from
+  fixed HARD. But that didn't stop the regression.
+
+---
+
+## What WORKS (don't break these)
+
+- **`cnn-asym1` config**: `--script-frac 1.0 --lr 0.003 --epochs 2`, warmstart from r4 peak.
+  Only run to sustain >0.50.
+- **HARD-fix v2** (affordability gates) — cleaner bench signal.
+- **Plan-B intents** (BuildBridge, CrackDevice, CrackHQ) — present and used; CrackHQ in
+  particular is a real cracker action.
+- **The 6-way scripted pool** — diverse opponent set, --script-grade auto-balances by win-rate.
+- **MARCHER scripted opponent** — demonstrates preemptive march (even though the learner
+  can't copy it without `Intent::MarchSoldier`).
+- **Dashboard 8-button replay viewer** — visualises per-opponent behaviour with 5 games each.
+
+---
+
+## Operational notes for resuming on the new device
 
 ```bash
-# Prereqs: Rust (stable) + Node 22 (.nvmrc). Then:
+# Prereqs: Rust (stable) + Node 22 (.nvmrc).
 npm install
-cd rust-trainer && cargo build --release          # first build is slow; target/ is gitignored
+cd rust-trainer && cargo build --release
+cd ..
 
 # Gates (run after any change):
-cargo run -p cp-train --bin parity --release       # MUST be 8/8 (Rust == TS engine)
-cargo test -p cp-ai                                # net + planes + FD gradient-checks
-cargo test -p cp-train --bin cnn_train             # trainer + reward + metric tests
-# If you change candidate gates/costs/rules, re-export goldens FIRST:
-#   npx vite-node training/export-golden.ts   (then parity must still be 8/8)
+cargo run -p cp-train --bin parity --release       # MUST be 8/8
+cargo test -p cp-ai --release                       # ~70 tests
+cargo test -p cp-train --bin cnn_train --release    # ~62 tests
+npx tsc --noEmit                                    # exit 0
 
-# Dashboard (live metrics incl. the Step-0 honest panels):
-npx vite-node training/serve-dashboard.ts -- --dir rust-trainer/checkpoints-<run> --port 8787
+# Dashboard:
+npx vite-node training/serve-dashboard.ts -- --dir rust-trainer/checkpoints-cnn-<run> --port 8787
 
-# Launch a training run (background):
-./rust-trainer/target/release/cnn_train --train --out rust-trainer/checkpoints-<run> <flags>
+# Resume training (see "★ START HERE NEXT SESSION ★" above for launch commands)
 ```
 
-### Step-1 baseline launch (verified — reproduces cnn-s1)
-```bash
-./rust-trainer/target/release/cnn_train --train --out rust-trainer/checkpoints-s1 \
-  --net-size small --threads 16 --turn-search \
-  --income-lead-potential 0.5 --tile-potential 0.4 --cap-potential 0.3 --idle-flow-penalty 0.3 \
-  --record-opp-value --device-potential 0.2 --device-credit 0.15 \
-  --pfsp --vs-hard-frac 0.4 --script-opponents --script-frac 0.5 --script-grade \
-  --tie-penalty 0.4 --stall-rounds 80 --build-prior-floor 0.03 --shape-gamma 0.99 --shape-weight 0.3 \
-  --sims 48 --cap 150 --games 24 --bench-games 60 --iters 50
-```
-Throughput on the dev box was ~40–60 s/iter for the small net (16 threads). Adjust `--threads` for
-the MacBook's core count (leave ~4 free).
-
-### The immediate next task
-**Step 2 is implemented** — RUN it and judge the gate. Launch command (Step-1 flags + `--w-army 0.4
---w-cut 0.15`):
-```bash
-./rust-trainer/target/release/cnn_train --train --out rust-trainer/checkpoints-s2 \
-  --net-size small --threads 16 --turn-search \
-  --income-lead-potential 0.5 --tile-potential 0.4 --cap-potential 0.3 --idle-flow-penalty 0.3 \
-  --w-army 0.4 --w-cut 0.15 \
-  --record-opp-value --device-potential 0.2 --device-credit 0.15 \
-  --pfsp --vs-hard-frac 0.4 --script-opponents --script-frac 0.5 --script-grade \
-  --tie-penalty 0.4 --stall-rounds 80 --build-prior-floor 0.03 --shape-gamma 0.99 --shape-weight 0.3 \
-  --sims 48 --cap 150 --games 24 --bench-games 60 --iters 50
-```
-Judge the gate (max-soldier > 3, honest conquest wins, `tilesLostToRusher` ↓, `vsArmyRush` ↑) over
-~30–40 iters aggregated. Then Step 3 (device reaction + strategic arc), Step 4 (re-test capacity
-only after the net plays actively).
+The Linux preset uses `THREADS_OVERRIDE` env var if you need to pin a thread count
+(default is `max(16, nproc−4)`). On the Mac (M2 Pro 8P+4E) the preset auto-detects 8 threads.
 
 ---
 
-## Constraints (do not break)
+## What's parity-affecting vs free-to-edit
 
-- **Parity 8/8.** Candidate gates/costs are mirrored: `crates/cp-ai/src/candidates.rs` ⇄
-  `src/ai/nn/candidates.ts`, `crates/cp-sim/src/resources.rs` ⇄ `src/core/resources.ts`. Any gate/
-  cost/rule change → edit BOTH → re-export goldens → parity 8/8.
-- **Map-gen MSVCRT RNG** (`src/core/rng.ts`, `src/world/worldgenerator.ts`) must NOT change (bit-exact).
-- **Net-input changes** (plane count, value-scalar dim, local dim) → COLD-START + finite-difference
-  gradient-check (pattern in `spatial_net.rs` `combined_grad_*` tests).
-- `planes.rs` / `spatial_net.rs` / `cnn_train.rs` (Φ, MCTS) are **AZ-only / parity-free** — change freely.
-- Reward-Φ changes are NOT net-input changes → no cold-start.
+**Parity-affecting (must mirror Rust ⇄ TS + re-export goldens + parity 8/8):**
+- `crates/cp-ai/src/candidates.rs` ⇄ `src/ai/nn/candidates.ts`
+- `crates/cp-sim/src/resources.rs` ⇄ `src/core/resources.ts`
+- `crates/cp-sim/src/managers.rs` (game-engine; only changed for Bridge support which was
+  already in place pre-session)
 
----
-
-## Pointers (all in-repo, travel with the commit)
-
-- **`rust-trainer/TRAINING-APPROACH.md`** — THE plan (Steps 0–4, gates, §1.x reward defs, §2.2 curriculum). **Primary doc.**
-- **`rust-trainer/GAME-MECHANICS.md`** — verified, canonical game mechanics (source of truth for the eyes + reward design).
-- **`rust-trainer/EXP-M-DESIGN.md`** — implementation log for the eyes / curriculum / horizon / capacity work + launch commands.
-- `rust-trainer/{REWARD-DESIGN,TRAINING-RESEARCH,ALPHAZERO-DESIGN,GAME-COMPLEXITY-AND-TRAINING,MCTS-DESIGN}.md` — background.
-- `CLAUDE.md` — fidelity constraints + model management (`models/` registry, `npm run models`).
-- `reference/` — the original C++/Qt game (canonical game logic).
+**Free to edit (no parity impact):**
+- `crates/cp-ai/src/hard_ai.rs` — HARD's policy is not in golden traces; modify freely.
+- `crates/cp-train/src/bin/cnn_train.rs` — Φ shaping, MCTS, training loop, replay-recording,
+  metric instrumentation. Parity-free.
+- `crates/cp-ai/src/planes.rs` — if you add new planes you need cold-start (PLANE_COUNT
+  change → policy/value-head input dim changes).
+- `crates/cp-ai/src/spatial_net.rs` — net arch. Cold-start required for shape changes.
+- `training/serve-dashboard.ts` — dashboard only.
 
 ---
 
-## Operational notes
-- On the Linux dev box, `pkill`/`nohup` hit an exit-144 sandbox quirk (the kill still worked) — likely
-  absent on macOS.
-- Launch trainers detached and inspect via the JSONL files + the dashboard; reads never disturb a run.
-- The trainer checkpoints `champion.json` every bench (≤5 iters lost on a kill). Resume with
-  `--init <dir>/champion.json --out <newdir>` (warm-starts the net; replay buffer resets).
+## Known bugs / partial work
+
+- **`--supervised-from-hard` mode is broken**: the dominant-intent diff-heuristic always
+  records `Pass` as the target because HardAi's `plan_turn` is opaque and the diff-window
+  spans the whole turn. Fix requires refactoring HardAi to expose per-action intent sequence,
+  OR inserting recording hooks inside plan_turn. See V2 memo §6 for the cleanest path.
+- **`--kl-anchor` works** but the only test (`cnn-kl1` with anchor=0.3) showed the anchor pins
+  the policy at the anchor net's level — no progress, no regression. Worth re-testing at
+  anchor=0.05 (lighter) once supervised pretraining works.
+
+---
+
+## Models / checkpoint pointers
+
+| Checkpoint | What it is | Use it for |
+|---|---|---|
+| `rust-trainer/checkpoints-cnn-asym1/champion-best.json` | Best policy of the session (trueWin 0.52 peak) | Warmstart for any new run |
+| `rust-trainer/checkpoints-cnn-r4/champion-best.json` | All-time peak gen-10 net (trueWin 0.53) | Alternative warmstart |
+| `rust-trainer/checkpoints-cnn-r1/champion-best.json` | First Plan-B 15-intent peak | Anchor for KL experiments |
+| `rust-trainer/checkpoints-cnn-b1/champion-best.json` | Pre-Plan-B reference (12 intents — INCOMPATIBLE with current 15-intent net) | NOT compatible — do not load |

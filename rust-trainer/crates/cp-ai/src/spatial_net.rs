@@ -498,6 +498,182 @@ impl SpatialNet {
         self.train_grad_cached_inner(cache, candidates, pi, z, false)
     }
 
+    /// Like [`train_grad_scalars`](Self::train_grad_scalars) but adds a
+    /// FORWARD-KL anchor term to the policy loss. `anchor_pi` is the candidate-wise
+    /// probability distribution from a FROZEN anchor net (`softmax` of its scores,
+    /// same candidate ordering as `candidates`/`pi`). The added loss is:
+    ///
+    /// `kl_weight * KL(softmax(net_scores) || anchor_pi)`
+    /// `       = kl_weight * sum_c p_c * (ln p_c - ln q_c)`
+    ///
+    /// The gradient wrt the net's logit `score_j` is the standard `p - pi`
+    /// (cross-entropy of the hard target) PLUS `kl_weight * p_j * (ln(p_j/q_j) - KL)`
+    /// (forward-KL term), accumulated into the same policy-head backward pass.
+    /// `kl_weight = 0.0` is bit-identical to [`train_grad_scalars`].
+    pub fn train_grad_scalars_kl_anchor(
+        &self,
+        planes: &[f64],
+        h: usize,
+        w: usize,
+        value_scalars: &[f64],
+        candidates: &[(Option<(usize, usize)>, Vec<f64>, Vec<f64>)],
+        pi: &[f64],
+        z: f64,
+        anchor_pi: &[f64],
+        kl_weight: f64,
+    ) -> (SpatialGrad, f64, f64) {
+        let cache = self.forward_board_scalars(planes, h, w, value_scalars);
+        if kl_weight == 0.0 {
+            return self.train_grad_cached_inner(&cache, candidates, pi, z, false);
+        }
+        debug_assert_eq!(anchor_pi.len(), candidates.len());
+        self.train_grad_cached_kl_inner(&cache, candidates, pi, z, anchor_pi, kl_weight)
+    }
+
+    /// Forward-KL-augmented backward pass. Identical to `train_grad_cached_inner`
+    /// (`value_only = false`) except: the policy gradient on each candidate's logit
+    /// gets an additional `kl_weight * p_j * (ln(p_j/q_j) - KL)` term, and the
+    /// returned `policy_loss` includes the `kl_weight * KL(p||q)` summand. The value
+    /// head is unchanged.
+    fn train_grad_cached_kl_inner(
+        &self,
+        cache: &BoardCache,
+        candidates: &[(Option<(usize, usize)>, Vec<f64>, Vec<f64>)],
+        pi: &[f64],
+        z: f64,
+        anchor_pi: &[f64],
+        kl_weight: f64,
+    ) -> (SpatialGrad, f64, f64) {
+        debug_assert_eq!(candidates.len(), pi.len());
+        debug_assert_eq!(candidates.len(), anchor_pi.len());
+        let d = self.d;
+        let (h, w) = (cache.h, cache.w);
+
+        let mut grad = SpatialGrad::zeros_like(self);
+        let mut grad_board_embed = vec![0.0f64; d * h * w];
+        let mut grad_global = vec![0.0f64; d];
+
+        // ----- Value head (identical to the standard backward) ---------------
+        let vf = self.value_forward(cache);
+        let value_loss = (vf.value - z) * (vf.value - z);
+        let d_value = 2.0 * (vf.value - z);
+        let grad_out_pre = vec![d_value * (1.0 - vf.value * vf.value)];
+        let (grad_h1, vw2, vb2) = self.value_d2.backward(&vf.h1, &grad_out_pre);
+        grad.value_d2_w = vw2;
+        grad.value_d2_b = vb2;
+        let grad_h1_pre = tanh_backward(&vf.h1, &grad_h1);
+        let value_in = self.value_input(cache);
+        let (grad_value_in, vw1, vb1) = self.value_d1.backward(&value_in, &grad_h1_pre);
+        grad.value_d1_w = vw1;
+        grad.value_d1_b = vb1;
+        for c in 0..d {
+            grad_global[c] += grad_value_in[c];
+        }
+
+        // ----- Policy head with CE + forward-KL ------------------------------
+        let inputs: Vec<Vec<f64>> = candidates
+            .iter()
+            .map(|(tgt, local, intent)| self.candidate_input(cache, *tgt, local, intent))
+            .collect();
+        let fwds: Vec<PolicyFwd> = inputs.iter().map(|x| self.policy_forward(x)).collect();
+        let scores: Vec<f64> = fwds.iter().map(|f| f.score).collect();
+        let p = softmax(&scores);
+
+        // CE loss + KL(p||q) loss.
+        let mut ce_loss = 0.0f64;
+        for c in 0..candidates.len() {
+            if pi[c] > 0.0 {
+                ce_loss += -pi[c] * p[c].max(1e-12).ln();
+            }
+        }
+        // KL(p || q) = sum p (ln p - ln q). Floor q at 1e-12 for log stability.
+        let mut kl_val = 0.0f64;
+        for c in 0..candidates.len() {
+            let qc = anchor_pi[c].max(1e-12);
+            let pc = p[c].max(1e-12);
+            kl_val += p[c] * (pc.ln() - qc.ln());
+        }
+        let policy_loss = ce_loss + kl_weight * kl_val;
+
+        for c in 0..candidates.len() {
+            // CE gradient: p - pi. KL forward gradient: kl_weight * p_c * (ln(p_c/q_c) - KL).
+            let qc = anchor_pi[c].max(1e-12);
+            let pc = p[c].max(1e-12);
+            let kl_grad_c = kl_weight * p[c] * ((pc.ln() - qc.ln()) - kl_val);
+            let upstream = (p[c] - pi[c]) + kl_grad_c;
+            let grad_score = vec![upstream];
+            let (grad_h1, pw2, pb2) = self.policy_d2.backward(&fwds[c].h1, &grad_score);
+            accum(&mut grad.policy_d2_w, &pw2);
+            accum(&mut grad.policy_d2_b, &pb2);
+            let grad_h1_pre = tanh_backward(&fwds[c].h1, &grad_h1);
+            let (grad_input, pw1, pb1) = self.policy_d1.backward(&inputs[c], &grad_h1_pre);
+            accum(&mut grad.policy_d1_w, &pw1);
+            accum(&mut grad.policy_d1_b, &pb1);
+            if let Some((x, y)) = candidates[c].0 {
+                for ch in 0..d {
+                    grad_board_embed[idx(ch, y, x, h, w)] += grad_input[ch];
+                }
+            }
+            for ch in 0..d {
+                grad_global[ch] += grad_input[d + ch];
+            }
+        }
+
+        // ----- Trunk backward (identical to the standard path) ---------------
+        let grad_from_pool = self.pool.backward(&grad_global, d, h, w);
+        for i in 0..grad_board_embed.len() {
+            grad_board_embed[i] += grad_from_pool[i];
+        }
+        let grad_trunk2: Vec<f64> = match (&self.conv3, &cache.res_act) {
+            (Some(conv3), Some(res_act)) => {
+                let grad_res_pre = tanh_backward(res_act, &grad_board_embed);
+                let (grad_into_trunk2, cw3, cb3) =
+                    conv3.backward(&cache.trunk2, &grad_res_pre, h, w);
+                grad.conv3_w = cw3;
+                grad.conv3_b = cb3;
+                grad_into_trunk2
+                    .iter()
+                    .zip(grad_board_embed.iter())
+                    .map(|(&a, &b)| a + b)
+                    .collect()
+            }
+            _ => grad_board_embed,
+        };
+        let grad_conv2_pre = tanh_backward(&cache.trunk2, &grad_trunk2);
+        let (grad_conv1_act, cw2, cb2) =
+            self.conv2.backward(&cache.conv1_act, &grad_conv2_pre, h, w);
+        grad.conv2_w = cw2;
+        grad.conv2_b = cb2;
+        let grad_conv1_pre = tanh_backward(&cache.conv1_act, &grad_conv1_act);
+        let (_grad_planes, cw1, cb1) = self.conv1.backward(&cache.planes, &grad_conv1_pre, h, w);
+        grad.conv1_w = cw1;
+        grad.conv1_b = cb1;
+
+        (grad, policy_loss, value_loss)
+    }
+
+    /// Compute the policy-head probabilities (softmax over candidate scores) for an
+    /// anchor net evaluation of `(planes, value_scalars, candidates)`. Read-only —
+    /// used by the KL-anchor training path to produce frozen targets per batch.
+    pub fn policy_probs_scalars(
+        &self,
+        planes: &[f64],
+        h: usize,
+        w: usize,
+        value_scalars: &[f64],
+        candidates: &[(Option<(usize, usize)>, Vec<f64>, Vec<f64>)],
+    ) -> Vec<f64> {
+        let cache = self.forward_board_scalars(planes, h, w, value_scalars);
+        let mut scratch = PolicyScratch::new();
+        let scores: Vec<f64> = candidates
+            .iter()
+            .map(|(tgt, local, intent)| {
+                self.score_candidate_into(&cache, *tgt, local, intent, &mut scratch)
+            })
+            .collect();
+        softmax(&scores)
+    }
+
     /// Shared implementation of the cached backward pass. When `value_only` is true
     /// the policy head is skipped entirely (no policy loss, no policy gradient) and
     /// `candidates`/`pi` are ignored — only the value head trains toward `z`.

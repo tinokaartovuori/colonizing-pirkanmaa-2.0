@@ -13,13 +13,13 @@ use crate::metrics as m;
 use crate::safety as s;
 use crate::tiers::TierConfig;
 use cp_sim::resources::{
-    basic_worker_cost, expert_cost, farm_build_cost, hepp_build_cost, mine_build_cost,
-    nuclearpp_build_cost, outpost_build_cost, soldier_cost, strange_device_build_cost,
-    village_build_cost, BasicResource, ResourceMap,
+    basic_worker_cost, bridge_build_cost, expert_cost, farm_build_cost, hepp_build_cost,
+    mine_build_cost, nuclearpp_build_cost, outpost_build_cost, soldier_cost,
+    strange_device_build_cost, village_build_cost, BasicResource, ResourceMap,
 };
 use cp_sim::{BuildingType, Game, PlayerId, TileId, TileType, UnitId, UnitType};
 
-/// Intent enum (integer values 0..=11). Order is fixed and load-bearing.
+/// Intent enum (integer values 0..=14). Order is fixed and load-bearing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(usize)]
 pub enum Intent {
@@ -37,9 +37,23 @@ pub enum Intent {
     /// Strange-Device arc. Kept AFTER Pass so the existing values are unchanged;
     /// only INTENT_COUNT grows 11→12 (policy input 63→64, network-breaking).
     BuildStrangeDevice = 11,
+    /// Plan-B action-space expansion (DEEP-REDESIGN-MEMO §6.2). Build a Bridge on
+    /// an owned River tile to unblock expansion + offensive routing. Affordable
+    /// guarded by `bridge_build_cost()`. Parity-locked with the TS mirror.
+    BuildBridge = 12,
+    /// Plan-B action-space expansion (DEEP-REDESIGN-MEMO §6.2). Attack-on-Device
+    /// as a FIRST-CLASS intent so the value head has a distinct signal for the
+    /// single biggest loss source (HARD's Device line). Functionally an
+    /// `Action::Attack` against the enemy device tile.
+    CrackDevice = 13,
+    /// Plan-B action-space expansion (Plan-B addendum). Attack-on-HQ as a
+    /// FIRST-CLASS intent. Functionally an `Action::Attack` against an
+    /// un-conquered enemy Headquarters; the SEPARATE intent label lets the value
+    /// head see the defender count it needs to beat (§3 strict-greater conquest).
+    CrackHQ = 14,
 }
 
-pub const INTENT_COUNT: usize = 12;
+pub const INTENT_COUNT: usize = 15;
 pub const LOCAL_DIM: usize = 16;
 
 /// Max distinct Expand target tiles emitted as candidates per turn (after sort).
@@ -700,6 +714,296 @@ fn build_strange_device(g: &Game, p: PlayerId, cfg: &TierConfig) -> Option<Candi
     })
 }
 
+/// Plan-B `Intent::BuildBridge`. Owned River tile, no building, river orientation
+/// allows a Bridge (`buildable_buildings` returns "Bridge"), and the player can
+/// afford `bridge_build_cost()`. Local feature `bridge_unblock_count` = how many
+/// additional tiles enter `get_available_tiles()` reachability if this Bridge is
+/// built (cheap simulation: temporarily mark the river as bridged and recount).
+/// Mirrors `buildBridge` in `src/ai/nn/candidates.ts` (parity-locked).
+fn build_bridge(g: &Game, p: PlayerId, cfg: &TierConfig) -> Option<Candidate> {
+    // Find any owned River tile with no building and a Bridge-allowing orientation.
+    let river = m::owned_tiles(g, p).into_iter().find(|&t| {
+        g.tiles[t.0].tile_type == TileType::River
+            && g.tiles[t.0].building.is_none()
+            && g.buildable_buildings(t).contains(&"Bridge")
+    })?;
+    let cost = bridge_build_cost();
+    // Light affordability: must pay the raw cost AND keep a non-negative net money
+    // after build (Bridge upkeep is -5 wood/round, no money drain). The TS mirror
+    // uses the same gate.
+    if !g.players[p.0].has_enough_resources(&cost) {
+        return None;
+    }
+    if !s::has_wood_buffer(g, p, &cost) {
+        return None;
+    }
+    // Keep a small cash floor (mirrors the Outpost/Device terminal-style gate).
+    let money_cost = cost.get(BasicResource::Money).unwrap_or(0); // negative
+    if m::money(g, p) + money_cost < cfg.reserve {
+        return None;
+    }
+    // bridge_unblock_count: simulate what `get_available_tiles_for(p)` would return
+    // if THIS river tile were bridged (no building suffices to satisfy the gate, the
+    // candidate's interest is only the new neighbour exposure). Cheap O(neighbours):
+    // count orthogonal-4 neighbours of the river that the player does NOT already
+    // own AND that are not already in their availability set. This is the additive
+    // gain a Bridge here would yield (the river itself becomes a passable connector).
+    let pre_avail = g.get_available_tiles_for(p);
+    let mut unblock_count: i64 = 0;
+    for n in g.neighbour_four_tiles(river) {
+        if g.tiles[n.0].owner == Some(p) {
+            continue; // already owned
+        }
+        if pre_avail.contains(&n) {
+            continue; // already reachable
+        }
+        // The river-as-bridge would expose `n` to availability (subject to
+        // `has_opponent_headquarters` which is true for non-own-HQ tiles).
+        if g.has_opponent_headquarters(n, p) {
+            unblock_count += 1;
+        }
+    }
+    let local = local_vec(
+        g,
+        p,
+        &Local {
+            cost: Some(cost),
+            net_delta: -5.0, // -5 wood/round upkeep ≈ small negative money-equiv
+            target_value: unblock_count as f64,
+            ..Default::default()
+        },
+    );
+    Some(Candidate {
+        intent: Intent::BuildBridge,
+        local,
+        action: Action::Build("Bridge", river),
+        label: "BuildBridge".to_string(),
+    })
+}
+
+/// Plan-B `Intent::CrackDevice`. Enumerate when ANY enemy owns a standing Strange
+/// Device AND the champ can stage at least one soldier onto that tile via
+/// `get_available_tiles()`. Action is functionally an `Action::Attack`; the
+/// SEPARATE intent label gives the value head a distinct signal for the cracker
+/// (the single biggest loss source). Local includes `enemy_device_countdown`.
+/// Mirrors `crackDevice` in `src/ai/nn/candidates.ts` (parity-locked).
+fn crack_device(
+    g: &Game,
+    p: PlayerId,
+    cfg: &TierConfig,
+    enemy_coords: &[(i32, i32)],
+) -> Option<Candidate> {
+    if !cfg.military {
+        return None;
+    }
+    // Find the (at most one) Strange Device tile NOT owned by us.
+    let dtid = g.find_strange_device_tile()?;
+    if g.tiles[dtid.0].owner == Some(p) {
+        return None;
+    }
+    // The device tile must be reachable AND have room for a conquering unit (per
+    // §3 attack legality). Use `get_available_tiles_for(p)`.
+    let avail = g.get_available_tiles_for(p);
+    if !avail.contains(&dtid) {
+        return None;
+    }
+    if !g.tiles[dtid.0].has_space_for_conquering_units() {
+        return None;
+    }
+    let defenders = g
+        .tile_units(dtid)
+        .iter()
+        .filter(|&&u| g.units[u.0].kind == UnitType::Soldier)
+        .count() as i64;
+    if defenders >= 3 {
+        return None;
+    }
+    let needed = defenders + 1;
+    let placed = g
+        .tile_conquering_units(dtid)
+        .iter()
+        .filter(|&&u| g.units[u.0].owner == Some(p) && g.units[u.0].kind == UnitType::Soldier)
+        .count() as i64;
+    let to_add = needed - placed;
+    if to_add <= 0 {
+        // Already staged enough; the regular Attack candidate covers this.
+        return None;
+    }
+    let can_buy = m::money(g, p) >= cfg.reserve + 250;
+    let movable: i64 = m::owned_tiles(g, p)
+        .into_iter()
+        .map(|tt| {
+            if tt == dtid {
+                0
+            } else {
+                g.tile_units(tt)
+                    .iter()
+                    .filter(|&&u| g.units[u.0].kind == UnitType::Soldier)
+                    .count() as i64
+            }
+        })
+        .sum();
+    let buyable = if can_buy {
+        g.free_soldier_amount(p)
+            .min(m::metal(g, p) / 50)
+            .min((m::money(g, p) - cfg.reserve) / 200)
+    } else {
+        0
+    };
+    if movable + buyable < to_add {
+        return None;
+    }
+    let countdown = g.tiles[dtid.0]
+        .building
+        .as_ref()
+        .map(|b| b.countdown)
+        .unwrap_or(0) as f64;
+    let mut spatial = tile_spatial(g, dtid, p, enemy_coords);
+    let mut own_soldier_neighbors = 0i64;
+    for nb in g.neighbour_tiles(dtid) {
+        own_soldier_neighbors += g
+            .tile_units(nb)
+            .iter()
+            .filter(|&&u| g.units[u.0].kind == UnitType::Soldier && g.units[u.0].owner == Some(p))
+            .count() as i64;
+    }
+    spatial.frontier = own_soldier_neighbors as f64 / 3.0;
+    let local = local_vec(
+        g,
+        p,
+        &Local {
+            net_delta: 0.0,
+            // High target_value: cracking a device prevents an imminent loss; encode
+            // the countdown urgency (lower countdown = more urgent, capped at 6).
+            target_value: (6.0 - countdown.min(6.0)).max(0.0),
+            spatial,
+            ..Default::default()
+        },
+    );
+    Some(Candidate {
+        intent: Intent::CrackDevice,
+        local,
+        action: Action::Attack {
+            tile: dtid,
+            needed,
+            placed,
+            can_buy,
+        },
+        label: "CrackDevice".to_string(),
+    })
+}
+
+/// Plan-B `Intent::CrackHQ`. Enumerate when ANY enemy owns an un-conquered
+/// Headquarters AND the champ can stage at least one soldier on that tile via
+/// `get_available_tiles()`. Action is functionally an `Action::Attack`; SEPARATE
+/// intent label so the value head sees the defender count it needs to beat (§3
+/// strict-greater conquest). Local includes `enemy_hq_neighbour_soldier_count`.
+/// Mirrors `crackHQ` in `src/ai/nn/candidates.ts` (parity-locked).
+fn crack_hq(
+    g: &Game,
+    p: PlayerId,
+    cfg: &TierConfig,
+    enemy_coords: &[(i32, i32)],
+) -> Option<Candidate> {
+    if !cfg.military {
+        return None;
+    }
+    // Find an un-conquered enemy HQ that is reachable + has space.
+    let avail = g.get_available_tiles_for(p);
+    let mut hq_tile: Option<TileId> = None;
+    for &t in &avail {
+        let tile = &g.tiles[t.0];
+        if let Some(b) = &tile.building {
+            if b.kind == BuildingType::Headquarters
+                && !b.conquered
+                && tile.owner.is_some()
+                && tile.owner != Some(p)
+                && tile.has_space_for_conquering_units()
+            {
+                hq_tile = Some(t);
+                break;
+            }
+        }
+    }
+    let hq = hq_tile?;
+    let defenders = g
+        .tile_units(hq)
+        .iter()
+        .filter(|&&u| g.units[u.0].kind == UnitType::Soldier)
+        .count() as i64;
+    if defenders >= 3 {
+        return None;
+    }
+    let needed = defenders + 1;
+    let placed = g
+        .tile_conquering_units(hq)
+        .iter()
+        .filter(|&&u| g.units[u.0].owner == Some(p) && g.units[u.0].kind == UnitType::Soldier)
+        .count() as i64;
+    let to_add = needed - placed;
+    if to_add <= 0 {
+        return None;
+    }
+    let can_buy = m::money(g, p) >= cfg.reserve + 250;
+    let movable: i64 = m::owned_tiles(g, p)
+        .into_iter()
+        .map(|tt| {
+            if tt == hq {
+                0
+            } else {
+                g.tile_units(tt)
+                    .iter()
+                    .filter(|&&u| g.units[u.0].kind == UnitType::Soldier)
+                    .count() as i64
+            }
+        })
+        .sum();
+    let buyable = if can_buy {
+        g.free_soldier_amount(p)
+            .min(m::metal(g, p) / 50)
+            .min((m::money(g, p) - cfg.reserve) / 200)
+    } else {
+        0
+    };
+    if movable + buyable < to_add {
+        return None;
+    }
+    let mut spatial = tile_spatial(g, hq, p, enemy_coords);
+    let mut own_soldier_neighbors = 0i64;
+    for nb in g.neighbour_tiles(hq) {
+        own_soldier_neighbors += g
+            .tile_units(nb)
+            .iter()
+            .filter(|&&u| g.units[u.0].kind == UnitType::Soldier && g.units[u.0].owner == Some(p))
+            .count() as i64;
+    }
+    spatial.frontier = own_soldier_neighbors as f64 / 3.0;
+    let local = local_vec(
+        g,
+        p,
+        &Local {
+            net_delta: 0.0,
+            // Maximum target value (an HQ crack collapses an opponent via the
+            // connectivity rule); the value head sees the defender count via spatial
+            // + own_soldier_neighbors frontier and the local soldier-cap slot.
+            target_value: 6.0,
+            spatial,
+            ..Default::default()
+        },
+    );
+    Some(Candidate {
+        intent: Intent::CrackHQ,
+        local,
+        action: Action::Attack {
+            tile: hq,
+            needed,
+            placed,
+            can_buy,
+        },
+        label: "CrackHQ".to_string(),
+    })
+}
+
 /// Multi-candidate Expand: one candidate per plausible neutral target tile.
 fn expand(g: &Game, p: PlayerId, cfg: &TierConfig, enemy_coords: &[(i32, i32)]) -> Vec<Candidate> {
     // neutral, unowned, has room, not threatened.
@@ -1034,10 +1338,19 @@ pub fn enumerate(g: &Game, p: PlayerId, cfg: &TierConfig) -> Vec<Candidate> {
     push_single(&mut out, build_hydro);
     push_single(&mut out, build_nuclear);
     push_single(&mut out, build_strange_device);
+    push_single(&mut out, build_bridge);
     let enemy_coords = enemy_tile_coords(g, p);
     out.extend(expand(g, p, cfg, &enemy_coords));
     push_single(&mut out, hire_soldier);
     out.extend(attack(g, p, cfg, &enemy_coords));
+    // Plan-B Crack candidates: piggy-back on `Action::Attack` against the device/HQ
+    // tile, but emit with a DISTINCT intent label so the value head sees them.
+    if let Some(c) = crack_device(g, p, cfg, &enemy_coords) {
+        out.push(c);
+    }
+    if let Some(c) = crack_hq(g, p, cfg, &enemy_coords) {
+        out.push(c);
+    }
     push_single(&mut out, stack_producer);
     out.push(pass_candidate());
     out
@@ -1171,6 +1484,161 @@ mod tests {
         }
         assert_eq!(own_soldier_neighbors, 2);
         assert!(((own_soldier_neighbors as f64 / 3.0) - 2.0 / 3.0).abs() < 1e-12);
+    }
+
+    /// Plan-B `Intent::BuildBridge` must enumerate when the player owns a River
+    /// tile (bridge-allowing orientation), there is no building on it, and they
+    /// can afford the cost. Mirrors `buildBridge` in
+    /// `src/ai/nn/candidates.ts` — parity-locked.
+    #[test]
+    fn bridge_candidate_emits_on_owned_river_no_building() {
+        let mut g = Game::new(12, 12, &["P1", "P2"]);
+        g.generate_map(12, 12, 1);
+        let p1 = PlayerId(0);
+
+        // Force a river tile we own with no building + orientation 0.
+        let id = |x: i32, y: i32| TileId((x * 12 + y) as usize);
+        let river = id(5, 5);
+        g.tiles[river.0].tile_type = TileType::River;
+        g.tiles[river.0].river_orientation = 0;
+        g.tiles[river.0].building = None;
+        g.set_tile_owner(river, Some(p1));
+
+        // Treasury — generous so affordability gates pass.
+        g.set_player_resources(p1, 1500, 1500, 1500, 1500);
+
+        // Sanity: the engine offers Bridge for this tile.
+        assert!(g.buildable_buildings(river).contains(&"Bridge"));
+
+        let cfg = crate::tiers::TRAINING_CONFIG;
+        let cand = build_bridge(&g, p1, &cfg).expect("Bridge candidate must emit");
+        assert_eq!(cand.intent, Intent::BuildBridge);
+        match cand.action {
+            Action::Build(name, tid) => {
+                assert_eq!(name, "Bridge");
+                assert_eq!(tid, river);
+            }
+            _ => panic!("BuildBridge candidate must use Action::Build"),
+        }
+    }
+
+    /// Plan-B `Intent::BuildBridge` must NOT enumerate when the river tile already
+    /// has a building (e.g. an existing Bridge or a Hydroelectric Power Plant). The
+    /// candidate gate filters on `g.tiles[t.0].building.is_none()` — covered here.
+    #[test]
+    fn bridge_candidate_does_not_emit_when_river_has_building() {
+        let mut g = Game::new(12, 12, &["P1", "P2"]);
+        g.generate_map(12, 12, 1);
+        let p1 = PlayerId(0);
+
+        let id = |x: i32, y: i32| TileId((x * 12 + y) as usize);
+        let river = id(5, 5);
+        g.tiles[river.0].tile_type = TileType::River;
+        g.tiles[river.0].river_orientation = 0;
+        // PRE-place a Bridge on this river tile.
+        g.place_building(river, BuildingType::Bridge, Some(p1));
+        g.set_tile_owner(river, Some(p1));
+        g.set_player_resources(p1, 1500, 1500, 1500, 1500);
+
+        let cfg = crate::tiers::TRAINING_CONFIG;
+        assert!(
+            build_bridge(&g, p1, &cfg).is_none(),
+            "Bridge candidate must not emit when the river already has a building"
+        );
+    }
+
+    /// Plan-B `Intent::CrackDevice` must enumerate when an enemy owns a standing
+    /// Strange Device tile AND the champ can stage ≥1 soldier on it. Hand-built
+    /// fixture: enemy device on a tile adjacent to a player-owned tile holding a
+    /// soldier (so the device tile enters `get_available_tiles_for(p)` and the
+    /// soldier can be moved onto it). Mirrors `crackDevice` in
+    /// `src/ai/nn/candidates.ts` — parity-locked.
+    #[test]
+    fn crack_device_candidate_emits_when_enemy_device_present_and_reachable() {
+        let mut g = Game::new(12, 12, &["P1", "P2"]);
+        g.generate_map(12, 12, 1);
+        let p1 = PlayerId(0);
+        let p2 = PlayerId(1);
+
+        let id = |x: i32, y: i32| TileId((x * 12 + y) as usize);
+        // Champion HQ at (5,8) so availability flows from there.
+        let hq = id(5, 8);
+        g.tiles[hq.0].tile_type = TileType::Grassland;
+        g.tiles[hq.0].building = None;
+        g.set_tile_owner(hq, Some(p1));
+        g.place_building(hq, BuildingType::Headquarters, Some(p1));
+        // Own a tile adjacent to the device tile so it enters availability.
+        let stage = id(5, 6);
+        g.tiles[stage.0].tile_type = TileType::Grassland;
+        g.tiles[stage.0].building = None;
+        g.set_tile_owner(stage, Some(p1));
+        // Enemy device at (5,5) — adjacent to (5,6) under 4-neighbour BFS.
+        let dev = id(5, 5);
+        g.tiles[dev.0].tile_type = TileType::Grassland;
+        g.set_tile_owner(dev, Some(p2));
+        g.place_building(dev, BuildingType::StrangeDevice, Some(p2));
+        // A soldier we can move off the staging tile (not on the device tile itself).
+        g.spawn_unit_on_tile(UnitType::Soldier, p1, stage, false);
+        g.set_player_resources(p1, 2000, 2000, 2000, 2000);
+        // Force a positive soldier cap so `free_soldier_amount` doesn't go negative
+        // (no end_turn was run, so the cached cap is the default 0).
+        g.update_unit_amounts(p1);
+        // HQ + extra soldier headroom for the test (just so free_soldier_amount > 0).
+        g.players[p1.0].max_soldier_amount = g.players[p1.0].max_soldier_amount.max(3);
+
+        let cfg = crate::tiers::TRAINING_CONFIG;
+        let enemy_coords = enemy_tile_coords(&g, p1);
+        let cand =
+            crack_device(&g, p1, &cfg, &enemy_coords).expect("CrackDevice candidate must emit");
+        assert_eq!(cand.intent, Intent::CrackDevice);
+        match cand.action {
+            Action::Attack { tile, .. } => assert_eq!(tile, dev),
+            _ => panic!("CrackDevice candidate must use Action::Attack"),
+        }
+    }
+
+    /// Plan-B `Intent::CrackHQ` must enumerate when an enemy owns an un-conquered
+    /// Headquarters AND the champ can stage ≥1 soldier on it (the tile enters
+    /// `get_available_tiles_for(p)` and a soldier can move onto it). Mirrors
+    /// `crackHQ` in `src/ai/nn/candidates.ts` — parity-locked.
+    #[test]
+    fn crack_hq_candidate_emits_when_enemy_hq_present_and_reachable() {
+        let mut g = Game::new(12, 12, &["P1", "P2"]);
+        g.generate_map(12, 12, 1);
+        let p1 = PlayerId(0);
+        let p2 = PlayerId(1);
+
+        let id = |x: i32, y: i32| TileId((x * 12 + y) as usize);
+        // Champion HQ at (5,9) so availability flows from there.
+        let my_hq = id(5, 9);
+        g.tiles[my_hq.0].tile_type = TileType::Grassland;
+        g.tiles[my_hq.0].building = None;
+        g.set_tile_owner(my_hq, Some(p1));
+        g.place_building(my_hq, BuildingType::Headquarters, Some(p1));
+        // Own a tile adjacent to the enemy HQ so the HQ enters availability.
+        let stage = id(5, 7);
+        g.tiles[stage.0].tile_type = TileType::Grassland;
+        g.tiles[stage.0].building = None;
+        g.set_tile_owner(stage, Some(p1));
+        // Enemy HQ at (5,6) — un-conquered.
+        let enemy_hq = id(5, 6);
+        g.tiles[enemy_hq.0].tile_type = TileType::Grassland;
+        g.set_tile_owner(enemy_hq, Some(p2));
+        g.place_building(enemy_hq, BuildingType::Headquarters, Some(p2));
+        // A movable soldier.
+        g.spawn_unit_on_tile(UnitType::Soldier, p1, stage, false);
+        g.set_player_resources(p1, 2000, 2000, 2000, 2000);
+        g.update_unit_amounts(p1);
+        g.players[p1.0].max_soldier_amount = g.players[p1.0].max_soldier_amount.max(3);
+
+        let cfg = crate::tiers::TRAINING_CONFIG;
+        let enemy_coords = enemy_tile_coords(&g, p1);
+        let cand = crack_hq(&g, p1, &cfg, &enemy_coords).expect("CrackHQ candidate must emit");
+        assert_eq!(cand.intent, Intent::CrackHQ);
+        match cand.action {
+            Action::Attack { tile, .. } => assert_eq!(tile, enemy_hq),
+            _ => panic!("CrackHQ candidate must use Action::Attack"),
+        }
     }
 
     /// A target with no enemy tiles anywhere yields the 99-sentinel distance, and

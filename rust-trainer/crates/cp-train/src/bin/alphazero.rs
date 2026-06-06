@@ -426,6 +426,7 @@ fn bench_vs_hard(genome: &Genome, value: Option<&ValueNet>, cfg: &Cfg, games: us
 // --- game-replay recorder (dashboard "watch a game" viewer) ----------------
 // Single short character code per building, for the compact replay frames.
 fn building_code(k: BuildingType) -> char {
+    // Exhaustive — adding a new BuildingType variant now triggers a compile error.
     match k {
         BuildingType::Farm => 'F',
         BuildingType::Mine => 'M',
@@ -436,7 +437,7 @@ fn building_code(k: BuildingType) -> char {
         BuildingType::StrangeDevice => 'D',
         BuildingType::Headquarters => 'Q',
         BuildingType::Mikontalo => 'K',
-        _ => '?',
+        BuildingType::Bridge => 'B',
     }
 }
 
