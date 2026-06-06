@@ -30,7 +30,7 @@ use cp_sim::{Game, PlayerId, UnitType};
 /// Number of channels produced by [`board_planes`]. See the per-channel doc on
 /// each `C_*` constant below for semantics and the GAME-MECHANICS.md § it is
 /// faithful to.
-pub const PLANE_COUNT: usize = 24;
+pub const PLANE_COUNT: usize = 27;
 
 // ── Channel indices (named for clarity; each cites its GAME-MECHANICS.md §) ──
 
@@ -98,6 +98,23 @@ const C_RIVER_BLOCK: usize = 22;
 /// — normalised `(budget/6).min(1)`. Gates C_ENEMY_REACH: reachable cells are only
 /// a real threat if the enemy can actually FIELD `(my soldiers there)+1`. (§4, §5, §6)
 const C_ENEMY_BUDGET: usize = 23;
+/// 24 — **DISTANCE-TO-NEAREST-ENEMY-HQ** (per-cell potential field): for each cell,
+/// `1 - clamp01(Manhattan distance from THIS cell to the nearest live-enemy
+/// un-conquered HQ / diameter)`, where `diameter = w + h` (the board-size-agnostic
+/// max Manhattan distance). 1.0 on top of an enemy HQ, decaying outward; all-zero
+/// when there is no live-enemy HQ. Gives the trunk a direct "march toward the kill"
+/// gradient the one-hot C_ENEMY_HQ plane cannot. (§7)
+const C_DIST_TO_ENEMY_HQ: usize = 24;
+/// 25 — **DISTANCE-TO-NEAREST-ENEMY-DEVICE** (per-cell potential field): same
+/// `1 - clamp01(Manhattan / diameter)` form, measured to the nearest ENEMY-OWNED
+/// standing Strange Device. All-zero when there is no standing Device, or it is
+/// unowned / mine (only an enemy-owned Device is a race to crack). (§6)
+const C_DIST_TO_ENEMY_DEVICE: usize = 25;
+/// 26 — **MY mobile-army budget** (BROADCAST, constant across the board): my own
+/// deployable-soldier budget, symmetric to C_ENEMY_BUDGET — `(budget/6).min(1)`
+/// using the SAME `enemy_mobile_budget` definition applied to `player`. Lets the
+/// trunk read how much striking power I can actually field this turn. (§4, §5, §6)
+const C_MY_BUDGET: usize = 26;
 
 /// Is this building a per-turn resource producer for the economy?
 ///
@@ -192,6 +209,32 @@ pub fn board_planes(g: &Game, player: PlayerId) -> (Vec<f64>, usize, usize) {
 
     let live: Vec<PlayerId> = g.live_players().to_vec();
     let is_live_enemy = |o: PlayerId| o != player && live.contains(&o);
+
+    // ── Gather coords for the per-cell DISTANCE fields (C_DIST_TO_ENEMY_HQ /
+    // C_DIST_TO_ENEMY_DEVICE). `diameter = w + h` is the board-size-agnostic max
+    // Manhattan distance (there is no board_diameter const). All-zero when absent,
+    // matching the plane invariant convention.
+    let diameter = (w + h) as f64;
+    // Live-enemy un-conquered HQ coords (same source as C_ENEMY_HQ below).
+    let mut enemy_hq_coords: Vec<(i32, i32)> = Vec::new();
+    for &op in &live {
+        if op == player {
+            continue;
+        }
+        if let Some(hq) = g.get_hq_tile(op) {
+            let t = &tiles[hq.0];
+            enemy_hq_coords.push((t.x, t.y));
+        }
+    }
+    // Enemy-OWNED standing Strange Device coord (at most one). Only counts when the
+    // standing Device's tile is owned by a live enemy (not unowned, not mine).
+    let mut enemy_device_coord: Option<(i32, i32)> = None;
+    if let Some(dt) = g.find_strange_device_tile() {
+        let t = &tiles[dt.0];
+        if matches!(t.owner, Some(o) if is_live_enemy(o)) {
+            enemy_device_coord = Some((t.x, t.y));
+        }
+    }
 
     // Per-tile planes (ownership / terrain / buildings / soldiers / combat).
     for t in tiles {
@@ -290,6 +333,20 @@ pub fn board_planes(g: &Game, player: PlayerId) -> (Vec<f64>, usize, usize) {
         if att_minus_def != 0 {
             out[cell(C_ATT_MINUS_DEF)] = (att_minus_def as f64 / 5.0).clamp(-1.0, 1.0);
         }
+
+        // ── Per-cell DISTANCE potential fields: 1 - clamp01(min Manhattan to a
+        // target / diameter). 0.0 everywhere when there is no target (invariant).
+        if !enemy_hq_coords.is_empty() {
+            let dist = enemy_hq_coords
+                .iter()
+                .map(|&(ex, ey)| ((t.x - ex).abs() + (t.y - ey).abs()) as f64)
+                .fold(f64::INFINITY, f64::min);
+            out[cell(C_DIST_TO_ENEMY_HQ)] = (1.0 - (dist / diameter)).clamp(0.0, 1.0);
+        }
+        if let Some((ex, ey)) = enemy_device_coord {
+            let dist = ((t.x - ex).abs() + (t.y - ey).abs()) as f64;
+            out[cell(C_DIST_TO_ENEMY_DEVICE)] = (1.0 - (dist / diameter)).clamp(0.0, 1.0);
+        }
     }
 
     // ── ENEMY-REACHABILITY (plane 16) and SELF-REACHABILITY (plane 17): each
@@ -329,6 +386,18 @@ pub fn board_planes(g: &Game, player: PlayerId) -> (Vec<f64>, usize, usize) {
         for y in 0..h {
             for x in 0..w {
                 out[idx(C_ENEMY_BUDGET, y, x, h, w)] = v;
+            }
+        }
+    }
+
+    // ── MY mobile-army budget (plane 26, BROADCAST constant): symmetric to
+    // C_ENEMY_BUDGET, using the SAME budget definition applied to `player`.
+    let my_budget = enemy_mobile_budget(g, player);
+    if my_budget > 0 {
+        let v = (my_budget as f64 / 6.0).min(1.0);
+        for y in 0..h {
+            for x in 0..w {
+                out[idx(C_MY_BUDGET, y, x, h, w)] = v;
             }
         }
     }
@@ -647,5 +716,140 @@ mod tests {
         g.place_building(village, BuildingType::Village, Some(me));
         let (out2, h2, w2) = board_planes(&g, me);
         assert_eq!(cell(&out2, C_PRODUCING, 0, 3, h2, w2), 1.0, "village always produces");
+    }
+
+    /// Per-cell distance-to-enemy-HQ potential: 1 on the HQ, ~1-1/diameter on an
+    /// adjacent cell, lower far away, all-zero when there is no live-enemy HQ. (§7)
+    #[test]
+    fn dist_to_enemy_hq_plane() {
+        let mut g = Game::new(6, 5, &["P0", "P1"]);
+        g.generate_map(6, 5, 1);
+        let me = PlayerId(0);
+        let enemy = PlayerId(1);
+
+        // No enemy HQ yet → plane is all-zero.
+        let my_hq = at(&g, 0, 0);
+        g.set_tile_owner(my_hq, Some(me));
+        g.place_building(my_hq, BuildingType::Headquarters, Some(me));
+        let (out0, h0, w0) = board_planes(&g, me);
+        for y in 0..h0 {
+            for x in 0..w0 {
+                assert_eq!(
+                    cell(&out0, C_DIST_TO_ENEMY_HQ, x, y, h0, w0),
+                    0.0,
+                    "no enemy HQ → all-zero at ({x},{y})"
+                );
+            }
+        }
+
+        // One enemy HQ at (5,3). diameter = w + h = 6 + 5 = 11.
+        let enemy_hq = at(&g, 5, 3);
+        g.set_tile_owner(enemy_hq, Some(enemy));
+        g.place_building(enemy_hq, BuildingType::Headquarters, Some(enemy));
+        let (out, h, w) = board_planes(&g, me);
+        let diameter = (w + h) as f64;
+
+        // On the HQ cell: distance 0 → value 1.0.
+        assert!(
+            (cell(&out, C_DIST_TO_ENEMY_HQ, 5, 3, h, w) - 1.0).abs() < 1e-9,
+            "on enemy HQ → 1.0"
+        );
+        // Adjacent cell (4,3): distance 1 → 1 - 1/diameter.
+        let adj = cell(&out, C_DIST_TO_ENEMY_HQ, 4, 3, h, w);
+        assert!(
+            (adj - (1.0 - 1.0 / diameter)).abs() < 1e-9,
+            "adjacent → 1 - 1/diameter, got {adj}"
+        );
+        // Far cell (0,0): distance 5+3=8 → 1 - 8/diameter, strictly lower than adjacent.
+        let far = cell(&out, C_DIST_TO_ENEMY_HQ, 0, 0, h, w);
+        assert!(
+            (far - (1.0 - 8.0 / diameter)).abs() < 1e-9,
+            "far → 1 - 8/diameter, got {far}"
+        );
+        assert!(far < adj, "far cell ({far}) < adjacent cell ({adj})");
+    }
+
+    /// Per-cell distance-to-enemy-device potential: nonzero when an ENEMY-OWNED
+    /// standing Device exists; all-zero when the Device is mine or absent. (§6)
+    #[test]
+    fn dist_to_enemy_device_plane() {
+        let mut g = Game::new(6, 5, &["P0", "P1"]);
+        g.generate_map(6, 5, 4);
+        let me = PlayerId(0);
+        let enemy = PlayerId(1);
+
+        // No device → all-zero.
+        let (out0, h0, w0) = board_planes(&g, me);
+        for y in 0..h0 {
+            for x in 0..w0 {
+                assert_eq!(cell(&out0, C_DIST_TO_ENEMY_DEVICE, x, y, h0, w0), 0.0);
+            }
+        }
+
+        // MY device → still all-zero (only an enemy-owned device counts).
+        let dev = at(&g, 2, 2);
+        g.set_tile_owner(dev, Some(me));
+        g.place_building(dev, BuildingType::StrangeDevice, Some(me));
+        let (out_mine, hm, wm) = board_planes(&g, me);
+        for y in 0..hm {
+            for x in 0..wm {
+                assert_eq!(
+                    cell(&out_mine, C_DIST_TO_ENEMY_DEVICE, x, y, hm, wm),
+                    0.0,
+                    "my own device → all-zero at ({x},{y})"
+                );
+            }
+        }
+
+        // Hand the device tile to the enemy → plane lights up, 1.0 on the device.
+        g.set_tile_owner(dev, Some(enemy));
+        let (out, h, w) = board_planes(&g, me);
+        assert!(
+            (cell(&out, C_DIST_TO_ENEMY_DEVICE, 2, 2, h, w) - 1.0).abs() < 1e-9,
+            "on enemy device → 1.0"
+        );
+        // A distant cell is strictly less than the on-device value.
+        assert!(
+            cell(&out, C_DIST_TO_ENEMY_DEVICE, 5, 4, h, w)
+                < cell(&out, C_DIST_TO_ENEMY_DEVICE, 2, 2, h, w),
+            "distant cell decays below on-device value"
+        );
+    }
+
+    /// MY mobile-army budget broadcast: constant across the board, equal to the
+    /// `enemy_mobile_budget` fn applied to the acting seat. (§4,§5,§6)
+    #[test]
+    fn my_budget_broadcast() {
+        use cp_sim::resources::BasicResource;
+        let mut g = Game::new(6, 5, &["P0", "P1"]);
+        g.generate_map(6, 5, 6);
+        let me = PlayerId(0);
+
+        // Give the acting seat an HQ (so it has soldier-cap slots), some money/metal
+        // and an owned soldier so its budget is > 0.
+        let my_hq = at(&g, 0, 0);
+        g.set_tile_owner(my_hq, Some(me));
+        g.place_building(my_hq, BuildingType::Headquarters, Some(me));
+        let a = at(&g, 1, 0);
+        g.set_tile_owner(a, Some(me));
+        g.spawn_unit_on_tile(UnitType::Soldier, me, a, false);
+        g.players[me.0].resources.set(BasicResource::Money, 600);
+        g.players[me.0].resources.set(BasicResource::Metal, 200);
+
+        let (out, h, w) = board_planes(&g, me);
+
+        let budget = enemy_mobile_budget(&g, me);
+        assert!(budget > 0, "acting seat budget should be > 0, got {budget}");
+        let expected = (budget as f64 / 6.0).min(1.0);
+
+        // Constant across the whole board, equal to the fn's normalized value.
+        for y in 0..h {
+            for x in 0..w {
+                assert!(
+                    (cell(&out, C_MY_BUDGET, x, y, h, w) - expected).abs() < 1e-12,
+                    "my-budget broadcast constant {expected} at ({x},{y})"
+                );
+            }
+        }
     }
 }

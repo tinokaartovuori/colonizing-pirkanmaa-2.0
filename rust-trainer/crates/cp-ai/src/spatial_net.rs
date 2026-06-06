@@ -181,7 +181,7 @@ impl SpatialNet {
         value_scalar_dim: usize,
         seed: u64,
     ) -> Self {
-        Self::new_seeded_arch(
+        let mut net = Self::new_seeded_arch(
             plane_count,
             local_dim,
             intent_dim,
@@ -192,7 +192,14 @@ impl SpatialNet {
             64, // hp
             true, // residual trunk block
             seed,
-        )
+        );
+        // DILATED RESIDUAL BLOCK: keep conv1/conv2 as dense k3-pad1 (so they ride the
+        // bit-reproducible fast path) and dilate ONLY the conv3 residual block
+        // (k3, dilation2, pad2 -> same HxW, RF 9x9 once stacked on the dense 5x5 trunk).
+        // Same seed offset as the dense conv3 in `new_seeded_arch`.
+        let d = net.d;
+        net.conv3 = Some(Conv2d::new_seeded_dilated(d, d, 3, 2, 2, seed.wrapping_add(7)));
+        net
     }
 
     /// The PRE-round-3 SMALL arch (`D1=16,D=24,HV=24,HP=24`, **no** residual block)
@@ -208,7 +215,7 @@ impl SpatialNet {
         value_scalar_dim: usize,
         seed: u64,
     ) -> Self {
-        Self::new_seeded_arch(
+        let mut net = Self::new_seeded_arch(
             plane_count,
             local_dim,
             intent_dim,
@@ -219,7 +226,14 @@ impl SpatialNet {
             24,    // hp
             false, // NO residual trunk block (the round-1/2 arch)
             seed,
-        )
+        );
+        // DILATED conv2: keep conv1 dense (k3-pad1) for the cheap first layer, dilate
+        // the second conv (k3, dilation2, pad2 -> same HxW). Per-layer RF 5x5, stacked
+        // on the dense conv1 3x3 -> effective 7x7 with no extra params/depth. Same
+        // seed offset as the dense conv2 in `new_seeded_arch`.
+        let (d1, d) = (net.d1, net.d);
+        net.conv2 = Conv2d::new_seeded_dilated(d1, d, 3, 2, 2, seed.wrapping_add(2));
+        net
     }
 
     /// Total scalar parameter count (all conv + dense weights and biases).
@@ -1173,6 +1187,63 @@ mod tests {
         check_param!(net.policy_d2.bias, grad.policy_d2_b, "policy_d2_b");
     }
 
+    // ---- Test 2a': FD gradient check with a DILATED trunk ----------------
+    //
+    // Builds a net whose conv2 is dilated (k3/dil2/pad2 -> same HxW), exactly like
+    // `default_small_with_value_scalars`, and FD-checks the combined value+policy
+    // loss gradient end-to-end through every parameter. This exercises the dilated
+    // forward/backward inside the full trunk + heads.
+    #[test]
+    fn combined_grad_finite_difference_dilated() {
+        let (pc, h, w) = (3usize, 5usize, 6usize); // >=5 so the 5x5 footprint has interior
+        let local_dim = 2usize;
+        let intent_dim = 2usize;
+        // Tiny net (D1=3, D=4, HV=4, HP=4), NO residual, then dilate conv2.
+        let mut net = SpatialNet::new_seeded(pc, local_dim, intent_dim, 0, 3, 4, 4, 4, 777);
+        let (d1, d) = (net.d1, net.d);
+        net.conv2 = Conv2d::new_seeded_dilated(d1, d, 3, 2, 2, 999);
+        assert_eq!(net.conv2.dilation, 2, "conv2 must be dilated for this test");
+        let planes = fill(pc * h * w, 11);
+
+        let cands: Vec<(Option<(usize, usize)>, Vec<f64>, Vec<f64>)> = vec![
+            (Some((1, 0)), fill(local_dim, 21), fill(intent_dim, 31)),
+            (None, fill(local_dim, 22), fill(intent_dim, 32)),
+            (Some((4, 3)), fill(local_dim, 23), fill(intent_dim, 33)),
+        ];
+        let pi = vec![0.5, 0.3, 0.2];
+        let z = 0.4;
+
+        let (grad, ploss, vloss) = net.train_grad(&planes, h, w, &cands, &pi, z);
+        assert!(ploss.is_finite() && vloss.is_finite() && ploss >= 0.0);
+
+        macro_rules! check_param {
+            ($field:expr, $gradvec:expr, $name:expr) => {{
+                let n = $field.len();
+                let stride = (n / 6).max(1);
+                let mut j = 0;
+                while j < n {
+                    let save = $field[j];
+                    $field[j] = save + EPS;
+                    let lp = combined_loss(&net, &planes, h, w, &cands, &pi, z);
+                    $field[j] = save - EPS;
+                    let lm = combined_loss(&net, &planes, h, w, &cands, &pi, z);
+                    $field[j] = save;
+                    let num = (lp - lm) / (2.0 * EPS);
+                    assert_close($gradvec[j], num, $name);
+                    j += stride;
+                }
+            }};
+        }
+        // The dilated conv2 weights/bias are the critical check; also FD the rest of
+        // the chain so grad routes correctly through the dilated layer.
+        check_param!(net.conv2.weights, grad.conv2_w, "dil_conv2_w");
+        check_param!(net.conv2.bias, grad.conv2_b, "dil_conv2_b");
+        check_param!(net.conv1.weights, grad.conv1_w, "dil_conv1_w");
+        check_param!(net.value_d1.weights, grad.value_d1_w, "dil_value_d1_w");
+        check_param!(net.policy_d1.weights, grad.policy_d1_w, "dil_policy_d1_w");
+        check_param!(net.policy_d2.weights, grad.policy_d2_w, "dil_policy_d2_w");
+    }
+
     // ---- Test 2b: FD gradient check at local_dim=18 ---------------------
     //
     // cnn_train now builds the SpatialNet with local_dim = LOCAL_DIM(16) + 2
@@ -1815,9 +1886,13 @@ mod tests {
             + 7.1 * fingerprint(&grad.policy_d2_b)
             + 211.0 * (ploss + vloss);
 
-        // Golden constants captured from the pre-optimization implementation.
-        const GOLD_FWD: f64 = -2.71191842422309383e4;
-        const GOLD_BWD: f64 = -2.50159133167405298e3;
+        // Golden constants for the DEPLOYED `default_with_value_scalars` arch.
+        // Re-emitted 2026-06-06 when the round-3 residual block (conv3) was made
+        // DILATED (k3/dil2/pad2, RF 9x9); this self-consistency lock tracks the
+        // deployed arch, so a deliberate arch change re-stamps it. (AZ-only; not a
+        // parity golden.)
+        const GOLD_FWD: f64 = -3.41774919043339760e4;
+        const GOLD_BWD: f64 = -5.30645312791301239e3;
         if std::env::var("EMIT_GOLDEN").is_ok() {
             eprintln!("GOLD_FWD = {fwd_fp:.17e};");
             eprintln!("GOLD_BWD = {bwd_fp:.17e};");

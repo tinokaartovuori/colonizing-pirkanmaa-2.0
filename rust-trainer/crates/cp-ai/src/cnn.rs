@@ -73,10 +73,21 @@ pub struct Conv2d {
     /// Odd kernel size (e.g. 3).
     pub k: usize,
     pub pad: usize,
+    /// Dilation (à trous spacing between kernel taps; 1 = dense). Defaulted to 1 on
+    /// deserialisation so pre-dilation checkpoints load unchanged. With
+    /// `pad = dilation*(k-1)/2` the output stays HxW (same-size convolution) while
+    /// the receptive field grows to `dilation*(k-1)+1` per layer.
+    #[serde(default = "one")]
+    pub dilation: usize,
     /// `out_ch * in_ch * k * k`, layout `[oc][ic][ky][kx]`.
     pub weights: Vec<f64>,
     /// `out_ch`.
     pub bias: Vec<f64>,
+}
+
+/// serde default for [`Conv2d::dilation`] so old checkpoints deserialize as dense.
+fn one() -> usize {
+    1
 }
 
 impl Conv2d {
@@ -89,7 +100,23 @@ impl Conv2d {
         let n = out_ch * in_ch * k * k;
         let weights = (0..n).map(|_| rng.next_signed() * scale).collect();
         let bias = vec![0.0; out_ch];
-        Conv2d { in_ch, out_ch, k, pad, weights, bias }
+        Conv2d { in_ch, out_ch, k, pad, dilation: 1, weights, bias }
+    }
+
+    /// Like [`new_seeded`](Self::new_seeded) but with an explicit `dilation`. Use
+    /// `pad = dilation*(k-1)/2` to keep the output HxW (same-size). The init RNG /
+    /// weight scaling is identical to the dense constructor.
+    pub fn new_seeded_dilated(
+        in_ch: usize,
+        out_ch: usize,
+        k: usize,
+        pad: usize,
+        dilation: usize,
+        seed: u64,
+    ) -> Self {
+        let mut c = Self::new_seeded(in_ch, out_ch, k, pad, seed);
+        c.dilation = dilation;
+        c
     }
 
     #[inline]
@@ -119,7 +146,9 @@ impl Conv2d {
     pub fn forward_into(&self, input: &[f64], h: usize, w: usize, out: &mut Vec<f64>) {
         out.clear();
         out.resize(self.out_ch * h * w, 0.0);
-        if self.k == 3 && self.pad == 1 {
+        // The k3 fast path is the bit-reproducible DENSE (dilation=1) path only;
+        // any dilation routes to the general dilated path.
+        if self.k == 3 && self.pad == 1 && self.dilation == 1 {
             self.forward_into_k3(input, h, w, out);
             return;
         }
@@ -131,6 +160,7 @@ impl Conv2d {
     fn forward_into_general(&self, input: &[f64], h: usize, w: usize, out: &mut [f64]) {
         let k = self.k;
         let pad = self.pad as isize;
+        let dil = self.dilation as isize;
         for oc in 0..self.out_ch {
             let b = self.bias[oc];
             for oy in 0..h {
@@ -138,12 +168,12 @@ impl Conv2d {
                     let mut sum = b;
                     for ic in 0..self.in_ch {
                         for ky in 0..k {
-                            let iy = oy as isize + ky as isize - pad;
+                            let iy = oy as isize + ky as isize * dil - pad;
                             if iy < 0 || iy >= h as isize {
                                 continue;
                             }
                             for kx in 0..k {
-                                let ix = ox as isize + kx as isize - pad;
+                                let ix = ox as isize + kx as isize * dil - pad;
                                 if ix < 0 || ix >= w as isize {
                                     continue;
                                 }
@@ -270,7 +300,7 @@ impl Conv2d {
         let mut grad_input = vec![0.0f64; self.in_ch * h * w];
         let mut grad_weights = vec![0.0f64; self.weights.len()];
         let mut grad_bias = vec![0.0f64; self.out_ch];
-        if self.k == 3 && self.pad == 1 && h >= 3 && w >= 3 {
+        if self.k == 3 && self.pad == 1 && self.dilation == 1 && h >= 3 && w >= 3 {
             self.backward_k3(input, grad_out, h, w, &mut grad_input, &mut grad_weights, &mut grad_bias);
         } else {
             self.backward_general(input, grad_out, h, w, &mut grad_input, &mut grad_weights, &mut grad_bias);
@@ -292,6 +322,7 @@ impl Conv2d {
     ) {
         let k = self.k;
         let pad = self.pad as isize;
+        let dil = self.dilation as isize;
         for oc in 0..self.out_ch {
             for oy in 0..h {
                 for ox in 0..w {
@@ -299,12 +330,12 @@ impl Conv2d {
                     grad_bias[oc] += go;
                     for ic in 0..self.in_ch {
                         for ky in 0..k {
-                            let iy = oy as isize + ky as isize - pad;
+                            let iy = oy as isize + ky as isize * dil - pad;
                             if iy < 0 || iy >= h as isize {
                                 continue;
                             }
                             for kx in 0..k {
-                                let ix = ox as isize + kx as isize - pad;
+                                let ix = ox as isize + kx as isize * dil - pad;
                                 if ix < 0 || ix >= w as isize {
                                     continue;
                                 }
@@ -656,6 +687,66 @@ mod tests {
             conv.bias[j] = save;
             assert_close(gb[j], (lp - lm) / (2.0 * EPS), "conv grad_bias");
         }
+    }
+
+    /// FD gradient check of the DILATED general conv path (k=3, dilation=2, pad=2 ->
+    /// same HxW). Mirrors `conv_grad_input_weights_bias` exactly, on a >=7x7 board
+    /// so the 5x5 effective footprint is exercised on interior cells. THIS is the
+    /// required dilation gradient check.
+    #[test]
+    fn conv_grad_dilation2() {
+        let (in_ch, out_ch, k, pad, dil, h, w) = (2usize, 3usize, 3usize, 2usize, 2usize, 7usize, 8usize);
+        let mut conv = Conv2d::new_seeded_dilated(in_ch, out_ch, k, pad, dil, 42);
+        // Sanity: the dispatch must route this to the general (dilated) path.
+        assert_eq!(conv.dilation, 2);
+        let input = fill(in_ch * h * w, 7);
+        let coeffs = fill(out_ch * h * w, 99);
+        let loss = |out: &[f64]| dot(out, &coeffs);
+
+        let out = conv.forward(&input, h, w);
+        assert_eq!(out.len(), out_ch * h * w, "dilated conv preserves HxW");
+        let grad_out = coeffs.clone();
+        let (gi, gw, gb) = conv.backward(&input, &grad_out, h, w);
+
+        // grad w.r.t. input
+        for j in 0..input.len() {
+            let mut ip = input.clone();
+            ip[j] += EPS;
+            let lp = loss(&conv.forward(&ip, h, w));
+            ip[j] -= 2.0 * EPS;
+            let lm = loss(&conv.forward(&ip, h, w));
+            assert_close(gi[j], (lp - lm) / (2.0 * EPS), "dilated conv grad_input");
+        }
+        // grad w.r.t. weights
+        for j in 0..conv.weights.len() {
+            let save = conv.weights[j];
+            conv.weights[j] = save + EPS;
+            let lp = loss(&conv.forward(&input, h, w));
+            conv.weights[j] = save - EPS;
+            let lm = loss(&conv.forward(&input, h, w));
+            conv.weights[j] = save;
+            assert_close(gw[j], (lp - lm) / (2.0 * EPS), "dilated conv grad_weights");
+        }
+        // grad w.r.t. bias
+        for j in 0..conv.bias.len() {
+            let save = conv.bias[j];
+            conv.bias[j] = save + EPS;
+            let lp = loss(&conv.forward(&input, h, w));
+            conv.bias[j] = save - EPS;
+            let lm = loss(&conv.forward(&input, h, w));
+            conv.bias[j] = save;
+            assert_close(gb[j], (lp - lm) / (2.0 * EPS), "dilated conv grad_bias");
+        }
+    }
+
+    /// A dilated k3/dil2/pad2 conv keeps the spatial extent HxW (same-size).
+    #[test]
+    fn conv_dilation_preserves_hw() {
+        let (in_ch, out_ch, h, w) = (3usize, 5usize, 7usize, 9usize);
+        let conv = Conv2d::new_seeded_dilated(in_ch, out_ch, 3, 2, 2, 1);
+        let input = fill(in_ch * h * w, 3);
+        let out = conv.forward(&input, h, w);
+        assert_eq!(out.len(), out_ch * h * w);
     }
 
     // ---- Conv micro-benchmark (timing, ignored) --------------------------
