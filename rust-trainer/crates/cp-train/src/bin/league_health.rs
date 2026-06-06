@@ -159,6 +159,54 @@ struct Probe {
     device_owned_rounds: i64,
     device_ring_fully_rung: i64,
     device_ring_fill_sum: i64,
+    // FORTRESS wall metrics (load-bearing targets).
+    outposts_by_r40: i64,     // outpost count observed at the first round >= 40
+    seen_r40: bool,
+    max_outposts: i64,        // peak outpost count over the game
+    max_soldiers: i64,        // peak soldier count over the game
+    hqring_full_rounds: i64,  // rounds where every owned HQ-ring tile held >=1 soldier
+    hqring_rounds: i64,       // rounds the bot had >=1 owned HQ-ring tile
+}
+
+/// Count owned outposts for `seat`.
+fn outpost_count(g: &Game, seat: PlayerId) -> i64 {
+    g.tiles
+        .iter()
+        .filter(|t| {
+            t.owner == Some(seat)
+                && t.building.as_ref().map(|b| b.kind) == Some(cp_sim::BuildingType::Outpost)
+        })
+        .count() as i64
+}
+
+/// HQ-ring fill: of the orthogonal-4 OWNED neighbours of the HQ that can hold units
+/// (not Outposts), how many hold >=1 of the seat's soldiers, and how many such tiles exist.
+fn hqring_fill(g: &Game, seat: PlayerId) -> (i64, i64) {
+    let Some(hq) = g.get_hq_tile(seat) else {
+        return (0, 0);
+    };
+    let mut owned = 0i64;
+    let mut filled = 0i64;
+    for n in g.neighbour_tiles(hq) {
+        if g.tiles[n.0].owner != Some(seat) {
+            continue;
+        }
+        if g.tiles[n.0].building.as_ref().map(|b| b.kind) == Some(cp_sim::BuildingType::Outpost) {
+            continue; // outposts can't hold soldiers
+        }
+        owned += 1;
+        let s = g
+            .tile_units(n)
+            .iter()
+            .filter(|&&u| {
+                g.units[u.0].owner == Some(seat) && g.units[u.0].kind == UnitType::Soldier
+            })
+            .count();
+        if s >= 1 {
+            filled += 1;
+        }
+    }
+    (owned, filled)
 }
 
 fn hq_soldiers(g: &Game, seat: PlayerId) -> i64 {
@@ -308,6 +356,25 @@ fn play(kind: BotKind, seed: u32, a: &Args) -> Probe {
         if round > 3 && soldiers >= 3 {
             probe.held_wall = true;
         }
+        // FORTRESS wall metrics.
+        let ops_now = outpost_count(&g, bot_seat);
+        if ops_now > probe.max_outposts {
+            probe.max_outposts = ops_now;
+        }
+        if soldiers > probe.max_soldiers {
+            probe.max_soldiers = soldiers;
+        }
+        if !probe.seen_r40 && round >= 40 {
+            probe.seen_r40 = true;
+            probe.outposts_by_r40 = ops_now;
+        }
+        let (ring_owned, ring_filled) = hqring_fill(&g, bot_seat);
+        if round > 3 && ring_owned > 0 {
+            probe.hqring_rounds += 1;
+            if ring_filled >= ring_owned {
+                probe.hqring_full_rounds += 1;
+            }
+        }
         let _ = hq_soldiers(&g, bot_seat); // (kept for ad-hoc HQ-specific debugging)
         // STRONG_ARMY-ONLY anti-pattern: it must NOT open a front (stage a conqueror on a
         // contested tile) while it has < 8 soldiers and there is no enemy Device to crack.
@@ -363,6 +430,14 @@ struct Agg {
     ring_rounds_total: i64,   // sum over games of device_owned_rounds
     ring_fully_rung_total: i64, // sum over games of device_ring_fully_rung
     ring_fill_sum_total: i64, // sum over games of device_ring_fill_sum
+    // --- FORTRESS wall aggregates ---
+    op2_by_r40: u32,          // games with >=2 outposts by round 40
+    op3_by_r40: u32,          // games with >=3 outposts by round 40
+    max_op_ge2: u32,          // games peaking >=2 outposts
+    max_op_ge3: u32,          // games peaking >=3 outposts
+    hqring_rounds_total: i64,
+    hqring_full_total: i64,
+    max_soldiers_sum: i64,
 }
 
 fn main() {
@@ -416,6 +491,21 @@ fn main() {
             agg.ring_rounds_total += p.device_owned_rounds;
             agg.ring_fully_rung_total += p.device_ring_fully_rung;
             agg.ring_fill_sum_total += p.device_ring_fill_sum;
+            if p.outposts_by_r40 >= 2 {
+                agg.op2_by_r40 += 1;
+            }
+            if p.outposts_by_r40 >= 3 {
+                agg.op3_by_r40 += 1;
+            }
+            if p.max_outposts >= 2 {
+                agg.max_op_ge2 += 1;
+            }
+            if p.max_outposts >= 3 {
+                agg.max_op_ge3 += 1;
+            }
+            agg.hqring_rounds_total += p.hqring_rounds;
+            agg.hqring_full_total += p.hqring_full_rounds;
+            agg.max_soldiers_sum += p.max_soldiers;
         }
         rows.push((kind, agg));
     }
@@ -510,6 +600,24 @@ fn main() {
         println!(
             "  NOTE: build% / ring-fill are capped by MAP GEOGRAPHY vs a no-op seat — see the\n        report at the end of this session (≈12% of seeds are metal/wood-locked so the\n        Device's 200-metal cost is unreachable; the halved soldier cap (2) cannot ring\n        the Device's up-to-8 approaches). device-WIN + solvency are the load-bearing bars."
         );
+    }
+
+    // FORTRESS wall report (only meaningful for the fortress bot).
+    if let Some((_, agg)) = rows.iter().find(|(k, _)| *k == BotKind::Fortress) {
+        let games = agg.games.max(1) as f64;
+        let pct = |n: u32| 100.0 * n as f64 / games;
+        let ring_full_pct = if agg.hqring_rounds_total > 0 {
+            100.0 * agg.hqring_full_total as f64 / agg.hqring_rounds_total as f64
+        } else {
+            0.0
+        };
+        println!("\n--- FORTRESS wall report (bot=fortress) ---");
+        println!("  >=2 Outposts by r40:   {:>5.1}%  (target >= 70%)", pct(agg.op2_by_r40));
+        println!("  >=3 Outposts by r40:   {:>5.1}%  (better)", pct(agg.op3_by_r40));
+        println!("  peaked >=2 Outposts:   {:>5.1}%", pct(agg.max_op_ge2));
+        println!("  peaked >=3 Outposts:   {:>5.1}%", pct(agg.max_op_ge3));
+        println!("  HQ-ring fully manned:  {:>5.1}%  (of rounds with an owned ring tile)", ring_full_pct);
+        println!("  mean peak soldiers:    {:>5.2}", agg.max_soldiers_sum as f64 / games);
     }
 
     println!(
