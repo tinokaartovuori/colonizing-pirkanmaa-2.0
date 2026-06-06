@@ -1817,11 +1817,11 @@ fn run_smoke(vs_hard: bool) {
 /// Intent-histogram width (must match alphazero.rs so the dashboard parses the
 /// same `intents{...}` object). 15 intents (BuildFarm…Pass, BuildStrangeDevice,
 /// BuildBridge, CrackDevice, CrackHQ — Plan-B action-space expansion).
-const NUM_INTENTS: usize = 15;
+const NUM_INTENTS: usize = 16;
 const INTENT_NAMES: [&str; NUM_INTENTS] = [
     "BuildFarm", "BuildMine", "BuildVillage", "BuildOutpost", "BuildHydro",
     "BuildNuclear", "Expand", "HireSoldier", "Attack", "StackProducer", "Pass",
-    "BuildStrangeDevice", "BuildBridge", "CrackDevice", "CrackHQ",
+    "BuildStrangeDevice", "BuildBridge", "CrackDevice", "CrackHQ", "MarchSoldier",
 ];
 
 #[derive(Clone)]
@@ -5882,6 +5882,9 @@ fn detect_dominant_intent(
     } else if tiles_delta > 0 {
         detected = Intent::Expand;
     }
+    // NOTE: Intent::MarchSoldier is intentionally NOT a teacher target here — the
+    // HARD bot has no march primitive, so there is no dominant-transition signature
+    // to detect. The march intent is learned via self-play MCTS only (for now).
 
     // Verify the detected intent is REACHABLE this turn (candidates::enumerate at
     // turn start emits it). If not, fall back to Pass (always present in cands_after).

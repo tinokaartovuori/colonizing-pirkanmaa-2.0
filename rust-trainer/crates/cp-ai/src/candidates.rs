@@ -51,15 +51,25 @@ pub enum Intent {
     /// un-conquered enemy Headquarters; the SEPARATE intent label lets the value
     /// head see the defender count it needs to beat (§3 strict-greater conquest).
     CrackHQ = 14,
+    /// "Complete the eyes" action-space expansion. Relocate ONE free OWN Soldier in
+    /// a single rangeless move (GAME-MECHANICS §1) onto the own-or-neutral reachable
+    /// tile that most reduces Manhattan distance to the nearest enemy objective
+    /// (enemy-owned Strange Device, else un-conquered enemy HQ). Gives the value head
+    /// a non-attacking *manoeuvre* signal — staging an army toward the front without
+    /// committing to an assault. NOT a game-rules change (no arc bump). Parity-locked
+    /// with the TS mirror.
+    MarchSoldier = 15,
 }
 
-pub const INTENT_COUNT: usize = 15;
+pub const INTENT_COUNT: usize = 16;
 pub const LOCAL_DIM: usize = 16;
 
 /// Max distinct Expand target tiles emitted as candidates per turn (after sort).
 pub const EXPAND_CANDIDATE_CAP: usize = 6;
 /// Max distinct feasible Attack target tiles emitted as candidates per turn (after sort).
 pub const ATTACK_CANDIDATE_CAP: usize = 4;
+/// Max distinct MarchSoldier candidates (one per movable own Soldier) per turn (after sort).
+pub const MARCH_CANDIDATE_CAP: usize = 4;
 
 /// The concrete action a candidate's `execute()` performs. Mirrors the TS
 /// closures exactly (including their internal fallback chains).
@@ -82,6 +92,13 @@ pub enum Action {
         needed: i64,
         placed: i64,
         can_buy: bool,
+    },
+    /// March: relocate a single OWN Soldier `unit` from `from` to `to` in one
+    /// rangeless move (the destination is own-or-neutral + reachable + has space).
+    March {
+        unit: UnitId,
+        from: TileId,
+        to: TileId,
     },
     Pass,
 }
@@ -319,6 +336,33 @@ fn enemy_tile_coords(g: &Game, p: PlayerId) -> Vec<(i32, i32)> {
         }
     }
     out
+}
+
+/// The (x,y) of the nearest enemy *objective* the army should march on: an
+/// enemy-owned standing Strange Device first, else the first un-conquered enemy HQ
+/// in canonical (`get_tiles`, column-major) order, else `None`. Mirrors
+/// `enemyObjectiveCoord` in `src/ai/nn/candidates.ts` (parity-locked).
+fn enemy_objective_coord(g: &Game, p: PlayerId) -> Option<(i32, i32)> {
+    // (a) enemy-owned standing Strange Device.
+    if let Some(dtid) = g.find_strange_device_tile() {
+        if let Some(o) = g.tiles[dtid.0].owner {
+            if o != p {
+                return Some((g.tiles[dtid.0].x, g.tiles[dtid.0].y));
+            }
+        }
+    }
+    // (b) first un-conquered enemy HQ in get_tiles() (column-major) order.
+    for t in g.get_tiles() {
+        if let Some(b) = &t.building {
+            if b.kind == BuildingType::Headquarters
+                && !b.conquered
+                && matches!(t.owner, Some(o) if o != p)
+            {
+                return Some((t.x, t.y));
+            }
+        }
+    }
+    None
 }
 
 /// Options for [`local_vec`]. Mirrors the TS `localVec` opts object.
@@ -1261,6 +1305,118 @@ fn attack(g: &Game, p: PlayerId, cfg: &TierConfig, enemy_coords: &[(i32, i32)]) 
     out
 }
 
+/// `Intent::MarchSoldier` — relocate ONE free OWN Soldier, in one rangeless move
+/// (GAME-MECHANICS §1), to the own-or-neutral reachable tile that most reduces the
+/// Manhattan distance to the nearest enemy objective (enemy-owned Strange Device,
+/// else un-conquered enemy HQ). Enemy-owned tiles are excluded (those are
+/// Attack/CrackHQ/CrackDevice). One candidate per movable soldier, capped at
+/// `MARCH_CANDIDATE_CAP`; only emitted when the best destination STRICTLY reduces
+/// distance. Mirrors `marchSoldierCandidates` in `src/ai/nn/candidates.ts`
+/// (parity-locked).
+fn march_soldier(
+    g: &Game,
+    p: PlayerId,
+    cfg: &TierConfig,
+    enemy_coords: &[(i32, i32)],
+) -> Vec<Candidate> {
+    if !cfg.military {
+        return Vec::new();
+    }
+    let (ox, oy) = match enemy_objective_coord(g, p) {
+        Some(c) => c,
+        None => return Vec::new(),
+    };
+
+    // Reachable own-or-neutral destinations with room for a unit.
+    let dests: Vec<TileId> = g
+        .get_available_tiles_for(p)
+        .into_iter()
+        .filter(|&t| {
+            let o = g.tiles[t.0].owner;
+            (o == Some(p) || o.is_none()) && g.tiles[t.0].has_space_for_units()
+        })
+        .collect();
+
+    // (d_best, from_tile_id, candidate) collected, then totally ordered.
+    struct March {
+        d_best: i64,
+        from: TileId,
+        cand: Candidate,
+    }
+    let mut marches: Vec<March> = Vec::new();
+
+    // One candidate per movable own Soldier (find_free_soldier scan pattern: iterate
+    // owned tiles, find a Soldier on each).
+    for from in m::owned_tiles(g, p) {
+        let soldier = g
+            .tile_units(from)
+            .iter()
+            .copied()
+            .find(|&u| g.units[u.0].kind == UnitType::Soldier);
+        let unit = match soldier {
+            Some(u) => u,
+            None => continue,
+        };
+        let sx = g.tiles[from.0].x;
+        let sy = g.tiles[from.0].y;
+        let d0 = ((sx - ox).abs() + (sy - oy).abs()) as i64;
+
+        // Best destination != from minimising Manhattan distance to the objective;
+        // tie-break on destination tile-id ASC.
+        let mut best: Option<(i64, TileId)> = None;
+        for &dest in &dests {
+            if dest == from {
+                continue;
+            }
+            let dx = g.tiles[dest.0].x;
+            let dy = g.tiles[dest.0].y;
+            let d = ((dx - ox).abs() + (dy - oy).abs()) as i64;
+            match best {
+                Some((bd, bt)) if d > bd || (d == bd && dest.0 >= bt.0) => {}
+                _ => best = Some((d, dest)),
+            }
+        }
+        let (d_best, dest) = match best {
+            Some(v) => v,
+            None => continue,
+        };
+        if d_best >= d0 {
+            continue; // must STRICTLY reduce distance
+        }
+
+        let mut spatial = tile_spatial(g, dest, p, enemy_coords);
+        spatial.frontier = if spatial.enemy_neighbors > 0.0 { 1.0 } else { 0.0 };
+        let local = local_vec(
+            g,
+            p,
+            &Local {
+                target_value: (d0 - d_best) as f64,
+                spatial,
+                ..Default::default()
+            },
+        );
+        marches.push(March {
+            d_best,
+            from,
+            cand: Candidate {
+                intent: Intent::MarchSoldier,
+                local,
+                action: Action::March {
+                    unit,
+                    from,
+                    to: dest,
+                },
+                label: "MarchSoldier".to_string(),
+            },
+        });
+    }
+
+    // Total order: d_best ASC, then from tile-id ASC. Cap AFTER sorting.
+    marches.sort_by(|a, b| a.d_best.cmp(&b.d_best).then(a.from.0.cmp(&b.from.0)));
+    marches.truncate(MARCH_CANDIDATE_CAP);
+    marches.into_iter().map(|x| x.cand).collect()
+}
+
 fn stack_producer(g: &Game, p: PlayerId, cfg: &TierConfig) -> Option<Candidate> {
     if g.free_unit_amount(p) <= 0 {
         return None;
@@ -1351,6 +1507,10 @@ pub fn enumerate(g: &Game, p: PlayerId, cfg: &TierConfig) -> Vec<Candidate> {
     if let Some(c) = crack_hq(g, p, cfg, &enemy_coords) {
         out.push(c);
     }
+    // MarchSoldier: rangeless manoeuvre of a free Soldier toward the nearest enemy
+    // objective. Position is load-bearing for parity (after crack_hq, before
+    // stack_producer).
+    out.extend(march_soldier(g, p, cfg, &enemy_coords));
     push_single(&mut out, stack_producer);
     out.push(pass_candidate());
     out
@@ -1412,6 +1572,7 @@ pub fn execute_action(g: &mut Game, p: PlayerId, cfg: &TierConfig, action: &Acti
             }
             did
         }
+        Action::March { unit, from, to } => g.ai_move_unit(*unit, *from, *to),
     }
 }
 
@@ -1638,6 +1799,138 @@ mod tests {
         match cand.action {
             Action::Attack { tile, .. } => assert_eq!(tile, enemy_hq),
             _ => panic!("CrackHQ candidate must use Action::Attack"),
+        }
+    }
+
+    /// `Intent::MarchSoldier` must emit a candidate moving an own Soldier strictly
+    /// closer (Manhattan) to an enemy objective. Fixture: own soldier at distance d0
+    /// from an enemy HQ + a reachable own/neutral tile at d0-1. Mirrors
+    /// `marchSoldierCandidates` in `src/ai/nn/candidates.ts` (parity-locked).
+    #[test]
+    fn march_soldier_emits_and_reduces_distance() {
+        let mut g = Game::new(12, 12, &["P1", "P2"]);
+        g.generate_map(12, 12, 1);
+        let p1 = PlayerId(0);
+        let p2 = PlayerId(1);
+
+        let id = |x: i32, y: i32| TileId((x * 12 + y) as usize);
+        // Champion HQ at (5,9) so availability flows from there.
+        let my_hq = id(5, 9);
+        g.tiles[my_hq.0].tile_type = TileType::Grassland;
+        g.tiles[my_hq.0].building = None;
+        g.set_tile_owner(my_hq, Some(p1));
+        g.place_building(my_hq, BuildingType::Headquarters, Some(p1));
+        // A soldier sits on an owned tile at (5,8): distance to enemy HQ (5,5) = 3.
+        let from = id(5, 8);
+        g.tiles[from.0].tile_type = TileType::Grassland;
+        g.tiles[from.0].building = None;
+        g.set_tile_owner(from, Some(p1));
+        g.spawn_unit_on_tile(UnitType::Soldier, p1, from, false);
+        // A reachable own destination at (5,7): distance to enemy HQ = 2 (< 3).
+        let dest = id(5, 7);
+        g.tiles[dest.0].tile_type = TileType::Grassland;
+        g.tiles[dest.0].building = None;
+        g.set_tile_owner(dest, Some(p1));
+        // Enemy HQ at (5,5), un-conquered.
+        let enemy_hq = id(5, 5);
+        g.tiles[enemy_hq.0].tile_type = TileType::Grassland;
+        g.set_tile_owner(enemy_hq, Some(p2));
+        g.place_building(enemy_hq, BuildingType::Headquarters, Some(p2));
+
+        let cfg = crate::tiers::TRAINING_CONFIG;
+        let enemy_coords = enemy_tile_coords(&g, p1);
+        let cands = march_soldier(&g, p1, &cfg, &enemy_coords);
+        assert!(!cands.is_empty(), "MarchSoldier candidate must emit");
+        let c = &cands[0];
+        assert_eq!(c.intent, Intent::MarchSoldier);
+        match c.action {
+            Action::March { from: f, to, .. } => {
+                assert_eq!(f, from);
+                let d0 = (g.tiles[f.0].x - g.tiles[enemy_hq.0].x).abs()
+                    + (g.tiles[f.0].y - g.tiles[enemy_hq.0].y).abs();
+                let d_to = (g.tiles[to.0].x - g.tiles[enemy_hq.0].x).abs()
+                    + (g.tiles[to.0].y - g.tiles[enemy_hq.0].y).abs();
+                assert!(d_to < d0, "March destination must strictly reduce distance");
+            }
+            _ => panic!("MarchSoldier candidate must use Action::March"),
+        }
+    }
+
+    /// No enemy device and no un-conquered enemy HQ → no objective → no MarchSoldier
+    /// candidate.
+    #[test]
+    fn march_soldier_no_candidate_without_objective() {
+        let mut g = Game::new(12, 12, &["P1", "P2"]);
+        g.generate_map(12, 12, 1);
+        let p1 = PlayerId(0);
+
+        let id = |x: i32, y: i32| TileId((x * 12 + y) as usize);
+        let my_hq = id(5, 9);
+        g.tiles[my_hq.0].tile_type = TileType::Grassland;
+        g.tiles[my_hq.0].building = None;
+        g.set_tile_owner(my_hq, Some(p1));
+        g.place_building(my_hq, BuildingType::Headquarters, Some(p1));
+        let from = id(5, 8);
+        g.tiles[from.0].tile_type = TileType::Grassland;
+        g.set_tile_owner(from, Some(p1));
+        g.spawn_unit_on_tile(UnitType::Soldier, p1, from, false);
+
+        let cfg = crate::tiers::TRAINING_CONFIG;
+        let enemy_coords = enemy_tile_coords(&g, p1);
+        assert!(enemy_objective_coord(&g, p1).is_none());
+        assert!(
+            march_soldier(&g, p1, &cfg, &enemy_coords).is_empty(),
+            "MarchSoldier must not emit without an enemy objective"
+        );
+    }
+
+    /// MarchSoldier destinations exclude enemy-owned tiles: a closer ENEMY tile must
+    /// not be chosen — only own/neutral reachable tiles are valid destinations.
+    #[test]
+    fn march_soldier_excludes_enemy_tiles() {
+        let mut g = Game::new(12, 12, &["P1", "P2"]);
+        g.generate_map(12, 12, 1);
+        let p1 = PlayerId(0);
+        let p2 = PlayerId(1);
+
+        let id = |x: i32, y: i32| TileId((x * 12 + y) as usize);
+        let my_hq = id(5, 9);
+        g.tiles[my_hq.0].tile_type = TileType::Grassland;
+        g.tiles[my_hq.0].building = None;
+        g.set_tile_owner(my_hq, Some(p1));
+        g.place_building(my_hq, BuildingType::Headquarters, Some(p1));
+        // Soldier at (5,8), objective enemy HQ at (5,5).
+        let from = id(5, 8);
+        g.tiles[from.0].tile_type = TileType::Grassland;
+        g.tiles[from.0].building = None;
+        g.set_tile_owner(from, Some(p1));
+        g.spawn_unit_on_tile(UnitType::Soldier, p1, from, false);
+        // A CLOSER enemy-owned tile at (5,6) (distance 1 to the HQ) — must be EXCLUDED.
+        let enemy_tile = id(5, 6);
+        g.tiles[enemy_tile.0].tile_type = TileType::Grassland;
+        g.tiles[enemy_tile.0].building = None;
+        g.set_tile_owner(enemy_tile, Some(p2));
+        // An own destination at (5,7) (distance 2) — the only valid closer tile.
+        let dest = id(5, 7);
+        g.tiles[dest.0].tile_type = TileType::Grassland;
+        g.tiles[dest.0].building = None;
+        g.set_tile_owner(dest, Some(p1));
+        // Enemy HQ at (5,5).
+        let enemy_hq = id(5, 5);
+        g.tiles[enemy_hq.0].tile_type = TileType::Grassland;
+        g.set_tile_owner(enemy_hq, Some(p2));
+        g.place_building(enemy_hq, BuildingType::Headquarters, Some(p2));
+
+        let cfg = crate::tiers::TRAINING_CONFIG;
+        let enemy_coords = enemy_tile_coords(&g, p1);
+        let cands = march_soldier(&g, p1, &cfg, &enemy_coords);
+        assert!(!cands.is_empty(), "MarchSoldier candidate must emit");
+        match cands[0].action {
+            Action::March { to, .. } => {
+                assert_ne!(to, enemy_tile, "must not march onto an enemy-owned tile");
+                assert_eq!(to, dest, "must pick the own/neutral closer tile");
+            }
+            _ => panic!("MarchSoldier candidate must use Action::March"),
         }
     }
 

@@ -1,4 +1,4 @@
-# Golden-trace JSON schema (v5)
+# Golden-trace JSON schema (v6)
 
 Files: `rust-trainer/golden/trace-<seed>.json`, one per game in the fixed suite.
 Compact JSON, UTF-8, no trailing newline. Object **key order is fixed** by the
@@ -13,7 +13,7 @@ f64 throughout (no f32) to reproduce feature vectors and network scores exactly.
 
 | field | type | notes |
 |---|---|---|
-| `schemaVersion` | int | currently 5 |
+| `schemaVersion` | int | currently 6 |
 | `seed` | int | worldgen seed AND xorshift RNG seed for this game |
 | `mapWidth` | int | tiles in x |
 | `mapHeight` | int | tiles in y |
@@ -21,7 +21,7 @@ f64 throughout (no f32) to reproduce feature vectors and network scores exactly.
 | `roundCap` | int | max rounds before timeout |
 | `config` | TierConfig | the TierConfig used (TRAINING_CONFIG) — see below |
 | `genomeSource` | string | provenance of the genome (path or "deterministic-lcg:...") |
-| `genomeArch` | int[] | MLP layer sizes, `[64,24,16,1]` |
+| `genomeArch` | int[] | MLP layer sizes, `[68,24,16,1]` |
 | `genomeParamCount` | int | flat param count, 1977 for the default arch |
 | `rngKind` | string | RNG description; at temperature=0/blunder=0 the RNG is never consumed in the decision loop |
 | `hqPlacementTileIndex` | int[] | per seat (seat order = player num order, 0-based), the **tile index** (into `map`/fingerprint `tiles`) the controller claimed as HQ in round 0; -1 if none |
@@ -78,7 +78,7 @@ executes, with exactly the vectors/candidates/scores the policy saw:
   always Pass.
 - `scores`: `scoreCandidate(genome, globalVec, candidate)` per candidate, SAME
   index order as `candidates`. The network input per candidate is
-  `[globalVec(36) | intent one-hot(15) | local(16)]` = 67 dims, fed to the MLP
+  `[globalVec(36) | intent one-hot(16) | local(16)]` = 68 dims, fed to the MLP
   (tanh hidden layers, linear scalar head). `scores[i]` is that scalar.
 - `chosenCandidateIndex`: index into `candidates`/`scores` of the selected
   candidate (argmax of `scores` at temperature 0).
@@ -91,7 +91,7 @@ list. Only the **initial** selection of each loop iteration is recorded as a
 DecisionRecord. Such failures do not occur in deterministic headless replay; the
 `afterTurn` fingerprint still captures the true post-turn state regardless.
 
-### Intent enum (integer values 0..14)
+### Intent enum (integer values 0..15)
 | value | intent |
 |---|---|
 | 0 | BuildFarm |
@@ -109,11 +109,12 @@ DecisionRecord. Such failures do not occur in deterministic headless replay; the
 | 12 | BuildBridge |
 | 13 | CrackDevice |
 | 14 | CrackHQ |
+| 15 | MarchSoldier |
 
 `enumerate()` evaluates intent builders in this order:
-`[BuildFarm, BuildMine, BuildVillage, BuildOutpost, BuildHydro, BuildNuclear, BuildStrangeDevice, BuildBridge, Expand, HireSoldier, Attack, CrackDevice, CrackHQ, StackProducer]`,
+`[BuildFarm, BuildMine, BuildVillage, BuildOutpost, BuildHydro, BuildNuclear, BuildStrangeDevice, BuildBridge, Expand, HireSoldier, Attack, CrackDevice, CrackHQ, MarchSoldier, StackProducer]`,
 appends each that returns a candidate (legal+affordable), then **always appends Pass**.
-Note BuildStrangeDevice has intent VALUE 11 but sits at list POSITION 6 (after BuildNuclear). BuildBridge (12) sits at position 7. CrackDevice/CrackHQ (13/14) sit after Attack. The one-hot encodes the value; the argmax tie-break uses list position.
+Note BuildStrangeDevice has intent VALUE 11 but sits at list POSITION 6 (after BuildNuclear). BuildBridge (12) sits at position 7. CrackDevice/CrackHQ (13/14) sit after Attack. MarchSoldier (15) is **multi-candidate** (one per movable own Soldier, capped 4) and sits after CrackHQ, before StackProducer. The one-hot encodes the value; the argmax tie-break uses list position.
 
 Build* / StackProducer / HireSoldier are **single-candidate** (contribute 0 or 1).
 Expand and Attack are **multi-candidate**: each emits one Candidate per plausible

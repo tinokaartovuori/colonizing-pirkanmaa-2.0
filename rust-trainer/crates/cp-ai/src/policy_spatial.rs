@@ -62,6 +62,7 @@ pub fn candidate_target_tile(c: &Candidate) -> Option<TileId> {
         Action::Expand { tile, .. } => Some(*tile),
         Action::BuyUnit(_, t) => Some(*t),
         Action::Attack { tile, .. } => Some(*tile),
+        Action::March { to, .. } => Some(*to),
         Action::Pass => None,
     }
 }

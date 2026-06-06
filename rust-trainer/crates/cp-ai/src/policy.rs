@@ -1,7 +1,7 @@
 //! Port of `src/ai/nn/policy.ts` — maps the network over candidates and selects.
 //!
-//! Network input per candidate is `[global(36) | intent one-hot(12) | local(16)]`
-//! = 64 dims. `scoreCandidate` = `forward(...)[0]`. `select` = blunder check
+//! Network input per candidate is `[global(36) | intent one-hot(16) | local(16)]`
+//! = 68 dims. `scoreCandidate` = `forward(...)[0]`. `select` = blunder check
 //! (skipped when `blunder==0`), then argmax at temperature≤1e-6 (strict `>`,
 //! ties → LOWEST index), else softmax sampling. Training uses temperature=0,
 //! blunder=0 → deterministic argmax.
@@ -11,14 +11,14 @@ use crate::features::GLOBAL_DIM;
 use crate::mlp::{self, Genome};
 use crate::tiers::TierConfig;
 
-/// MLP input width for the action-scoring network (= 64 in the Strange-Device arc:
-/// 36 global + 12 intent one-hot + 16 local).
+/// MLP input width for the action-scoring network (= 68 with the MarchSoldier
+/// intent: 36 global + 16 intent one-hot + 16 local).
 pub const POLICY_INPUT_DIM: usize = GLOBAL_DIM + INTENT_COUNT + LOCAL_DIM;
 
 /// Default architecture: input → 24 → 16 → 1.
 pub const DEFAULT_ARCH: [usize; 4] = [POLICY_INPUT_DIM, 24, 16, 1];
 
-/// Build the 64-dim network input for one candidate.
+/// Build the 68-dim network input for one candidate.
 pub fn policy_input(global_vec: &[f64], c: &Candidate) -> Vec<f64> {
     let mut input = Vec::with_capacity(POLICY_INPUT_DIM);
     input.extend_from_slice(global_vec);

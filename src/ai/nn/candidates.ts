@@ -77,14 +77,22 @@ export enum Intent {
   // Plan-B addendum. Attack-on-HQ as a FIRST-CLASS intent (same idea as
   // CrackDevice but for un-conquered enemy Headquarters).
   CrackHQ,
+  // "Complete the eyes" action-space expansion. Relocate ONE free OWN Soldier in a
+  // single rangeless move (GAME-MECHANICS §1) onto the own-or-neutral reachable
+  // tile that most reduces Manhattan distance to the nearest enemy objective
+  // (enemy-owned Strange Device, else un-conquered enemy HQ). A non-attacking
+  // manoeuvre signal. NOT a game-rules change. Parity-locked with the Rust mirror.
+  MarchSoldier,
 }
-export const INTENT_COUNT = Intent.CrackHQ + 1;
+export const INTENT_COUNT = Intent.MarchSoldier + 1;
 export const LOCAL_DIM = 16;
 
 /** Max distinct Expand target tiles emitted as candidates per turn (after sort). */
 export const EXPAND_CANDIDATE_CAP = 6;
 /** Max distinct feasible Attack target tiles emitted as candidates per turn (after sort). */
 export const ATTACK_CANDIDATE_CAP = 4;
+/** Max distinct MarchSoldier candidates (one per movable own Soldier) per turn (after sort). */
+export const MARCH_CANDIDATE_CAP = 4;
 
 export interface Candidate {
   intent: Intent;
@@ -286,6 +294,44 @@ export function enemyTileCoords(om: ObjectManager, p: PlayerBase): { x: number; 
     }
   }
   return out;
+}
+
+/**
+ * The (x,y) of the nearest enemy *objective* the army should march on: an
+ * enemy-owned standing Strange Device first, else the first un-conquered enemy HQ
+ * in canonical `getTiles()` (column-major generation) order, else null. Mirrors
+ * `enemy_objective_coord` in `rust-trainer/crates/cp-ai/src/candidates.rs`
+ * (parity-locked).
+ */
+export function enemyObjectiveCoord(om: ObjectManager, p: PlayerBase): { x: number; y: number } | null {
+  // (a) enemy-owned standing Strange Device.
+  const dev = om.findStrangeDeviceTile();
+  if (dev) {
+    const o = dev.getOwner();
+    if (o !== null && o !== p) {
+      const c = dev.getCoordinate();
+      return { x: c.x(), y: c.y() };
+    }
+  }
+  // (b) first un-conquered enemy HQ in getTiles() order. Mirror Rust's
+  // `!b.conquered && owner != p`: a conquered HQ keeps type 'Headquarters' but
+  // flips its conquered flag and its tile owner becomes the captor, so we must
+  // exclude it explicitly (a 3-player game can have an enemy-owned conquered HQ).
+  for (const t of om.getTiles()) {
+    const b = t.getBuilding();
+    const o = t.getOwner();
+    if (
+      b &&
+      b.getType() === 'Headquarters' &&
+      !(b as unknown as { isConquered(): boolean }).isConquered() &&
+      o !== null &&
+      o !== p
+    ) {
+      const c = t.getCoordinate();
+      return { x: c.x(), y: c.y() };
+    }
+  }
+  return null;
 }
 
 // --- intent builders -------------------------------------------------------
@@ -802,6 +848,81 @@ function attackCandidates(ctx: AiCtx, idx: Map<TileBase, number>, enemyCoords: {
   return out;
 }
 
+/**
+ * `Intent.MarchSoldier` — relocate ONE free OWN Soldier, in a single rangeless
+ * move (GAME-MECHANICS §1), onto the own-or-neutral reachable tile that most
+ * reduces Manhattan distance to the nearest enemy objective (enemy-owned Strange
+ * Device, else un-conquered enemy HQ). Enemy-owned tiles are excluded (those are
+ * Attack/CrackHQ/CrackDevice). One candidate per movable soldier, capped at
+ * `MARCH_CANDIDATE_CAP`; only emitted when the best destination STRICTLY reduces
+ * distance. Mirrors `march_soldier` in
+ * `rust-trainer/crates/cp-ai/src/candidates.rs` (parity-locked).
+ */
+function marchSoldierCandidates(
+  ctx: AiCtx,
+  idx: Map<TileBase, number>,
+  enemyCoords: { x: number; y: number }[],
+): Candidate[] {
+  const { player: p, om, cfg } = ctx;
+  if (!cfg.military) return [];
+  const obj = enemyObjectiveCoord(om, p);
+  if (!obj) return [];
+  const ox = obj.x, oy = obj.y;
+
+  // Reachable own-or-neutral destinations with room for a unit.
+  const dests = om.getAvailableTiles().filter((t) => {
+    const o = t.getOwner();
+    return (o === p || o === null) && t.hasSpaceForUnits();
+  });
+
+  const marches: { dBest: number; fromIdx: number; cand: Candidate }[] = [];
+  for (const from of M.ownedTiles(p)) {
+    const unit = from.getUnits().find((u) => u.getType() === 'Soldier');
+    if (!unit) continue;
+    const fc = from.getCoordinate();
+    const d0 = Math.abs(fc.x() - ox) + Math.abs(fc.y() - oy);
+
+    // Best destination != from minimising distance to the objective; tie-break on
+    // destination tile-index ASC.
+    let best: { d: number; tile: TileBase } | null = null;
+    for (const dest of dests) {
+      if (dest === from) continue;
+      const dc = dest.getCoordinate();
+      const d = Math.abs(dc.x() - ox) + Math.abs(dc.y() - oy);
+      if (
+        best === null ||
+        d < best.d ||
+        (d === best.d && (idx.get(dest) ?? 0) < (idx.get(best.tile) ?? 0))
+      ) {
+        best = { d, tile: dest };
+      }
+    }
+    if (best === null) continue;
+    const dBest = best.d;
+    const dest = best.tile;
+    if (dBest >= d0) continue; // must STRICTLY reduce distance
+
+    const spatial = tileSpatial(dest, p, om, enemyCoords);
+    spatial.frontier = spatial.enemyNeighbors > 0 ? 1 : 0;
+    marches.push({
+      dBest,
+      fromIdx: idx.get(from) ?? 0,
+      cand: {
+        intent: Intent.MarchSoldier,
+        local: localVec({ p, targetValue: d0 - dBest, spatial }),
+        label: 'MarchSoldier',
+        execute: () => ctx.eh.aiMoveUnit(unit, from, dest),
+      },
+    });
+  }
+
+  // Total order: dBest ASC, then from tile-index ASC. Cap AFTER sorting.
+  return marches
+    .sort((a, b) => a.dBest - b.dBest || a.fromIdx - b.fromIdx)
+    .slice(0, MARCH_CANDIDATE_CAP)
+    .map((x) => x.cand);
+}
+
 function stackProducer(ctx: AiCtx): Candidate | null {
   const { player: p, cfg } = ctx;
   if (p.getFreeUnitAmount() <= 0) return null;
@@ -857,6 +978,10 @@ export function enumerate(ctx: AiCtx): Candidate[] {
   // intent label so the value head learns the cracker line.
   if ((c = crackDevice(ctx, enemyCoords))) out.push(c);
   if ((c = crackHQ(ctx, enemyCoords))) out.push(c);
+  // MarchSoldier: rangeless manoeuvre of a free Soldier toward the nearest enemy
+  // objective. Position is load-bearing for parity (after crackHQ, before
+  // stackProducer).
+  out.push(...marchSoldierCandidates(ctx, idx, enemyCoords));
   if ((c = stackProducer(ctx))) out.push(c);
   out.push(PASS);
   return out;

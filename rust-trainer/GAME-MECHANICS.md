@@ -20,7 +20,7 @@ irrelevant to legality. There is no movement range, no movement-point budget, an
 has-moved flag anywhere (grep across all three sources = empty).
 
 `getAvailableTiles()` (current player) — `objectmanager.ts:131-153`, C++ `objectmanager.cpp:213-259`,
-Rust `managers.rs:366-394` (identical):
+Rust `managers.rs:380-407` (identical):
 - **all owned tiles** (passing `hasOpponentHeadquarters`), PLUS
 - **their orthogonal-4 neighbours** (`getNeighbourFourTiles`) passing `hasOpponentHeadquarters`.
 - Excludes the player's **own un-conquered HQ** tile (`hasOpponentHeadquarters` false only there).
@@ -67,9 +67,9 @@ Move (1) ⇒ an enemy can teleport any free soldier from anywhere in its territo
 i.e. it sits on the enemy frontier; AND (2) it isn't an Outpost and its conquering slots aren't full; AND
 (3) the enemy can muster **(your soldiers there)+1** soldiers — drawing free soldiers from **anywhere** in
 its territory and/or buying within its (possibly Device-halved) soldier cap. **Where the enemy's soldiers
-currently sit is irrelevant.** Enemy attack-target enumeration: `candidates.rs:847-868`
+currently sit is irrelevant.** Enemy attack-target enumeration: `candidates.rs:1155-1174` (`attack`)
 (`get_available_tiles().filter(enemy-owned, has conquering room, not outpost)`); free-soldier scan:
-`find_free_soldier` `candidates.rs:183-198`. **Move and attack are separate** — staging this turn,
+`find_free_soldier` `candidates.rs:197-212`. **Move and attack are separate** — staging this turn,
 capture at the staging player's end-of-turn.
 
 ## 5. Capacity (recomputed from owned tiles each call)
@@ -81,18 +81,18 @@ capture at the staging player's end-of-turn.
   end of turn / on Device build (`eliminateExcessUnits` `player.ts:181-204`).
 - **HQ only ⇒ soldier cap = 1** (the capacity-blindness root). No Outpost ⇒ ≤1 soldier all game.
 - **Strange Device HALVES the soldier cap** (floored), applied after summation (`player.ts:168`,
-  Rust `managers.rs:638-640`).
+  Rust `managers.rs:651-652`).
 
 ## 6. The Strange Device — double-edged (USER-emphasised)
 
 A new building (no C++ counterpart), the intended decisive win. On build:
 - starts a **countdown** (`strange_device_countdown(tile_count)`, `resources.rs`); if it survives to 0 at
-  the owner's end-of-turn → **all others lose** (`WinCause::Device`, `managers.rs:1061-1099`).
+  the owner's end-of-turn → **all others lose** (`WinCause::Device`, `managers.rs:1061-1110`).
 - **HALVES the builder's soldier cap** → the builder is *weaker on defense* exactly when it most needs to
   defend the device.
 - the device tile holds **zero owned defenders** (§2) → a single enemy soldier staged on it destroys it
-  (also: if the device tile leaves the builder's ownership, the device is destroyed, `managers.rs:1068-1073`).
-- One device per game per player (`managers.rs:1234-1236`).
+  (also: if the device tile leaves the builder's ownership, the device is destroyed, `managers.rs:1081-1086`).
+- One device per game per player (`managers.rs:1247-1250`).
 
 → Device is **a threat to the enemy AND a self-inflicted defensive weakness.** The net must perceive: who
 owns a standing device, its countdown, the cap-halving, and the device's defenselessness.
