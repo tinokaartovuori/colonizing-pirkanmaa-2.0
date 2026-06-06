@@ -188,6 +188,10 @@ function buildData(dir: string): Record<string, unknown> {
     replayVsGarrison: readJsonSafe(join(dir, 'replay_vs_garrison.json')),
     replayVsExpert: readJsonSafe(join(dir, 'replay_vs_expert.json')),
     replayVsMarcher: readJsonSafe(join(dir, 'replay_vs_marcher.json')),
+    // PILLAR 6 — rebuilt SD3 league opponents (the kinds the curriculum now samples).
+    replayVsRusher: readJsonSafe(join(dir, 'replay_vs_rusher.json')),
+    replayVsFortress: readJsonSafe(join(dir, 'replay_vs_fortress.json')),
+    replayVsStrongArmy: readJsonSafe(join(dir, 'replay_vs_strongarmy.json')),
     // CNN spatial heatmap: a representative mid-game board + the net's per-tile
     // policy desirability and value. Written each benchmark by the CNN trainer;
     // null for runs/arcs that don't emit it (panel stays hidden in that case).
@@ -231,6 +235,9 @@ const server = createServer((req, res) => {
         replayVsGarrison: null,
         replayVsExpert: null,
         replayVsMarcher: null,
+        replayVsRusher: null,
+        replayVsFortress: null,
+        replayVsStrongArmy: null,
         spatial: null,
         latest: null,
         logMtime: null,
@@ -474,6 +481,7 @@ const PAGE = `<!DOCTYPE html>
 const POLL_MS = 5000;
 let STATE = { dir: '', updated: null, log: [], benchmark: null, winHistory: [], replay: null, replaySelf: null,
               replayVsArmyRush: null, replayVsHqRush: null, replayVsDeviceRush: null, replayVsGarrison: null, replayVsExpert: null, replayVsMarcher: null,
+              replayVsRusher: null, replayVsFortress: null, replayVsStrongArmy: null,
               spatial: null, latest: null, logMtime: null,
               buildStatus: null, buildLog: [], registry: [], research: [] };
 // CNN spatial-heatmap overlay selection. 'policy' = where the net wants to act,
@@ -496,25 +504,29 @@ let REPLAY_KEY = '';      // identity of the currently-loaded replay (iter:seed:
 let REPLAY_FRAME = 0;     // current frame index
 let REPLAY_PLAYING = true;
 let REPLAY_FPS = 24;      // playback speed (frames/sec); 24 = 4× (6 = 1×)
-let REPLAY_SRC = 'hard';  // which match to watch — see REPLAY_SOURCES below for the 7-way set
+let REPLAY_SRC = 'rusher';  // which match to watch — see REPLAY_SOURCES below (league first)
 let REPLAY_TIMER = null;  // setInterval handle
 let REPLAY_IDX = 0;       // which of the 5 FRESH games (this iteration) is shown
 let REPLAY_BATCH = '';    // identity of the loaded 5-game batch (snap to game 0 on change)
 
 // All replay sources surfaced in the viewer's toggle row. The order is the order the
-// buttons render in. 'hard' / 'self' are the historical sources (5 games each per iter);
-// the 5 scripted-opponent sources are 1 game each per iter (one per training-curriculum
-// strategy, written by the trainer alongside replay.json / replay_selfplay.json).
-// Each entry: [src-id, button-label, STATE.<field>, side-panel-label].
+// buttons render in. Each source writes replay_games fresh games per replay tick.
+// Each entry: [src-id, button-label, STATE.<field>, side-panel-label, group].
+//   group 'league' = the rebuilt SD3 league the curriculum trains against (PRIMARY) +
+//   the AI-vs-Hard / AI-vs-AI references; group 'legacy' = the old-kind opponents the
+//   curriculum no longer samples (kept for replay continuity, shown muted).
 const REPLAY_SOURCES = [
-  ['hard',       'AI vs Hard CPU',     'replay',             'Hard CPU'],
-  ['self',       'AI vs AI',           'replaySelf',         'AI #2'],
-  ['armyrush',   'vs Army Rush',       'replayVsArmyRush',   'Army Rush'],
-  ['hqrush',     'vs HQ Rush',         'replayVsHqRush',     'HQ Rush'],
-  ['devicerush', 'vs Device Rush',     'replayVsDeviceRush', 'Device Rush'],
-  ['garrison',   'vs Garrison Fortress','replayVsGarrison',  'Garrison Fortress'],
-  ['expert',     'vs Econ Expert',     'replayVsExpert',     'Econ Expert'],
-  ['marcher',    'vs Marcher',         'replayVsMarcher',    'Marcher'],
+  ['rusher',     'vs Rusher',          'replayVsRusher',     'Rusher',     'league'],
+  ['fortress',   'vs Fortress',        'replayVsFortress',   'Fortress',   'league'],
+  ['devicerush', 'vs Device Rush',     'replayVsDeviceRush', 'Device Rush','league'],
+  ['strongarmy', 'vs Strong Army',     'replayVsStrongArmy', 'Strong Army','league'],
+  ['hard',       'AI vs Hard CPU',     'replay',             'Hard CPU',   'league'],
+  ['self',       'AI vs AI',           'replaySelf',         'AI #2',      'league'],
+  ['armyrush',   'vs Army Rush (old)', 'replayVsArmyRush',   'Army Rush',  'legacy'],
+  ['hqrush',     'vs HQ Rush (old)',   'replayVsHqRush',     'HQ Rush',    'legacy'],
+  ['garrison',   'vs Garrison (old)',  'replayVsGarrison',   'Garrison Fortress','legacy'],
+  ['expert',     'vs Econ Expert (old)','replayVsExpert',    'Econ Expert','legacy'],
+  ['marcher',    'vs Marcher (old)',   'replayVsMarcher',    'Marcher',    'legacy'],
 ];
 function replaySrcMeta(src) {
   for (const row of REPLAY_SOURCES) if (row[0] === src) return row;
@@ -744,6 +756,72 @@ function causeCard(b) {
   card.appendChild(leg);
   return card;
 }
+// PILLAR-6 ACTIVITY / PASSIVITY panel. A compact stat grid answering "is the net
+// passively turtling or intelligently aggressive?" from fields actually present in
+// log.jsonl / benchmark-history.jsonl. b = latest bench row, latest = latest log
+// row (per-iter self-play), data = windowed log rows (for Pass% derivation).
+function activityCard(b, latest, data) {
+  const card = document.createElement('div');
+  card.className = 'chart wide';
+  const h = document.createElement('h2');
+  h.innerHTML = 'Aktiivisuus / passiivisuus <span class="hint">· armeija · marssi · kontakti · crack</span>';
+  const q = document.createElement('span'); q.className = 'tipq'; q.textContent = ' ⓘ';
+  q.title = 'Onko verkko passiivinen turtle vai älykkäästi aggressiivinen? maxSoldiers = armeijan huippukoko (bench). Pass% = passiivisten siirtojen osuus uusimmasta self-play-intent-histogrammista. Contact% = self-play-pelit joissa ≥1 hyökkäys/etenevä yksikkö. MarchSoldier = armeijan marssitus kohti vihollista (uusin self-play). crackDevice/HQ = yritykset+onnistumiset (bench). Bridges/peli = sillanrakennus (liikkuvuus).';
+  h.appendChild(q);
+  card.appendChild(h);
+
+  // Pass% + MarchSoldier usage from the per-iter self-play intent histogram (preferred,
+  // updates every iter), else the bench intents.
+  const ints = (latest && latest.iterIntents) ? latest.iterIntents : (b && b.intents) ? b.intents : null;
+  let passPct = null, marchCount = null, attackCount = null, intTotal = 0;
+  if (ints) {
+    for (const k in ints) { const v = num(ints[k]); if (v != null && k !== 'HireWorker' && k !== 'HireExpert') intTotal += v; }
+    if (intTotal > 0) {
+      const p = num(ints.Pass); passPct = p != null ? p / intTotal : null;
+    }
+    marchCount = num(ints.MarchSoldier);
+    attackCount = num(ints.Attack);
+  }
+  const contact = latest ? num(latest.spContactRate) : null;
+  const maxSol = b ? num(b.maxSoldiersPerGame) : null;
+  const bridges = b ? num(b.bridgesPerGame) : null;
+  const cdA = b ? num(b.crackDeviceAttempts) : null, cdS = b ? num(b.crackDeviceSuccesses) : null;
+  const chA = b ? num(b.crackHQAttempts) : null, chS = b ? num(b.crackHQSuccesses) : null;
+
+  if (!b && !latest) {
+    const e = document.createElement('div'); e.className = 'empty'; e.textContent = 'ei dataa vielä'; card.appendChild(e); return card;
+  }
+
+  // Stat tiles. Each: [label, value-string, tone] where tone colours the value.
+  const fmtN = (v, d) => v == null ? '—' : (d != null ? v.toFixed(d) : String(v));
+  const tiles = [
+    ['Armeijan huippu', maxSol != null ? maxSol.toFixed(2) : '—', '/peli', 'maxSoldiersPerGame (bench): keskim. korkein samaan aikaan kentällä ollut sotilasmäärä. Yli 1 = oikea armeija, ei pelkkä HQ-vartija.'],
+    ['Pass-osuus', passPct != null ? (passPct * 100).toFixed(1) + '%' : '—', 'self-play intent', 'Pass-intentien osuus uusimmasta self-play-histogrammista. Korkea = passiivinen ohitus. Tavoite matala.'],
+    ['Kontaktiaste', contact != null ? (contact * 100).toFixed(1) + '%' : '—', 'self-play / iter', 'spContactRate: self-play-pelit joissa ≥1 hyökkäys tai etenevä yksikkö / kaikki. Matala = pelit jäätyvät ilman taistelua.'],
+    ['MarchSoldier', marchCount != null ? String(marchCount) : '—', 'self-play count', 'Armeijan marssitus kohti vihollisen Devicea/HQ:ta uusimmassa self-play-iteraatiossa. 0 = ei vie armeijaa hyökkäykseen.'],
+    ['Attack', attackCount != null ? String(attackCount) : '—', 'self-play count', 'Hyökkäysintentit uusimmassa self-play-iteraatiossa.'],
+    ['Sillat', bridges != null ? bridges.toFixed(2) : '—', '/peli (bench)', 'bridgesPerGame: keskim. rakennetut sillat. Liikkuvuus jokien yli = pääsy hyökkäämään.'],
+    ['CrackDevice', (cdA != null ? cdA : '—') + ' → ' + (cdS != null ? cdS : '—'), 'yrit. → onn. (bench)', 'crackDeviceAttempts → Successes: vihollisen Strange Devicen murtaminen.'],
+    ['CrackHQ', (chA != null ? chA : '—') + ' → ' + (chS != null ? chS : '—'), 'yrit. → onn. (bench)', 'crackHQAttempts → Successes: vihollisen HQ:n murtaminen/valloitus.'],
+  ];
+  const grid = document.createElement('div');
+  grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:6px';
+  for (const [lbl, val, sub, tip] of tiles) {
+    const t = document.createElement('div');
+    t.style.cssText = 'background:#1a212a;border:1px solid var(--grid);border-radius:7px;padding:10px 12px';
+    t.title = tip;
+    t.innerHTML = '<div style="font-size:11px;color:var(--muted);margin-bottom:3px">' + escapeHtml(lbl) + '</div>'
+      + '<div style="font-size:19px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums">' + escapeHtml(val) + '</div>'
+      + '<div style="font-size:10px;color:var(--muted);margin-top:2px">' + escapeHtml(sub) + '</div>';
+    grid.appendChild(t);
+  }
+  card.appendChild(grid);
+  const note = document.createElement('div');
+  note.className = 'note';
+  note.textContent = 'Tulkinta: korkea Pass% + matala kontakti + March 0 = passiivinen turtle. Kasvava armeija + March/Attack + crack-yritykset = älykäs aggressio.';
+  card.appendChild(note);
+  return card;
+}
 // Generic labelled horizontal bar list (intent histogram, rounds-per-cause).
 function barListCard(title, hint, rows, opts) {
   opts = opts || {};
@@ -787,17 +865,17 @@ function barListCard(title, hint, rows, opts) {
 var INTENT_ORDER = [
   // construction
   'BuildFarm', 'BuildMine', 'BuildVillage', 'BuildOutpost', 'BuildHydro',
-  'BuildNuclear', 'BuildStrangeDevice',
+  'BuildNuclear', 'BuildStrangeDevice', 'BuildBridge',
   // workforce
   'Expand', 'HireWorker', 'HireExpert', 'StackProducer',
   // military
-  'HireSoldier', 'Attack',
+  'HireSoldier', 'Attack', 'MarchSoldier', 'CrackDevice', 'CrackHQ',
   // other
   'Pass',
 ];
 function intentCategory(key) {
   if (key === 'Expand' || key === 'HireWorker' || key === 'HireExpert' || key === 'StackProducer') return 'workforce';
-  if (key === 'HireSoldier' || key === 'Attack') return 'military';
+  if (key === 'HireSoldier' || key === 'Attack' || key === 'MarchSoldier' || key === 'CrackDevice' || key === 'CrackHQ') return 'military';
   if (key.indexOf('Build') === 0) return 'construction';
   return 'other';
 }
@@ -1598,9 +1676,20 @@ function replaySideHtml(r, fi) {
 // are ABOUT to appear after the next replay-tick.
 function replayToggleHtml() {
   let html = '<div class="ctl" style="margin:0 0 10px;flex-wrap:wrap">'
-    + '<span style="color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-size:11px">Katso</span>';
+    + '<span style="color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-size:11px">Liiga</span>';
+  let inLegacy = false;
   for (const row of REPLAY_SOURCES) {
-    html += '<button class="btn rtoggle" data-src="' + row[0] + '">' + escapeHtml(row[1]) + '</button>';
+    const legacy = row[4] === 'legacy';
+    // Insert a divider + label before the first legacy button so the SD3-league
+    // opponents (the curriculum's actual training set) read as the primary group.
+    if (legacy && !inLegacy) {
+      inLegacy = true;
+      html += '<span style="width:1px;height:18px;background:var(--grid);margin:0 4px"></span>'
+        + '<span style="color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-size:11px">Vanhat</span>';
+    }
+    const cls = 'btn rtoggle' + (legacy ? ' rlegacy' : '');
+    const style = legacy ? ' style="opacity:.7"' : '';
+    html += '<button class="' + cls + '" data-src="' + row[0] + '"' + style + '>' + escapeHtml(row[1]) + '</button>';
   }
   return html + '</div>';
 }
@@ -1649,10 +1738,10 @@ function renderReplay() {
   if (batch !== REPLAY_BATCH) { REPLAY_BATCH = batch; REPLAY_IDX = 0; }
   const r = activeReplay();
   const nGames = gamesFor(REPLAY_SRC).length;
-  // Scripted-opponent files currently write 1 game per iter; vs-hard / self-play write
-  // 5. The hint reflects whichever cadence the source uses (defaults to "5" only when
-  // the file is still missing and the source is the historical hard/self pair).
-  const expectedN = isScripted ? 1 : 5;
+  // Every source (vs-hard / self-play / each scripted opponent) writes replay_games
+  // fresh games per replay tick (default 5). The fallback "5" is only used as a hint
+  // while the file is still missing.
+  const expectedN = 5;
   const title = '<h2>Live-peli — ' + (self ? 'AI vs AI (self-play)' : (isScripted ? ('AI vs ' + meta[3]) : 'AI vs Hard CPU'))
     + ' <span class="hint">· ' + (nGames || expectedN) + ' tuoretta peliä / iteraatio · selaa “Seuraava peli”</span></h2>';
   // Key includes the game INDEX so "Seuraava peli" re-renders, and the iteration so
@@ -1662,19 +1751,33 @@ function renderReplay() {
   REPLAY_KEY = key;
   REPLAY_FRAME = 0;
   if (!r || !r.frames || !r.frames.length) {
+    const legacy = meta[4] === 'legacy';
+    const fileName = 'replay' + (REPLAY_SRC === 'hard' ? '' : REPLAY_SRC === 'self' ? '_selfplay' : '_vs_' + REPLAY_SRC) + '.json';
     const emptyMsg = self
-      ? 'ei self-play-replayta vielä'
-      : (isScripted ? ('ei vielä skriptattua-vastustaja-replayta (' + meta[3] + ')') : 'ei replay.jsonia vielä');
+      ? 'Ei self-play-replayta vielä'
+      : (isScripted ? ('Ei replayta vastustajalle ' + meta[3]) : 'Ei replay.jsonia vielä');
     panel.innerHTML = '<div class="replay">' + title + replayToggleHtml()
-      + '<div class="empty">' + emptyMsg
-      + ' — ilmestyy kun koulutus käynnistyy</div></div>';
+      + '<div class="empty">' + escapeHtml(emptyMsg)
+      + ' — odotetaan tiedostoa <code style="color:var(--muted)">' + escapeHtml(fileName) + '</code> (kirjoitetaan joka --replay-every iteraatio).'
+      + (legacy ? ' Tämä on VANHA liigan ulkopuolinen vastustaja (curriculum ei enää samplaa).' : '')
+      + '</div></div>';
     wireReplayToggle();
     return;
   }
+  // Staleness: the replay's iteration vs the latest training iteration. A replay is
+  // stale if training has advanced ≥2 replay-cycles past the captured game (the user
+  // should know they're watching an old game, not a silently blank/wrong one).
+  const latestIter = STATE.latest && typeof STATE.latest.gen === 'number' ? STATE.latest.gen : null;
+  const replayIter = (typeof r.iter === 'number') ? r.iter : null;
+  const staleBy = (latestIter != null && replayIter != null) ? (latestIter - replayIter) : null;
   const blueLbl = self ? 'AI #1' : 'meidän AI';
   const redLbl = self ? 'AI #2' : (isScripted ? meta[3] : 'Hard CPU');
+  const staleBanner = (staleBy != null && staleBy >= 25)
+    ? '<div class="note" style="color:var(--win);margin:0 0 8px">⚠ Tämä replay on iteraatiosta ' + replayIter
+        + ', koulutus on jo iteraatiossa ' + latestIter + ' (' + staleBy + ' jäljessä). Uusi replay kirjoitetaan seuraavalla --replay-every-syklillä.</div>'
+    : '';
   panel.innerHTML =
-    '<div class="replay">' + title + replayToggleHtml()
+    '<div class="replay">' + title + replayToggleHtml() + staleBanner
     + '<div class="stage">'
     + '<canvas id="replayCanvas"></canvas>'
     + '<div class="side" id="replaySide"></div>'
@@ -1688,7 +1791,7 @@ function renderReplay() {
     + '</div>'
     + '<div class="leg">Reuna/sävy: <span style="color:#5aa9ff">sininen = ' + blueLbl + '</span> · <span style="color:#ff6b6b">punainen = ' + redLbl + '</span>'
     + ' · maasto: <span style="color:#3a9fd0">joki</span>, <span style="color:#8a929c">vuori</span>, <span style="color:#3f8a5c">metsä</span>, ruoho '
-    + '· kirjaimet = rakennukset (F farm, M mine, V village, O outpost, H hydro, N nuclear, B bridge, ★ HQ, <span style="color:#c792ea">◆ Strange Device</span>) · keltainen numero = sotilaat</div>'
+    + '· kirjaimet = rakennukset (F farm, M mine, V village, O outpost, H hydro, N nuclear, <b>B bridge</b>, ★ HQ, <span style="color:#c792ea">◆ Strange Device</span>) · keltainen numero = sotilaat (MarchSoldier näkyy sotilaiden siirtymisenä ruudusta toiseen)</div>'
     + '</div>';
   wireReplayToggle();
   const playBtn = document.getElementById('replayPlay');
@@ -1846,8 +1949,64 @@ function render() {
     // --- AlphaZero charts --------------------------------------------------
     const latestBench = winHistFull.length ? winHistFull[winHistFull.length - 1] : null;
 
+    // ★★ PILLAR-6 HEADLINE: per-opponent win-rate over training time. ONE labeled
+    // series per rebuilt SD3 league opponent (Rusher / Fortress / Device / Strong /
+    // HARD) from the benchVs* bench fields. This is the key "win-rate vs each scripted
+    // opponent at a glance" view. Distinct colour AND line style per series (a11y:
+    // chart guidance says don't rely on colour alone). Guarded: pre-Pillar-6 history
+    // lacks benchVs* → empty-state with a clear "next run only" hint instead of blank.
+    {
+      const LEAGUE = [
+        ['benchVsRusher',     'vs Rusher',      getColor('--loss'),    false],
+        ['benchVsFortress',   'vs Fortress',    getColor('--div'),     true ],
+        ['benchVsDeviceRush', 'vs Device Rush', getColor('--bank'),    true ],
+        ['benchVsStrongArmy', 'vs Strong Army', getColor('--median'),  false],
+        ['benchVsHard',       'vs HARD',        getColor('--win'),     false],
+      ];
+      const hasLeague = winHist.length && LEAGUE.some(([k]) => winHist.some(h => num(h[k]) != null));
+      if (hasLeague) {
+        const lseries = LEAGUE.map(([k, lbl, c, dash]) => ({
+          label: lbl, color: c, values: smooth(winHist.map(h => num(h[k]))),
+          dashed: dash, thick: k === 'benchVsHard', dots: true,
+        }));
+        // legacy winRateVsHeur reference removed (it is always null in AZ logs and
+        // benchVsHard is the same measurement on the per-opponent budget) — kept the
+        // full-budget win-rate as a faint reference instead.
+        lseries.push({ label: 'win-rate (full bench)', color: getColor('--muted') || '#8b97a3',
+          values: smooth(winHist.map(h => num(h.winRate))), dashed: true });
+        const lastTxt = LEAGUE.map(([k, lbl]) => {
+          const v = num(winHist[winHist.length - 1][k]); return v == null ? null : lbl.replace('vs ', '') + ' ' + pct(v);
+        }).filter(Boolean).join(' · ');
+        const perN = num(winHist[winHist.length - 1].benchPerOpp);
+        root.appendChild(chart('Win-rate vs jokainen liigavastustaja (Pillar 6)', winHist, lseries, {
+          pct: true, range: [0, 1], wide: true, dots: true,
+          hint: 'per-opponent bench · ' + (perN ? perN + ' games/opp' : 'league'),
+          note: lastTxt || 'latest league bench',
+          tip: 'PÄÄNÄKYMÄ (Pillar 6): oppijan voittoprosentti JOKAISTA uudelleenrakennettua SD3-liigan vastustajaa vastaan per benchmark — Rusher / Fortress / Device Rush / Strong Army + HARD-mittatikku. Jokainen sarja eri väri JA viivatyyli (saavutettavuus). Katkoviiva harmaa = koko-budjetin win-rate vs HARD (vertailu). Näkyy vain kun ajo käyttää Pillar-6-binääriä (benchVs*-kentät); vanhat ajot näyttävät tyhjän.',
+        }));
+      } else {
+        const card = document.createElement('div');
+        card.className = 'chart wide';
+        const h = document.createElement('h2');
+        h.textContent = 'Win-rate vs jokainen liigavastustaja (Pillar 6)';
+        const sp = document.createElement('span'); sp.className = 'hint';
+        sp.textContent = ' · per-opponent bench'; h.appendChild(sp);
+        card.appendChild(h);
+        const e = document.createElement('div'); e.className = 'empty';
+        e.textContent = 'Ei benchVs*-kenttiä vielä — nämä ilmestyvät vasta kun ajo käyttää Pillar-6-binääriä (per-opponent benchmark). Nykyinen ajo ennustaa tätä pillaria; seuraava ajo täyttää käyrät.';
+        card.appendChild(e);
+        root.appendChild(card);
+      }
+    }
+
     // ★ §10 HEADLINE: who won, and HOW — our AI vs the hard CPU, split by cause.
     root.appendChild(causeCard(latestBench));
+
+    // ★★ PILLAR-6 ACTIVITY / PASSIVITY panel — is the net passively turtling or
+    // intelligently aggressive? Reads the bench + per-iter self-play fields actually
+    // present in the log. One glance: army size, pass%, contact, march usage, crack
+    // attempts/successes, bridges.
+    root.appendChild(activityCard(latestBench, latest, data));
 
     // ★0 HONEST WIN-RATE (Step 0): trueWinVsHard (bankruptcy-propped wins removed)
     // vs the raw win-rate. The GAP between the two curves = the bankruptcy MIRAGE
@@ -2304,14 +2463,29 @@ function render() {
     ], { hint: 'self-play · per iteraatio',
       tip: 'Self-play-pelien keskimääräinen pituus (kierroksia) per iteraatio. Lyhyemmät pelit = ratkaisevampi peli. Vanhat lokirivit ilman kenttää jätetään tyhjäksi.' }));
 
-    // STEP-2 curriculum gate — per-scripted-strategy learner win-rate (vsArmyRush /
-    // vsDeviceRush). Only present once \`--script-opponents --script-frac\` is on; older
-    // rows map to null (gap). The §1.4–1.5 gate wants vsArmyRush climbing off ~0.2.
-    root.appendChild(chart('Curriculum win-rate (vs scripted)', data, [
-      { label: 'vsArmyRush', color: getColor('--loss'), values: scol(data, 'spVsArmyRush'), thick: true },
-      { label: 'vsDeviceRush', color: getColor('--bank'), values: scol(data, 'spVsDeviceRush') },
-    ], { pct: true, range: [0, 1], hint: 'self-play · per iteraatio · vain kun --script-opponents päällä',
-      tip: 'Oppijan voittoprosentti skriptattuja opettaja-vastustajia vastaan per iteraatio. STEP-2-portti (§1.4–1.5): vsArmyRush pitää nousta ~0.2:sta. Vain kun curriculum (--script-opponents --script-frac) on päällä; vanhat rivit tyhjäksi.' }));
+    // PILLAR-6 curriculum gate — per-league-opponent learner win-rate from SELF-PLAY
+    // (spVs* fields, per iteration — denser than the every-5 bench). The curriculum now
+    // samples Rusher / Fortress / Device / StrongArmy; each maps to its sp counter
+    // (null/gap on iters where that bot wasn't drawn). Distinct colour + line style.
+    {
+      const cseries = [
+        { label: 'vsRusher',     color: getColor('--loss'),   values: scol(data, 'spVsRusher'),     thick: true },
+        { label: 'vsFortress',   color: getColor('--div'),    values: scol(data, 'spVsFortress'),   dashed: true },
+        { label: 'vsDeviceRush', color: getColor('--bank'),   values: scol(data, 'spVsDeviceRush'), dashed: true },
+        { label: 'vsStrongArmy', color: getColor('--median'), values: scol(data, 'spVsStrongArmy') },
+      ];
+      const anyLeague = cseries.some(s => s.values.some(v => v != null));
+      // Fall back to showing the legacy curriculum series only if NO new-league data
+      // exists yet (pre-Pillar-6 logs), so old runs still render something useful.
+      if (!anyLeague) {
+        cseries.length = 0;
+        cseries.push({ label: 'vsArmyRush (old)', color: getColor('--loss'), values: scol(data, 'spVsArmyRush'), thick: true });
+        cseries.push({ label: 'vsDeviceRush', color: getColor('--bank'), values: scol(data, 'spVsDeviceRush') });
+      }
+      root.appendChild(chart('Curriculum win-rate (self-play vs liiga)', data, cseries,
+        { pct: true, range: [0, 1], hint: 'self-play · per iteraatio · vain kun --script-opponents päällä',
+        tip: 'Oppijan voittoprosentti uudelleenrakennettuja SD3-liigan opettaja-botteja vastaan SELF-PLAY-peleissä (spVs*-kentät, per iteraatio — tiheämpi kuin joka-5. benchmark). Curriculum samplaa Rusher / Fortress / Device / StrongArmy; aukko = bottia ei nostettu sillä iteraatiolla. Vanhat ajot ilman liigakenttiä putoavat takaisin vanhaan ArmyRush-sarjaan.' }));
+    }
 
     // STEP-2 §1.5 DEFENSE gate — mean tiles the learner LOST to the army-rusher per
     // game. Defined only for army-rush games (else null). The gate wants this TRENDING

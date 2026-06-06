@@ -4201,6 +4201,15 @@ struct GameRec {
 /// independent (the net is read-only inference, each game has its own cloned
 /// `Game` + seed) so they run in parallel; the totals are folded sequentially.
 fn bench_vs_hard(net: &SpatialNet, cfg: &TierConfig, tc: &TrainCfg, games: usize, base_seed: u32) -> BenchResult {
+    bench_vs_opponent(net, cfg, tc, games, base_seed, None)
+}
+
+/// Generalised benchmark: play `games` games of the learner net vs a chosen opponent
+/// (`opp = None` → HARD, `opp = Some(kind)` → that scripted league bot). HQ placement
+/// uses `HardAi::hard()` on BOTH seats for parity with the legacy `bench_vs_hard`
+/// (only the opponent's per-turn policy differs). When `opp = None` and the SAME
+/// `base_seed` is passed, this is bit-identical to the pre-Pillar-6 `bench_vs_hard`.
+fn bench_vs_opponent(net: &SpatialNet, cfg: &TierConfig, tc: &TrainCfg, games: usize, base_seed: u32, opp: Option<ScriptKind>) -> BenchResult {
     let recs: Vec<GameRec> = (0..games)
         .into_par_iter()
         .map(|gi| {
@@ -4209,7 +4218,8 @@ fn bench_vs_hard(net: &SpatialNet, cfg: &TierConfig, tc: &TrainCfg, games: usize
             let mut g = Game::new(tc.width, tc.height, &["P1", "P2"]);
             g.generate_map(tc.width, tc.height, seed);
             let placer = HardAi::hard();
-            let mut hard = HardAi::hard();
+            // Opponent per-turn policy: HARD for `None`, else the scripted league bot.
+            let mut hard = match opp { Some(kind) => kind.make_bot(), None => HardAi::hard() };
             for _ in 0..2 {
                 let cur = g.current_player();
                 if cur.0 == champ_seat { placer.place_headquarters(&mut g, cur); }
@@ -4478,6 +4488,51 @@ fn bench_vs_hard(net: &SpatialNet, cfg: &TierConfig, tc: &TrainCfg, games: usize
     r.timeout = ties as f64 / nf;
     r.tile_frac = tf_sum / nf;
     r
+}
+
+/// PILLAR 6 — per-opponent league benchmark result. Each field is the LEARNER
+/// win-rate (`BenchResult::win`) vs that league bot over `per` games. The five
+/// opponents are the rebuilt SD3 league the curriculum samples from (Rusher /
+/// Fortress / DeviceRush / StrongArmy) plus the HARD yardstick.
+struct LeagueBench {
+    per: usize,
+    rusher: f64,
+    fortress: f64,
+    device_rush: f64,
+    strong_army: f64,
+    hard: f64,
+}
+
+/// Run the per-opponent league benchmark: `per` games of the learner vs each of the
+/// five league opponents. The five sub-benches run as independent rayon tasks (each
+/// is itself parallel over its `per` games); seeds are derived per-opponent from
+/// `base_seed` so no two opponents share a game seed and re-runs are deterministic.
+fn league_bench(net: &SpatialNet, cfg: &TierConfig, tc: &TrainCfg, per: usize, base_seed: u32) -> LeagueBench {
+    // Opponent → per-opponent seed offset (distinct mixers so the 5 benches are
+    // independent samples, not correlated re-rolls of the same maps).
+    let opps: [(Option<ScriptKind>, u32); 5] = [
+        (Some(ScriptKind::Rusher),     0x0001),
+        (Some(ScriptKind::Fortress),   0x1002),
+        (Some(ScriptKind::DeviceRush), 0x2003),
+        (Some(ScriptKind::StrongArmy), 0x3004),
+        (None,                         0x4005), // HARD
+    ];
+    let wins: Vec<f64> = (0..opps.len())
+        .into_par_iter()
+        .map(|i| {
+            let (opp, off) = opps[i];
+            let seed = base_seed ^ off.wrapping_mul(0x9E37_79B1);
+            bench_vs_opponent(net, cfg, tc, per, seed, opp).win
+        })
+        .collect();
+    LeagueBench {
+        per,
+        rusher: wins[0],
+        fortress: wins[1],
+        device_rush: wins[2],
+        strong_army: wins[3],
+        hard: wins[4],
+    }
 }
 
 /// Serialize the benchmark `intents` object: the 12 net intents PLUS the two
@@ -5314,6 +5369,13 @@ fn run_train(tc: &TrainCfg) {
         let mut sp_expert_w = 0u64; let mut sp_expert_n = 0u64;
         // REACTIVE-FIX MARCHER per-iter counter (mirrors devrush/armyrush).
         let mut sp_marcher_w = 0u64; let mut sp_marcher_n = 0u64;
+        // PILLAR 6 / LEAGUE-REBUILD: per-iter counters for the rebuilt SD3 league bots
+        // the curriculum now samples (Rusher / Fortress / StrongArmy). DeviceRush already
+        // has a counter (sp_devrush_*) shared with the old kind. Logged as
+        // spVsRusher/spVsFortress/spVsStrongArmy so self-play win-rate vs each is visible.
+        let mut sp_rusher_w = 0u64; let mut sp_rusher_n = 0u64;
+        let mut sp_fortress_w = 0u64; let mut sp_fortress_n = 0u64;
+        let mut sp_strongarmy_w = 0u64; let mut sp_strongarmy_n = 0u64;
         // STEP-2 (§1.5 gate): mean tiles-lost-to-rusher over army-rush games this iter.
         let mut tiles_lost_sum = 0i64; let mut tiles_lost_n = 0u64;
         // M5 — pure self-play contact rate this iter: games where ≥1 Attack intent
@@ -5360,14 +5422,21 @@ fn run_train(tc: &TrainCfg) {
                     sp_marcher_n += 1; grade_marcher_n += 1.0;
                     if outcome.learner_won { sp_marcher_w += 1; grade_marcher_w += 1.0; }
                 }
-                // LEAGUE-REBUILD: the new canonical bots (Rusher / Fortress / StrongArmy)
-                // are wired into make_bot + replays but NOT yet into the curriculum
-                // weighted sampler (a later pillar deprecates the old kinds and rebuilds
-                // the split), so they don't appear here in self-play harvest. Explicit
-                // no-op arms keep the match exhaustive.
-                Some(ScriptKind::Rusher)
-                | Some(ScriptKind::Fortress)
-                | Some(ScriptKind::StrongArmy) => {}
+                // PILLAR 6 / LEAGUE-REBUILD: the curriculum now samples these canonical
+                // bots, so track the learner's self-play win-rate vs each (visible as
+                // spVsRusher/spVsFortress/spVsStrongArmy on the dashboard).
+                Some(ScriptKind::Rusher) => {
+                    sp_rusher_n += 1;
+                    if outcome.learner_won { sp_rusher_w += 1; }
+                }
+                Some(ScriptKind::Fortress) => {
+                    sp_fortress_n += 1;
+                    if outcome.learner_won { sp_fortress_w += 1; }
+                }
+                Some(ScriptKind::StrongArmy) => {
+                    sp_strongarmy_n += 1;
+                    if outcome.learner_won { sp_strongarmy_w += 1; }
+                }
                 None => {}
             }
             // STEP-2 gate: accumulate tiles-lost-to-rusher (defined only for army-rush).
@@ -5466,6 +5535,10 @@ fn run_train(tc: &TrainCfg) {
         let sp_vs_garrison = rate_or_null(sp_garrison_w, sp_garrison_n);
         let sp_vs_expert = rate_or_null(sp_expert_w, sp_expert_n);
         let sp_vs_marcher = rate_or_null(sp_marcher_w, sp_marcher_n);
+        // PILLAR 6: self-play win-rate vs the rebuilt SD3 league bots.
+        let sp_vs_rusher = rate_or_null(sp_rusher_w, sp_rusher_n);
+        let sp_vs_fortress = rate_or_null(sp_fortress_w, sp_fortress_n);
+        let sp_vs_strongarmy = rate_or_null(sp_strongarmy_w, sp_strongarmy_n);
         // STEP-2 (§1.5 gate): mean tiles-lost-to-rusher this iter (null when no army-rush
         // games were played, e.g. curriculum off or none drawn).
         let tiles_lost_to_rusher = if tiles_lost_n > 0 {
@@ -5492,6 +5565,8 @@ fn run_train(tc: &TrainCfg) {
              \"spVsHqRush\":{},\"spVsHqRushN\":{},\
              \"spVsGarrison\":{},\"spVsGarrisonN\":{},\"spVsExpert\":{},\"spVsExpertN\":{},\
              \"spVsMarcher\":{},\"spVsMarcherN\":{},\
+             \"spVsRusher\":{},\"spVsRusherN\":{},\"spVsFortress\":{},\"spVsFortressN\":{},\
+             \"spVsStrongArmy\":{},\"spVsStrongArmyN\":{},\
              \"tilesLostToRusher\":{},\"tilesLostToRusherN\":{},\
              \"spContactRate\":{},\"spContact\":{},\"spContactN\":{},\
              \"iterIntents\":{}}}",
@@ -5504,6 +5579,8 @@ fn run_train(tc: &TrainCfg) {
             sp_vs_hqrush, sp_hqrush_n,
             sp_vs_garrison, sp_garrison_n, sp_vs_expert, sp_expert_n,
             sp_vs_marcher, sp_marcher_n,
+            sp_vs_rusher, sp_rusher_n, sp_vs_fortress, sp_fortress_n,
+            sp_vs_strongarmy, sp_strongarmy_n,
             tiles_lost_to_rusher, tiles_lost_n,
             sp_contact_rate, sp_contact, sp_total,
             iter_intents_json));
@@ -5524,12 +5601,23 @@ fn run_train(tc: &TrainCfg) {
         let do_bench = iter % tc.bench_every == 0 || iter + 1 == tc.iters;
         let do_replay = iter % tc.replay_every == 0 || iter + 1 == tc.iters;
         let rstart = Instant::now();
-        let (br_opt, _replay): (Option<BenchResult>, ()) = rayon::join(
+        let (bench_pair, _replay): ((Option<BenchResult>, Option<LeagueBench>), ()) = rayon::join(
             || {
                 if do_bench {
-                    Some(bench_vs_hard(&net, &cfg, tc, tc.bench_games, tc.seed as u32 ^ 0xBE0))
+                    // (1) The legacy vs-HARD bench (full bench_games) — unchanged seed /
+                    //     budget so winRateVsHeur + all behavioral metrics stay comparable
+                    //     across resumes.
+                    let br = bench_vs_hard(&net, &cfg, tc, tc.bench_games, tc.seed as u32 ^ 0xBE0);
+                    // (2) PILLAR 6 — per-opponent league bench: learner vs EACH of the 5
+                    //     league opponents (Rusher / Fortress / DeviceRush / StrongArmy /
+                    //     HARD). Split the bench_games budget across them (min 8 each so the
+                    //     win-rate is not pure noise), seeded independently of the vs-HARD
+                    //     bench so neither perturbs the other.
+                    let per = (tc.bench_games / 5).max(8);
+                    let lb = league_bench(&net, &cfg, tc, per, tc.seed as u32 ^ 0x5D3_0F);
+                    (Some(br), Some(lb))
                 } else {
-                    None
+                    (None, None)
                 }
             },
             || {
@@ -5612,6 +5700,7 @@ fn run_train(tc: &TrainCfg) {
                 }
             },
         );
+        let (br_opt, lb_opt) = bench_pair;
         if let Some(br) = br_opt {
             let seat = |w: usize, m: usize| if m > 0 { format!("{:.4}", w as f64 / m as f64) } else { "null".to_string() };
             // CHAMPION-only device metrics (the honest conversion):
@@ -5690,6 +5779,19 @@ fn run_train(tc: &TrainCfg) {
             let loss_rounds = if br.champ_loss_rounds_n > 0 {
                 format!("{:.2}", br.champ_loss_rounds_sum as f64 / br.champ_loss_rounds_n as f64)
             } else { "null".to_string() };
+            // PILLAR 6 — per-opponent league win-rates. Each `benchVs*` is the learner
+            // win-rate vs that league bot over `lb.per` games (or `null` if the league
+            // bench was skipped this tick — should not happen when br is Some, but the
+            // dashboard guards anyway). `benchVsHard` mirrors the dedicated vs-HARD bench
+            // in the same per-opponent budget so the 5 series are apples-to-apples;
+            // `winRate`/`winRateVsHeur` continue to use the full-budget vs-HARD bench.
+            let lb_field = |w: Option<f64>| match w { Some(v) => format!("{:.4}", v), None => "null".to_string() };
+            let (lb_rusher, lb_fortress, lb_devrush, lb_strong, lb_hard, lb_per) = match &lb_opt {
+                Some(lb) => (lb_field(Some(lb.rusher)), lb_field(Some(lb.fortress)),
+                             lb_field(Some(lb.device_rush)), lb_field(Some(lb.strong_army)),
+                             lb_field(Some(lb.hard)), lb.per as i64),
+                None => ("null".into(), "null".into(), "null".into(), "null".into(), "null".into(), 0i64),
+            };
             append_line(&bench_hist, &format!(
                 "{{\"gen\":{},\"winRate\":{:.4},\"lossRate\":{:.4},\"timeoutRate\":{:.4},\"tileFrac\":{:.4},\
                  \"nGames\":{},\"winSeat0\":{},\"winSeat1\":{},\
@@ -5712,6 +5814,8 @@ fn run_train(tc: &TrainCfg) {
                  \"frontierRatio\":{},\
                  \"roundsByOutcome\":{{\"win\":{},\"loss\":{}}},\
                  \"bridgesPerGame\":{:.4},\
+                 \"benchVsRusher\":{},\"benchVsFortress\":{},\"benchVsDeviceRush\":{},\
+                 \"benchVsStrongArmy\":{},\"benchVsHard\":{},\"benchPerOpp\":{},\
                  \"crackDeviceAttempts\":{},\"crackDeviceSuccesses\":{},\
                  \"crackHQAttempts\":{},\"crackHQSuccesses\":{},\
                  \"intents\":{},\"decisions\":{},\"ts\":\"{}\"}}",
@@ -5739,6 +5843,7 @@ fn run_train(tc: &TrainCfg) {
                 frontier_ratio,
                 win_rounds, loss_rounds,
                 br.champ_bridges_sum as f64 / br.n as f64,
+                lb_rusher, lb_fortress, lb_devrush, lb_strong, lb_hard, lb_per,
                 br.crack_device_attempts, br.crack_device_successes,
                 br.crack_hq_attempts, br.crack_hq_successes,
                 intents_json, br.decisions, now_iso()));
