@@ -648,7 +648,36 @@ impl TurnSnapshot {
         // hire nor stage are not emitted here (acceptable: the army CHAIN —
         // Outpost/Hire/Attack — is what the imitation target needs; pure relocations
         // are rare in the scripted bots' recorded turns and dominated by Attack).
-        let _ = (after.workers, self.workers, after.experts, self.experts);
+        //
+        // StackProducer (PARITY-FREE — reuses the existing Intent::StackProducer): a
+        // worker- or expert-staffing of a PRODUCER (Mine/Hydro/Nuclear). This is the
+        // economy the policy must learn to OWN instead of delegating it to the
+        // mechanical scaffold (the human's explicit "make experts and place them on
+        // mines" goal). One StackProducer per added expert + per added worker, matching
+        // how the candidate enumerates a single StackProducer per filled slot.
+        //
+        // DISAMBIGUATION: a worker-count rise ALSO happens in the `expand` phase (it
+        // hires a fresh BasicWorker onto a claimed neutral) — but that phase ALSO grows
+        // the tile count, so it is already labelled Expand above. A StackProducer fill
+        // grows NEITHER the tile count NOR the soldier count (it only mans an existing
+        // producer). So we only attribute the worker delta to StackProducer when the
+        // phase produced no tile gain and no soldier gain — which isolates the two
+        // `phase!`-wrapped staffing phases that man producers: `boost_mines` (Experts
+        // onto worker-staffed Mines — wrapped in `record_turn` specifically so this
+        // signal is captured) and `stack_producers` (Experts + 2nd workers). The
+        // unwrapped `staff_buildings` 1st-worker safety staffing never appears inside a
+        // wrapped delta, so it stays scaffold-only and is correctly NOT labelled.
+        let expert_delta = (after.experts - self.experts).max(0);
+        let worker_delta = (after.workers - self.workers).max(0);
+        let no_tile_gain = raw_tile_delta <= 0;
+        let no_soldier_gain = after.soldiers - self.soldiers <= 0;
+        if no_tile_gain && no_soldier_gain {
+            push_n(Intent::StackProducer, expert_delta + worker_delta);
+        } else {
+            // Always credit experts (an Expert is never placed by Expand/Hire — only
+            // producers take Experts), even if the phase also expanded/hired.
+            push_n(Intent::StackProducer, expert_delta);
+        }
     }
 }
 
@@ -902,7 +931,14 @@ impl HardAi {
             }
             phase!(self.build_mines(g, player));
             self.staff_buildings(g, player);
-            self.boost_mines(g, player);
+            // `boost_mines` adds ONLY Experts to already-worker-staffed Mines — the
+            // literal "make experts and place them on mines" decision. WRAP it in
+            // `phase!` (recording-only; the executed action is byte-identical) so its
+            // Expert deltas are classified into `Intent::StackProducer` and become an
+            // imitation target. `staff_buildings` above stays UNWRAPPED on purpose: it
+            // places the 1st-worker safety staffing (the scaffold's job), which must NOT
+            // be mislabelled as a discretionary StackProducer.
+            phase!(self.boost_mines(g, player));
             phase!(self.build_power_plants(g, player));
             phase!(self.invest_nuclear(g, player));
             phase!(self.build_outposts(g, player));

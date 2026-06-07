@@ -208,6 +208,52 @@ impl<'a> NeuralAiController<'a> {
         self.staff_income(g, player);
     }
 
+    /// CNN-training variant of [`ensure_income_pub`] that runs the SAME wood-income /
+    /// worker-staffing / cap-village scaffold but does NOT place any Expert, and does
+    /// NOT mechanically guarantee the metal mine (mine #1 becomes a late fallback —
+    /// see [`ensure_metal_income_fallback_pub`]). This hands the EXPERT and MINE-COUNT
+    /// decisions to the learned policy (via `StackProducer`/`BuildMine`) instead of the
+    /// mechanical scaffold, while still guaranteeing wood income + 1st-worker staffing
+    /// + the cap-village bootstrap (keeping the Pass-collapse safety net intact). Used
+    /// ONLY by the CNN train/bench path; does NOT touch the MLP parity path.
+    pub fn ensure_income_no_experts_pub(&self, g: &mut Game, player: PlayerId) {
+        self.ensure_wood_income(g, player);
+        self.staff_income_inner(g, player, false);
+        self.ensure_unit_cap(g, player);
+        self.staff_income_inner(g, player, false);
+    }
+
+    /// CNN re-staff after a candidate executes, WITHOUT placing Experts (the policy
+    /// owns the Expert decision). Worker staffing still runs so newly-built producers
+    /// get their 1st worker (income realised) — only the Expert step is withheld.
+    pub fn staff_income_no_experts_pub(&self, g: &mut Game, player: PlayerId) {
+        self.staff_income_inner(g, player, false);
+    }
+
+    /// EXPERT FALLBACK (CNN path): run AFTER the policy's turn loop. If the policy did
+    /// NOT place the Expert(s) itself, this guarantees them — so the economy is never
+    /// permanently understaffed, but the policy still got first chance to choose
+    /// `StackProducer:Expert` (and be labelled for it). This is the deferred half of
+    /// the old up-front expert placement.
+    pub fn ensure_experts_fallback_pub(&self, g: &mut Game, player: PlayerId) {
+        // staff_income with experts ON only fills the still-empty expert slots (every
+        // worker slot is already filled by the no-experts scaffold above).
+        self.staff_income_inner(g, player, true);
+    }
+
+    /// METAL-MINE FALLBACK (CNN path): build mine #1 ONLY if the policy has built ZERO
+    /// mines by `min_round` — a true backstop so a policy that never learns mines still
+    /// gets a metal source, while a policy that DID build mines keeps full ownership of
+    /// mine COUNT. `accumulate_wood_for` still runs inside `ensure_metal_income`, so the
+    /// wood-trap stays broken either way.
+    pub fn ensure_metal_income_fallback_pub(&self, g: &mut Game, player: PlayerId, min_round: i64) {
+        // `ensure_metal_income_gated` itself no-ops once a mine exists; before the gate
+        // it only runs the wood-accumulation harvester (keeping a policy mine fundable),
+        // and only AFTER `min_round` does it mechanically build mine #1 as a backstop.
+        self.ensure_metal_income_gated(g, player, min_round);
+        self.staff_income_inner(g, player, false);
+    }
+
     // --- first round --------------------------------------------------------
 
     /// `placeHeadquarters` — deterministic HQ-placement heuristic (shared by both
@@ -869,6 +915,15 @@ impl<'a> NeuralAiController<'a> {
     /// harvester to accumulate wood and defer the build to a later turn — exactly the
     /// village path. One mine per call; once it exists, hands off to the policy.
     fn ensure_metal_income(&self, g: &mut Game, player: PlayerId) {
+        self.ensure_metal_income_gated(g, player, 0);
+    }
+
+    /// As [`ensure_metal_income`] but the actual mine BUILD is deferred until
+    /// `build_round_gate` rounds have elapsed; the WOOD-accumulation harvester still
+    /// runs from round 0 while the player owns 0 mines (so the wood-trap stays broken
+    /// and a policy-built mine is always fundable). With `build_round_gate = 0` this is
+    /// byte-identical to the original `ensure_metal_income`.
+    fn ensure_metal_income_gated(&self, g: &mut Game, player: PlayerId, build_round_gate: i64) {
         // Owned, empty, Mine-buildable Mountain tiles — the only metal-source sites.
         let mountains: Vec<TileId> = m::owned_tiles(g, player)
             .into_iter()
@@ -916,6 +971,13 @@ impl<'a> NeuralAiController<'a> {
         // exact same trap-breaker the first cap-expanding Village uses.
         if !s::has_wood_buffer(g, player, &cost) {
             self.accumulate_wood_for(g, player, &cost);
+            return;
+        }
+        // Defer the mechanical mine BUILD until the gate elapses, so the learned policy
+        // gets first crack at owning mine #1 (it has wood ready by now — the harvester
+        // above ran from round 0). The fallback only fires when the policy still has 0
+        // mines past the gate.
+        if g.get_rounds_played() < build_round_gate {
             return;
         }
         self.build_mine(g, player, mountains[0]);
@@ -993,6 +1055,16 @@ impl<'a> NeuralAiController<'a> {
     ///   2. upgrade — mines toward the 2-worker + 1-expert optimum, then a 2nd hydro
     ///      worker (hydro = `80 * workers`).
     fn staff_income(&self, g: &mut Game, player: PlayerId) {
+        self.staff_income_inner(g, player, true);
+    }
+
+    /// `staff_income` with an explicit `place_experts` toggle. With `place_experts =
+    /// false` it performs every WORKER staffing (1st mine worker, 2nd mine worker,
+    /// farm/plant/forest workers) but NEVER buys an Expert — so the CNN training
+    /// scaffold can guarantee worker income up front while LEAVING the Expert
+    /// (StackProducer:Expert) decision to the learned policy. The parity path
+    /// (`plan_turn` via `staff_income`) always passes `true`, so it is byte-identical.
+    fn staff_income_inner(&self, g: &mut Game, player: PlayerId, place_experts: bool) {
         let producers = |g: &Game, kinds: &[BuildingType]| -> Vec<TileId> {
             m::owned_tiles(g, player)
                 .into_iter()
@@ -1017,12 +1089,14 @@ impl<'a> NeuralAiController<'a> {
         // spent elsewhere (full-staffing one mine = 80 metal beats two half-mines = 40+40).
         for tid in producers(g, &[BuildingType::Mine]) {
             self.ensure_worker(g, player, tid); // 1st worker
-            if self.cfg.experts
+            if place_experts
+                && self.cfg.experts
                 && m::has_type(g, tid, UnitType::BasicWorker)
                 && !m::has_type(g, tid, UnitType::Expert)
             {
                 self.add_expert_reserve(g, player, tid, s::STAFF_RESERVE); // expert: ×2
-            } else if diag::on()
+            } else if place_experts
+                && diag::on()
                 && self.cfg.experts
                 && !m::has_type(g, tid, UnitType::Expert)
             {
@@ -1033,7 +1107,7 @@ impl<'a> NeuralAiController<'a> {
             }
         }
         for tid in producers(g, &[BuildingType::Nuclear, BuildingType::Hydro]) {
-            if self.cfg.experts && !m::has_type(g, tid, UnitType::Expert) {
+            if place_experts && self.cfg.experts && !m::has_type(g, tid, UnitType::Expert) {
                 self.add_expert_reserve(g, player, tid, s::STAFF_RESERVE);
             }
             if m::has_type(g, tid, UnitType::Expert)

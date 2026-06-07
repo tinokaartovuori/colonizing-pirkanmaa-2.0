@@ -279,20 +279,44 @@ struct Example {
 // throwaway controller over a zero genome (the scaffold ignores the genome).
 
 /// Run the full pre-loop scaffold (`ensure_income`) for `player`.
+/// Round by which the mine FALLBACK fires if the policy has built 0 mines. The
+/// learned policy owns mine COUNT; this is a pure backstop for the metal-starved
+/// tail (a policy that never learns mines still gets one). See
+/// `ensure_metal_income_fallback_pub`.
+const MINE_FALLBACK_ROUND: i64 = 8;
+
+/// Pre-loop scaffold for the CNN path. Guarantees WOOD income, 1st-worker staffing,
+/// and the cap-village bootstrap — but does NOT place Experts and does NOT
+/// mechanically build the mine. Those two economy decisions (StackProducer:Expert,
+/// BuildMine COUNT) are LEFT to the learned policy so it can be enumerated + labelled
+/// for them; `scaffold_finalize` guarantees them as a fallback AFTER the turn loop.
 fn scaffold_ensure(g: &mut Game, player: PlayerId, cfg: &TierConfig) {
     use cp_ai::controller::NeuralAiController;
     let genome = Genome::zero(&cp_ai::policy::DEFAULT_ARCH);
     let ctrl = NeuralAiController::new(&genome, *cfg);
-    ctrl.ensure_income_pub(g, player);
+    ctrl.ensure_income_no_experts_pub(g, player);
 }
 
 /// Re-staff after a candidate executes (mirrors the controller's per-iteration
-/// `staff_income`).
+/// `staff_income`), WITHOUT placing Experts (the policy owns the Expert decision).
 fn scaffold_staff(g: &mut Game, player: PlayerId, cfg: &TierConfig) {
     use cp_ai::controller::NeuralAiController;
     let genome = Genome::zero(&cp_ai::policy::DEFAULT_ARCH);
     let ctrl = NeuralAiController::new(&genome, *cfg);
-    ctrl.staff_income_pub(g, player);
+    ctrl.staff_income_no_experts_pub(g, player);
+}
+
+/// Post-loop scaffold for the CNN path. Runs AFTER the policy's turn loop: guarantees
+/// any Expert the policy did not place itself, then (as a late backstop) the first
+/// metal mine if the policy still has 0 mines past `MINE_FALLBACK_ROUND`. This is the
+/// deferred half of the old up-front `ensure_income_pub` — the policy got first crack
+/// at StackProducer/BuildMine, and the economy is still never left understaffed.
+fn scaffold_finalize(g: &mut Game, player: PlayerId, cfg: &TierConfig) {
+    use cp_ai::controller::NeuralAiController;
+    let genome = Genome::zero(&cp_ai::policy::DEFAULT_ARCH);
+    let ctrl = NeuralAiController::new(&genome, *cfg);
+    ctrl.ensure_experts_fallback_pub(g, player);
+    ctrl.ensure_metal_income_fallback_pub(g, player, MINE_FALLBACK_ROUND);
 }
 
 // --- candidate feature extraction --------------------------------------------
@@ -603,6 +627,7 @@ impl<'a> Mcts<'a> {
             scaffold_staff(g, self.player, &self.cfg);
             budget -= 1;
         }
+        scaffold_finalize(g, self.player, &self.cfg);
     }
 }
 
@@ -900,6 +925,7 @@ fn play_one_game(
                 }
                 scaffold_staff(&mut g, cur, cfg);
             }
+            scaffold_finalize(&mut g, cur, cfg);
         } else {
             hard.plan_turn(&mut g, cur);
         }
@@ -3369,6 +3395,7 @@ fn play_one_game_explore(
                 }
                 scaffold_staff(&mut g, cur, cfg);
             }
+            scaffold_finalize(&mut g, cur, cfg);
         } else {
             // Lever C `--record-opp-value`: salvage a clean ±1 VALUE example from the
             // SCRIPTED opponent seat's perspective. The scripted (HardAi) move is not a
@@ -4017,6 +4044,7 @@ fn cnn_plan_turn(
         }
         scaffold_staff(g, cur, cfg);
     }
+    scaffold_finalize(g, cur, cfg);
 }
 
 // ============================================================================
@@ -6330,6 +6358,9 @@ fn supervised_play_one_game(
                         candidates::Intent::BuildOutpost => outpost_boost.max(1),
                         candidates::Intent::HireSoldier => hire_boost.max(1),
                         candidates::Intent::BuildMine => mine_boost.max(1),
+                        // Economy class the policy must now learn (scaffold no longer
+                        // front-places experts) — boost with mines. PARITY-FREE.
+                        candidates::Intent::StackProducer => mine_boost.max(1),
                         _ => 1,
                     };
                     for _ in 0..reps {
@@ -6743,6 +6774,12 @@ fn push_boosted(
         candidates::Intent::BuildOutpost => outpost_boost.max(1),
         candidates::Intent::BuildMine => mine_boost.max(1),
         candidates::Intent::HireSoldier => hire_boost.max(1),
+        // StackProducer (expert / 2nd worker on a producer) is the economy decision the
+        // policy must learn to OWN now that the scaffold no longer front-places experts.
+        // It is RARE in the expert's recorded turns (most of its staffing is up-front,
+        // unwrapped), so upweight it with the same factor as mines (its econ companion)
+        // to keep the one-hot CE from drowning it. PARITY-FREE (label-side only).
+        candidates::Intent::StackProducer => mine_boost.max(1),
         _ => 1,
     };
     for _ in 1..reps {
@@ -6807,6 +6844,7 @@ fn net_greedy_turn(
         }
         scaffold_staff(g, cur, cfg);
     }
+    scaffold_finalize(g, cur, cfg);
 }
 
 /// DIAGNOSTIC: at one champ decision-state, return
@@ -6927,6 +6965,7 @@ fn run_diag_pass(args: &[String]) {
                             }
                         }
                     }
+                    scaffold_finalize(&mut g, cur, &cfg);
                 } else {
                     hard.plan_turn(&mut g, cur);
                 }
@@ -7220,6 +7259,7 @@ fn dagger_rollout_turn(
         scaffold_staff(g, cur, cfg);
         budget -= 1;
     }
+    scaffold_finalize(g, cur, cfg);
 }
 
 /// The index of the highest-net-scored NON-Pass candidate (None if all are Pass).
@@ -7549,6 +7589,7 @@ fn run_dagger(args: &[String]) {
                 3 => outpost_boost, // BuildOutpost
                 1 => mine_boost,    // BuildMine
                 7 => hire_boost,    // HireSoldier
+                9 => mine_boost,    // StackProducer (econ class — boost with mines)
                 _ => 1,
             };
             for _ in 1..reps.max(1) {
@@ -7822,6 +7863,7 @@ fn run_diagnose_game(args: &[String]) {
                 if !candidates::execute_action(&mut g, cur, &cfg, &chosen.action) { break; }
                 scaffold_staff(&mut g, cur, &cfg);
             }
+            scaffold_finalize(&mut g, cur, &cfg);
         } else {
             hard.plan_turn(&mut g, cur);
         }
