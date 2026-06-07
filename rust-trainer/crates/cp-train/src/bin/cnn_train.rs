@@ -3887,6 +3887,9 @@ struct BenchResult {
     mine_worker_bins: [u32; 3],
     mine_with_expert_sum: i64,
     mine_total_sum: i64,
+    // Per-PLANT (Hydro/Nuclear) expert telemetry, summed across bench games.
+    plant_with_expert_sum: i64,
+    plant_total_sum: i64,
     // Economy-scaffold health (parity-free): standing experts + metal income + mines
     // summed across bench games (per-game averages printed by `--validate-net`).
     champ_metal_income_sum: f64,
@@ -4247,6 +4250,14 @@ struct GameRec {
     mine_worker_bins: [u32; 3],
     mine_with_expert: i64,
     mine_total: i64,
+    /// Per-PLANT (Hydro / Nuclear) expert telemetry for the CHAMPION at game end.
+    /// `plant_with_expert` = # of champ-owned power-plant tiles co-located with an
+    /// Expert (same metal/energy-doubling lever as mines); `plant_total` = total
+    /// champ-owned power plants. Together with `mine_with_expert`/`mine_total` and
+    /// `champ_experts` (ALL standing experts) this lets the dashboard show an honest
+    /// standing-expert metric and a building-type breakdown.
+    plant_with_expert: i64,
+    plant_total: i64,
 }
 
 /// CNN (greedy MCTS) vs the held-out HARD heuristic. Champion seat alternates by
@@ -4397,21 +4408,31 @@ fn bench_vs_opponent(net: &SpatialNet, cfg: &TierConfig, tc: &TrainCfg, games: u
             let mut mine_worker_bins = [0u32; 3];
             let mut mine_with_expert = 0i64;
             let mut mine_total = 0i64;
+            let mut plant_with_expert = 0i64;
+            let mut plant_total = 0i64;
             for t in g.get_tiles().iter() {
                 if t.owner != Some(PlayerId(champ_seat)) { continue; }
                 let Some(b) = t.building.as_ref() else { continue };
-                if b.kind != BuildingType::Mine { continue; }
-                mine_total += 1;
-                let workers = t.units.iter()
-                    .filter(|&&u| g.units[u.0].kind == cp_sim::UnitType::BasicWorker)
-                    .count();
-                if workers >= 1 {
-                    let bin = workers.min(3) - 1;
-                    mine_worker_bins[bin] += 1;
-                }
                 let has_expert = t.units.iter()
                     .any(|&u| g.units[u.0].kind == cp_sim::UnitType::Expert);
-                if has_expert { mine_with_expert += 1; }
+                match b.kind {
+                    BuildingType::Mine => {
+                        mine_total += 1;
+                        let workers = t.units.iter()
+                            .filter(|&&u| g.units[u.0].kind == cp_sim::UnitType::BasicWorker)
+                            .count();
+                        if workers >= 1 {
+                            let bin = workers.min(3) - 1;
+                            mine_worker_bins[bin] += 1;
+                        }
+                        if has_expert { mine_with_expert += 1; }
+                    }
+                    BuildingType::Hydro | BuildingType::Nuclear => {
+                        plant_total += 1;
+                        if has_expert { plant_with_expert += 1; }
+                    }
+                    _ => {}
+                }
             }
             GameRec {
                 champ_seat, champ_frac, intents, extra, decisions, device_built,
@@ -4435,6 +4456,8 @@ fn bench_vs_opponent(net: &SpatialNet, cfg: &TierConfig, tc: &TrainCfg, games: u
                 mine_worker_bins,
                 mine_with_expert,
                 mine_total,
+                plant_with_expert,
+                plant_total,
             }
         })
         .collect();
@@ -4459,6 +4482,7 @@ fn bench_vs_opponent(net: &SpatialNet, cfg: &TierConfig, tc: &TrainCfg, games: u
         outposts_built_games: [0; 4], outposts_built_wins: [0; 4],
         stack_bins: [0; 3],
         mine_worker_bins: [0; 3], mine_with_expert_sum: 0, mine_total_sum: 0,
+        plant_with_expert_sum: 0, plant_total_sum: 0,
         champ_metal_income_sum: 0.0, champ_experts_sum: 0, champ_mines_sum: 0,
         frontier_ratio_sum: 0.0, frontier_ratio_games: 0,
         champ_win_rounds_sum: 0, champ_win_rounds_n: 0,
@@ -4561,6 +4585,8 @@ fn bench_vs_opponent(net: &SpatialNet, cfg: &TierConfig, tc: &TrainCfg, games: u
         for i in 0..3 { r.mine_worker_bins[i] += rec.mine_worker_bins[i]; }
         r.mine_with_expert_sum += rec.mine_with_expert;
         r.mine_total_sum += rec.mine_total;
+        r.plant_with_expert_sum += rec.plant_with_expert;
+        r.plant_total_sum += rec.plant_total;
         // M8 — average frontier ratio across rounds, averaged across games. We
         // sum the per-game average (so games with more rounds aren't weighted
         // higher than long games of equal information value).
@@ -5911,6 +5937,8 @@ fn run_train(tc: &TrainCfg) {
                  \"winByVillagesBuilt\":{},\"winByOutpostsBuilt\":{},\
                  \"stackBins\":{},\
                  \"mineWorkerBins\":{},\"minesWithExpert\":{},\"mineCount\":{},\
+                 \"plantsWithExpert\":{},\"plantCount\":{},\
+                 \"standingExpertsPerGame\":{:.4},\
                  \"expertsHiredPerGame\":{:.4},\
                  \"frontierRatio\":{},\
                  \"roundsByOutcome\":{{\"win\":{},\"loss\":{}}},\
@@ -5941,6 +5969,8 @@ fn run_train(tc: &TrainCfg) {
                 win_by_villages, win_by_outposts,
                 stack_bins_json,
                 mine_worker_bins_json, br.mine_with_expert_sum, br.mine_total_sum,
+                br.plant_with_expert_sum, br.plant_total_sum,
+                br.champ_experts_sum as f64 / br.n as f64,
                 experts_per_game,
                 frontier_ratio,
                 win_rounds, loss_rounds,
@@ -8303,6 +8333,7 @@ mod tests {
             outposts_built_games: [0; 4], outposts_built_wins: [0; 4],
             stack_bins: [0; 3],
             mine_worker_bins: [0; 3], mine_with_expert_sum: 0, mine_total_sum: 0,
+            plant_with_expert_sum: 0, plant_total_sum: 0,
             champ_metal_income_sum: 0.0, champ_experts_sum: 0, champ_mines_sum: 0,
             frontier_ratio_sum: 0.0, frontier_ratio_games: 0,
             champ_win_rounds_sum: 0, champ_win_rounds_n: 0,

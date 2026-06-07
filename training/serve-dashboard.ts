@@ -727,13 +727,22 @@ function panelEconomy(){
     var items=keys.map(function(k){ return { name:k+' työläistä / kaivos', val:num(mwb[k])||0, right:String(num(mwb[k])||0)+(ghost[k]!=null?(' ('+ghost[k]+')'):''),
       color:k==='1'?'#3a5a66':(k==='2'?'#5a93a8':C.econ) }; });
     var nExp=num(b.minesWithExpert)||0, nMines=num(b.mineCount)||0;
-    var expRow='<div class="hbar"><span class="nm">expertillä</span><span class="track"><span class="fill" style="width:'
+    var nPExp=num(b.plantsWithExpert), nPlants=num(b.plantCount);
+    var expRow='<div class="hbar"><span class="nm">kaivos expertillä</span><span class="track"><span class="fill" style="width:'
       +(nMines>0?Math.round(nExp/nMines*100):0)+'%;background:'+C.good+'"></span></span>'
       +'<span class="n">'+nExp+' / '+nMines+'</span></div>';
-    cards.push(card('★ Kaivosten miehitys '+tip('Kuinka monella työläisellä kaivos pyörii (mineWorkerBins, summattu bench-peleistä) + montako kaivosta on expertillä. Expert + työläiset = metalli ×2. Suluissa ~5 gen sitten.'),'',
+    // Plant (Hydro/Nuclear) expert leverage row — only when the field is present
+    // (old benchmark rows lack plantsWithExpert/plantCount). Keeps the EXPERT-VIPU
+    // block consistent with the honest standing-expert KPI above.
+    if(nPlants!=null){
+      expRow+='<div class="hbar"><span class="nm">voimala expertillä</span><span class="track"><span class="fill" style="width:'
+        +(nPlants>0?Math.round((nPExp||0)/nPlants*100):0)+'%;background:'+C.good+'"></span></span>'
+        +'<span class="n">'+(nPExp||0)+' / '+nPlants+'</span></div>';
+    }
+    cards.push(card('★ Kaivosten miehitys '+tip('Kuinka monella työläisellä kaivos pyörii (mineWorkerBins, summattu bench-peleistä) + montako kaivosta/voimalaa on expertillä. Expert + työläiset = metalli/energia ×2. Talous-scaffold asettaa expertit (ks. Asiantuntijat-paneeli). Suluissa ~5 gen sitten.'),'',
       hbars(items,{max:maxv})
-      +'<div class="well" style="margin-top:8px"><div class="dim" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em">Expert-vipu (metalli ×2)</div>'+expRow+'</div>',
-      'experttejä: '+nExp+' / '+nMines+' kaivoksesta. Ali-miehitetty + ilman expertiä = metalli pullonkaula.'));
+      +'<div class="well" style="margin-top:8px"><div class="dim" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em">Expert-vipu (tuotanto ×2)</div>'+expRow+'</div>',
+      'experttejä kaivoksilla: '+nExp+' / '+nMines+(nPlants!=null?(', voimaloilla: '+(nPExp||0)+' / '+nPlants):'')+'. Ali-miehitetty + ilman expertiä = metalli pullonkaula.'));
   } else {
     cards.push(card('★ Kaivosten miehitys '+tip('Per-kaivos työläisjakauma + expert-vipu (mineWorkerBins / minesWithExpert). Puuttuu vanhoista ajoista.'),'',
       '<div class="empty">—  (ei mineWorkerBins-dataa tässä ajossa)</div>',''));
@@ -749,12 +758,32 @@ function panelEconomy(){
     cards.push(card('Sotilaspino / ruutu (peak) '+tip('Huippumäärä mestarin sotilaita YHDELLÄ ruudulla (M6), bucketoitu bench-peleittäin. Suluissa ~5 gen sitten.'),'',
       hbars(sitems,{max:smaxv}),'Sotilaiden pinoaminen yhteen ruutuun (ei kaivosten miehitys).'));
   }
-  // EXPERTS — known-zero KPI, always surfaced
+  // EXPERTS — HONEST standing-expert metric. The economy SCAFFOLD (controller.rs
+  // staff_income → add_expert_reserve) places experts on mines/plants mechanically;
+  // these are NOT counted by expertsHiredPerGame (which tallies ONLY experts the
+  // learned POLICY explicitly picks — virtually always 0). So we surface the real
+  // count standing on the champion's board: standingExpertsPerGame when emitted,
+  // else derived from (minesWithExpert + plantsWithExpert) / nGames for old rows.
+  // The net-chosen number is shown as a small secondary line, clearly labelled.
+  function standExp(h){
+    var s=num(h.standingExpertsPerGame);
+    if(s!=null) return s;
+    var ng=num(h.nGames)||1;
+    var me=num(h.minesWithExpert), pe=num(h.plantsWithExpert);
+    if(me==null && pe==null) return null; // genuinely no data
+    return ((me||0)+(pe||0))/ng;
+  }
   if(hist.length){
     var ex=hist.map(function(h){return h.gen;});
-    cards.push(card('Asiantuntijat / peli '+tip('expertsHiredPerGame — kone tunnetusti 0 (expert-priority fix kesken). Litteä 0 = korjaus ei ole landannut.'),'',
-      chart(ex,[{vals:hist.map(function(h){return num(h.expertsHiredPerGame);}),color:C.illusion,label:'experts/peli',dots:true}],{h:160,y0:0,y1:Math.max(1, Math.max.apply(null,hist.map(function(h){return num(h.expertsHiredPerGame)||0;})))}),
-      'Asiantuntijat boostaavat tuotantoa ja porttaavat armeijaketjun.'));
+    var standVals=hist.map(standExp);
+    var hiredVals=hist.map(function(h){return num(h.expertsHiredPerGame);});
+    var maxStand=Math.max.apply(null,standVals.map(function(v){return v||0;}).concat([1]));
+    cards.push(card('Asiantuntijat / peli '+tip('REHELLINEN standing-expert luku: montako Asiantuntijaa mestarin laudalla / peli (kaivos + ydin/vesi), sis. talous-scaffoldin asettamat. Lähde: standingExpertsPerGame (tai johdettu minesWithExpert+plantsWithExpert / nGames). Eri kuin expertsHiredPerGame, joka laskee VAIN policyn itse valitsemat (≈0; scaffold hoitaa loput).'),'',
+      chart(ex,[
+        {vals:standVals,color:C.good,label:'standing experts/peli (scaffold+policy)',dots:true,w:2},
+        {vals:hiredVals,color:C.illusion,label:'policy-chosen (scaffold asettaa loput)',dots:true,dash:true}
+      ],{h:160,y0:0,y1:Math.max(1,maxStand)}),
+      'Asiantuntijat boostaavat tuotantoa (metalli/energia ×2) ja porttaavat armeijaketjun. Vihreä = oikeasti laudalla; harmaa = vain policyn valinnat (scaffold asettaa loput).'));
   }
   // win-by-villages / win-by-outposts payoff
   if(b.winByOutpostsBuilt){
