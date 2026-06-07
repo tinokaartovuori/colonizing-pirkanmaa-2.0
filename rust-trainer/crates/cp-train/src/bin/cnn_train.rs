@@ -3877,6 +3877,16 @@ struct BenchResult {
     // Bins: [1, 2, 3]. Bin 0 = "champion never had a soldier this game" → omitted
     // from the stacking display (already covered by champSoldierBins).
     stack_bins: [u32; 3],
+    // Per-MINE staffing for the CHAMPION (parity-free telemetry), SUMMED across
+    // bench games: `mine_worker_bins[i]` = # of champ mines (over all bench games)
+    // staffed by 1/2/3+ BasicWorkers; `mine_with_expert_sum` = # of those mines
+    // that also have an Expert (the metal-doubling lever); `mine_total_sum` =
+    // total champ-owned mines. Emitted as `mineWorkerBins` / `minesWithExpert` /
+    // `mineCount` so the dashboard can show worker distribution + "X of Y mines
+    // have an expert".
+    mine_worker_bins: [u32; 3],
+    mine_with_expert_sum: i64,
+    mine_total_sum: i64,
     // Economy-scaffold health (parity-free): standing experts + metal income + mines
     // summed across bench games (per-game averages printed by `--validate-net`).
     champ_metal_income_sum: f64,
@@ -4226,6 +4236,17 @@ struct GameRec {
     champ_metal_income: f64,
     champ_experts: i64,
     champ_mines: i64,
+    /// Per-MINE staffing for the CHAMPION at game end (parity-free telemetry).
+    /// For each champ-owned `BuildingType::Mine` tile we scan the units on the
+    /// tile and bucket by BasicWorker count: bin index = clamp(workers,1,3)-1, so
+    /// `[mines with 1 worker, with 2, with 3+]`. Mines with 0 workers are dropped
+    /// (an un-staffed mine produces nothing). The KEY economy lever — an `Expert`
+    /// co-located with workers DOUBLES the mine's metal (mine metal = 20 *
+    /// workers * (expert?2:1)) — is counted in `mine_with_expert` (# of champ
+    /// mines that have ≥1 Expert). `mine_total` = total champ-owned mines.
+    mine_worker_bins: [u32; 3],
+    mine_with_expert: i64,
+    mine_total: i64,
 }
 
 /// CNN (greedy MCTS) vs the held-out HARD heuristic. Champion seat alternates by
@@ -4369,6 +4390,29 @@ fn bench_vs_opponent(net: &SpatialNet, cfg: &TierConfig, tc: &TrainCfg, games: u
                         if b.kind == BuildingType::Headquarters && !b.conquered)
             });
             let crack_hq_success = crack_hq_attempts > 0 && !hard_owns_any_hq;
+            // --- Per-MINE staffing scan for the CHAMPION (parity-free telemetry) ---
+            // For every champ-owned Mine tile, bucket by # of BasicWorkers on the
+            // tile (1 / 2 / 3+ → bins 0/1/2; un-staffed mines are dropped) and count
+            // whether an Expert is co-located (the metal-doubling lever).
+            let mut mine_worker_bins = [0u32; 3];
+            let mut mine_with_expert = 0i64;
+            let mut mine_total = 0i64;
+            for t in g.get_tiles().iter() {
+                if t.owner != Some(PlayerId(champ_seat)) { continue; }
+                let Some(b) = t.building.as_ref() else { continue };
+                if b.kind != BuildingType::Mine { continue; }
+                mine_total += 1;
+                let workers = t.units.iter()
+                    .filter(|&&u| g.units[u.0].kind == cp_sim::UnitType::BasicWorker)
+                    .count();
+                if workers >= 1 {
+                    let bin = workers.min(3) - 1;
+                    mine_worker_bins[bin] += 1;
+                }
+                let has_expert = t.units.iter()
+                    .any(|&u| g.units[u.0].kind == cp_sim::UnitType::Expert);
+                if has_expert { mine_with_expert += 1; }
+            }
             GameRec {
                 champ_seat, champ_frac, intents, extra, decisions, device_built,
                 champ_device_built, hard_device_built,
@@ -4388,6 +4432,9 @@ fn bench_vs_opponent(net: &SpatialNet, cfg: &TierConfig, tc: &TrainCfg, games: u
                     .filter(|&&u| g.units[u.0].kind == cp_sim::UnitType::Expert).count() as i64,
                 champ_mines: g.get_tiles().iter().filter(|t| t.owner == Some(PlayerId(champ_seat))
                     && t.building.as_ref().map(|b| b.kind) == Some(BuildingType::Mine)).count() as i64,
+                mine_worker_bins,
+                mine_with_expert,
+                mine_total,
             }
         })
         .collect();
@@ -4411,6 +4458,7 @@ fn bench_vs_opponent(net: &SpatialNet, cfg: &TierConfig, tc: &TrainCfg, games: u
         villages_built_games: [0; 4], villages_built_wins: [0; 4],
         outposts_built_games: [0; 4], outposts_built_wins: [0; 4],
         stack_bins: [0; 3],
+        mine_worker_bins: [0; 3], mine_with_expert_sum: 0, mine_total_sum: 0,
         champ_metal_income_sum: 0.0, champ_experts_sum: 0, champ_mines_sum: 0,
         frontier_ratio_sum: 0.0, frontier_ratio_games: 0,
         champ_win_rounds_sum: 0, champ_win_rounds_n: 0,
@@ -4509,6 +4557,10 @@ fn bench_vs_opponent(net: &SpatialNet, cfg: &TierConfig, tc: &TrainCfg, games: u
             let b = (mx.min(3) - 1) as usize;
             r.stack_bins[b] += 1;
         }
+        // Per-MINE staffing fold-in (worker-count distribution + expert lever).
+        for i in 0..3 { r.mine_worker_bins[i] += rec.mine_worker_bins[i]; }
+        r.mine_with_expert_sum += rec.mine_with_expert;
+        r.mine_total_sum += rec.mine_total;
         // M8 — average frontier ratio across rounds, averaged across games. We
         // sum the per-game average (so games with more rounds aren't weighted
         // higher than long games of equal information value).
@@ -5812,6 +5864,10 @@ fn run_train(tc: &TrainCfg) {
             let sb = &br.stack_bins;
             let stack_bins_json = format!(
                 "{{\"1\":{},\"2\":{},\"3\":{}}}", sb[0], sb[1], sb[2]);
+            // Per-MINE staffing (worker-count distribution + the Expert lever).
+            let mwb = &br.mine_worker_bins;
+            let mine_worker_bins_json = format!(
+                "{{\"1\":{},\"2\":{},\"3\":{}}}", mwb[0], mwb[1], mwb[2]);
             // M7 — experts hired per game (champ side; already in `extra`).
             let experts_per_game = br.extra.hire_expert as f64 / br.n as f64;
             // M8 — average frontier ratio (averaged across games that had ≥1 round).
@@ -5854,6 +5910,7 @@ fn run_train(tc: &TrainCfg) {
                  \"soldierUsefulRounds\":{},\"soldierUselessRounds\":{},\
                  \"winByVillagesBuilt\":{},\"winByOutpostsBuilt\":{},\
                  \"stackBins\":{},\
+                 \"mineWorkerBins\":{},\"minesWithExpert\":{},\"mineCount\":{},\
                  \"expertsHiredPerGame\":{:.4},\
                  \"frontierRatio\":{},\
                  \"roundsByOutcome\":{{\"win\":{},\"loss\":{}}},\
@@ -5883,6 +5940,7 @@ fn run_train(tc: &TrainCfg) {
                 br.sol_idle_rounds_sum,
                 win_by_villages, win_by_outposts,
                 stack_bins_json,
+                mine_worker_bins_json, br.mine_with_expert_sum, br.mine_total_sum,
                 experts_per_game,
                 frontier_ratio,
                 win_rounds, loss_rounds,
@@ -8244,6 +8302,7 @@ mod tests {
             villages_built_games: [0; 4], villages_built_wins: [0; 4],
             outposts_built_games: [0; 4], outposts_built_wins: [0; 4],
             stack_bins: [0; 3],
+            mine_worker_bins: [0; 3], mine_with_expert_sum: 0, mine_total_sum: 0,
             champ_metal_income_sum: 0.0, champ_experts_sum: 0, champ_mines_sum: 0,
             frontier_ratio_sum: 0.0, frontier_ratio_games: 0,
             champ_win_rounds_sum: 0, champ_win_rounds_n: 0,

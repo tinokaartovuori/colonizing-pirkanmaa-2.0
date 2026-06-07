@@ -716,15 +716,38 @@ function panelEconomy(){
       {vals:smooth(hist.map(function(h){return num(h.bridgesPerGame);})),color:C.raw,label:'bridges'}
     ],{h:190,y0:0}),'Talous- ja armeijaketjun rakennustahti.'));
   }
-  // ★ mine staffing (stackBins) — current bar + ghost from earlier gen
+  // ★ MINE STAFFING (mineWorkerBins + expert lever). The REAL per-mine worker
+  // distribution: # of champ mines staffed by 1 / 2 / 3+ BasicWorkers, plus how
+  // many of those mines have an Expert (an Expert co-located with workers DOUBLES
+  // the mine's metal: metal = 20·workers·(expert?2:1)). Graceful '—' for old runs.
+  if(b.mineWorkerBins){
+    var mwb=b.mineWorkerBins;
+    var keys=['1','2','3'], maxv=Math.max(1, num(mwb['1'])||0, num(mwb['2'])||0, num(mwb['3'])||0);
+    var ghost = hist.length>1 ? (hist[Math.max(0,hist.length-6)].mineWorkerBins||{}) : {};
+    var items=keys.map(function(k){ return { name:k+' työläistä / kaivos', val:num(mwb[k])||0, right:String(num(mwb[k])||0)+(ghost[k]!=null?(' ('+ghost[k]+')'):''),
+      color:k==='1'?'#3a5a66':(k==='2'?'#5a93a8':C.econ) }; });
+    var nExp=num(b.minesWithExpert)||0, nMines=num(b.mineCount)||0;
+    var expRow='<div class="hbar"><span class="nm">expertillä</span><span class="track"><span class="fill" style="width:'
+      +(nMines>0?Math.round(nExp/nMines*100):0)+'%;background:'+C.good+'"></span></span>'
+      +'<span class="n">'+nExp+' / '+nMines+'</span></div>';
+    cards.push(card('★ Kaivosten miehitys '+tip('Kuinka monella työläisellä kaivos pyörii (mineWorkerBins, summattu bench-peleistä) + montako kaivosta on expertillä. Expert + työläiset = metalli ×2. Suluissa ~5 gen sitten.'),'',
+      hbars(items,{max:maxv})
+      +'<div class="well" style="margin-top:8px"><div class="dim" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em">Expert-vipu (metalli ×2)</div>'+expRow+'</div>',
+      'experttejä: '+nExp+' / '+nMines+' kaivoksesta. Ali-miehitetty + ilman expertiä = metalli pullonkaula.'));
+  } else {
+    cards.push(card('★ Kaivosten miehitys '+tip('Per-kaivos työläisjakauma + expert-vipu (mineWorkerBins / minesWithExpert). Puuttuu vanhoista ajoista.'),'',
+      '<div class="empty">—  (ei mineWorkerBins-dataa tässä ajossa)</div>',''));
+  }
+  // SOLDIER STACKING (stackBins) — peak champ SOLDIERS on a single tile (metric M6),
+  // bucketed per bench game. (Was previously MISLABELED as mine manning.)
   if(b.stackBins){
     var sb=b.stackBins;
-    var keys=['1','2','3'], maxv=Math.max(1, num(sb['1'])||0, num(sb['2'])||0, num(sb['3'])||0);
-    var ghost = hist.length>1 ? (hist[Math.max(0,hist.length-6)].stackBins||{}) : {};
-    var items=keys.map(function(k){ return { name:k+' työläistä kaivoksella', val:num(sb[k])||0, right:String(num(sb[k])||0)+(ghost[k]!=null?(' ('+ghost[k]+')'):''),
-      color:k==='1'?'#3a5a66':(k==='2'?'#5a93a8':C.econ) }; });
-    cards.push(card('★ Kaivosten miehitys (stackBins) '+tip('Kuinka monella työläisellä kaivos pyörii — täysi miehitys = metallin läpäisy. Suluissa ~5 gen sitten.'),'',
-      hbars(items,{max:maxv}),'Suurin osa kaivoksista ali-miehitetty = metalli pullonkaula.'));
+    var skeys=['1','2','3'], smaxv=Math.max(1, num(sb['1'])||0, num(sb['2'])||0, num(sb['3'])||0);
+    var sghost = hist.length>1 ? (hist[Math.max(0,hist.length-6)].stackBins||{}) : {};
+    var sitems=skeys.map(function(k){ return { name:k+' sotilasta / ruutu', val:num(sb[k])||0, right:String(num(sb[k])||0)+(sghost[k]!=null?(' ('+sghost[k]+')'):''),
+      color:k==='1'?'#5a5a3a':(k==='2'?'#9a8a4a':C.mil) }; });
+    cards.push(card('Sotilaspino / ruutu (peak) '+tip('Huippumäärä mestarin sotilaita YHDELLÄ ruudulla (M6), bucketoitu bench-peleittäin. Suluissa ~5 gen sitten.'),'',
+      hbars(sitems,{max:smaxv}),'Sotilaiden pinoaminen yhteen ruutuun (ei kaivosten miehitys).'));
   }
   // EXPERTS — known-zero KPI, always surfaced
   if(hist.length){
@@ -741,12 +764,14 @@ function panelEconomy(){
       + (b.winByVillagesBuilt?'<div class="well" style="margin-top:8px"><div class="dim" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em">Kylät rakennettu</div>'+winBy(b.winByVillagesBuilt)+'</div>':''),
       'Outpostit korreloivat voittamisen kanssa (signaali armeijaketjusta).'));
   }
-  // metal balance proxy (client-side, sd3 constants)
-  if(b.stackBins||b.outpostsPerGame!=null){
-    var mines = (num(b.stackBins&&b.stackBins['1'])||0)+(num(b.stackBins&&b.stackBins['2'])||0)+(num(b.stackBins&&b.stackBins['3'])||0);
+  // metal balance proxy (client-side, sd3 constants). Uses the REAL per-mine
+  // worker distribution (mineWorkerBins) when present; old runs fall back to 0.
+  if(b.mineWorkerBins||b.outpostsPerGame!=null){
+    var mwb2=b.mineWorkerBins||{};
+    var mines = (num(mwb2['1'])||0)+(num(mwb2['2'])||0)+(num(mwb2['3'])||0);
     var nGames=num(b.nGames)||1;
     var minesPerGame = mines/nGames;
-    var workerSlots = (num(b.stackBins&&b.stackBins['1'])||0)*1 + (num(b.stackBins&&b.stackBins['2'])||0)*2 + (num(b.stackBins&&b.stackBins['3'])||0)*3;
+    var workerSlots = (num(mwb2['1'])||0)*1 + (num(mwb2['2'])||0)*2 + (num(mwb2['3'])||0)*3;
     var metalIn = workerSlots/nGames*20; // ~20 metal/worker-round (sd3 mine output)
     var metalOut = (num(b.outpostsPerGame)||0)*5 + (num(b.maxSoldiersPerGame)||0)*30; // upkeep proxies
     var bal = metalIn - metalOut;
@@ -775,7 +800,7 @@ function panelMilitary(){
   var s=STATE, b=s.benchLatest||{}, hist=lastN(s.winHistory||[]); var cards=[];
   // ★ funnel: wood(proxy) -> mines -> experts -> outposts -> soldiers fielded
   var nGames=num(b.nGames)||1;
-  var mines=((num(b.stackBins&&b.stackBins['1'])||0)+(num(b.stackBins&&b.stackBins['2'])||0)+(num(b.stackBins&&b.stackBins['3'])||0))/nGames;
+  var mines=((num(b.mineWorkerBins&&b.mineWorkerBins['1'])||0)+(num(b.mineWorkerBins&&b.mineWorkerBins['2'])||0)+(num(b.mineWorkerBins&&b.mineWorkerBins['3'])||0))/nGames;
   var soldiers = num(b.maxSoldiersPerGame);
   var stages=[
     {nm:'Wood', ct: num(b.villagesPerGame)!=null? f2(num(b.villagesPerGame)+mines+2,1):null, raw:(num(b.villagesPerGame)||0)+mines+2, note:'econ-proxy'},
@@ -847,7 +872,7 @@ function panelOpponents(){
   var nPer=num(b.benchPerOpp);
   // ★ benchmark win-rate bars (authoritative)
   var items=BENCH_OPP.map(function(o){ var v=num(b[o[0]]);
-    return {name:o[1], val:v, right:(v!=null?pct(v,0):'—')+(nPer?(' <span class="dim">n='+nPer+'</span>'):''),
+    return {name:o[1], val:v, right:(v!=null?pct(v,0):'—')+(nPer?(' n='+nPer):''),
       warn:(nPer!=null&&nPer<30), color:(v!=null&&v>=0.5)?C.good:C.illusion}; })
     .filter(function(it){ return it.val!=null; });
   cards.push(card('★ Liiga win-rate (benchmark, vs HARD-bot + skriptit)','span2 wide',
