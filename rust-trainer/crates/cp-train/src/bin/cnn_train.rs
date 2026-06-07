@@ -5960,6 +5960,10 @@ impl SupervisedExample {
 /// Expand`); falls back to `Pass` if no diff is observable. Returns `None` when
 /// the priority intent isn't represented in `candidates` (caller falls back to
 /// Pass — there is always a Pass candidate).
+///
+/// SUPERSEDED by the per-action [`HardAi::record_turn`] recorder. Retained for
+/// reference only.
+#[allow(dead_code)]
 fn detect_dominant_intent(
     g_before: &Game,
     g_after: &Game,
@@ -6031,11 +6035,18 @@ fn detect_dominant_intent(
     }
 }
 
+static SUP_FALLBACK: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 /// Build the one-hot `pi` over `cands` for `target_intent`: 1.0 on the FIRST
 /// candidate matching the intent, else on the FIRST `Pass` candidate (always
 /// present at decision time).
 fn one_hot_pi_for_intent(cands: &[candidates::Candidate], target_intent: candidates::Intent) -> Vec<f64> {
     let mut pi = vec![0.0; cands.len()];
+    if target_intent != candidates::Intent::Pass
+        && !cands.iter().any(|c| c.intent == target_intent)
+    {
+        SUP_FALLBACK.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
     let idx = cands.iter().position(|c| c.intent == target_intent).or_else(|| {
         cands.iter().position(|c| c.intent == candidates::Intent::Pass)
     });
@@ -6050,23 +6061,83 @@ fn one_hot_pi_for_intent(cands: &[candidates::Candidate], target_intent: candida
     pi
 }
 
-/// META-ANALYSIS §5 / Component A — play one HARD-vs-HARD game with
-/// `ARMY_RUSH_PARAMS` on BOTH seats, recording one example per turn per seat. The
-/// example's intent target is recovered by [`detect_dominant_intent`]. The terminal
-/// `z` is back-filled once the game ends: `+1` if the recording seat won, `-1` if
-/// it lost, `0` for tie/timeout.
-fn supervised_play_one_game(seed: u32, cfg: &TierConfig, width: i32, height: i32, cap: i64) -> Vec<SupervisedExample> {
+/// SD3-league scripted teacher kinds available to the supervised recorder.
+/// Each maps to a `HardAi` league constructor (`hard_ai.rs`).
+#[derive(Clone, Copy, Debug)]
+enum LeagueBot {
+    StrongArmy,
+    Rusher,
+    Marcher,
+    DeviceRush,
+    Fortress,
+    Hard,
+    HqRush,
+}
+
+impl LeagueBot {
+    fn make(self) -> HardAi {
+        match self {
+            LeagueBot::StrongArmy => HardAi::strong_army(),
+            LeagueBot::Rusher => HardAi::rusher(),
+            LeagueBot::Marcher => HardAi::marcher(),
+            LeagueBot::DeviceRush => HardAi::device_rush(),
+            LeagueBot::Fortress => HardAi::fortress(),
+            LeagueBot::Hard => HardAi::hard(),
+            LeagueBot::HqRush => HardAi::hq_rush(),
+        }
+    }
+    fn parse(s: &str) -> Option<Self> {
+        Some(match s.to_ascii_lowercase().as_str() {
+            "strong_army" | "strongarmy" | "strong-army" => LeagueBot::StrongArmy,
+            "rusher" => LeagueBot::Rusher,
+            "marcher" => LeagueBot::Marcher,
+            "device_rush" | "devicerush" | "device" => LeagueBot::DeviceRush,
+            "fortress" => LeagueBot::Fortress,
+            "hard" => LeagueBot::Hard,
+            "hq_rush" | "hqrush" => LeagueBot::HqRush,
+            _ => return None,
+        })
+    }
+}
+
+/// SUPERVISED-RECORDER (FIXED): play one scripted game `recording_seat` vs
+/// `other_seat`, recording one example per EXECUTED ACTION the recording seat's
+/// bot takes (via [`HardAi::record_turn`], which returns the true per-action
+/// `Intent` sequence — NOT a whole-turn dominant-diff that collapsed to `Pass`).
+/// Each example pairs the turn-start board state with a one-hot over the matching
+/// candidate for that action's intent. `z` is back-filled to the recording seat's
+/// terminal win/lose/tie.
+///
+/// We record BOTH seats (both are scripted army-builders / league teachers), so a
+/// single game yields demonstrations from two strategies.
+fn supervised_play_one_game(
+    seed: u32,
+    cfg: &TierConfig,
+    width: i32,
+    height: i32,
+    cap: i64,
+    bot0_kind: LeagueBot,
+    bot1_kind: LeagueBot,
+    pass_keep: f64,
+    attack_keep: f64,
+    outpost_boost: usize,
+    hire_boost: usize,
+    mine_boost: usize,
+) -> Vec<SupervisedExample> {
     let n_players = 2usize;
+    let mut prng = XorShift32::new(seed ^ 0x9E3779B9);
     let mut g = Game::new(width, height, &["P1", "P2"]);
     g.generate_map(width, height, seed);
-    let placer = HardAi::army_rush();
-    for _ in 0..n_players {
+    // HQ placement: each seat uses its own bot's placer.
+    let placer0 = bot0_kind.make();
+    let placer1 = bot1_kind.make();
+    for i in 0..n_players {
         let cur = g.current_player();
-        placer.place_headquarters(&mut g, cur);
+        if i == 0 { placer0.place_headquarters(&mut g, cur); } else { placer1.place_headquarters(&mut g, cur); }
         g.change_turn();
     }
-    let mut bot_p0 = HardAi::army_rush();
-    let mut bot_p1 = HardAi::army_rush();
+    let mut bot_p0 = bot0_kind.make();
+    let mut bot_p1 = bot1_kind.make();
 
     // Per-example record: (seat, example). `z` filled at terminal resolution.
     let mut records: Vec<(PlayerId, SupervisedExample)> = Vec::new();
@@ -6074,38 +6145,87 @@ fn supervised_play_one_game(seed: u32, cfg: &TierConfig, width: i32, height: i32
     let mut last_sig = board_signature(&g, n_players);
     let mut last_progress = g.get_rounds_played();
 
+    // Build a per-action example from the state AT THAT ACTION's decision point.
+    // Returns None when the reported intent is NOT enumerable at this state (the
+    // scripted bot did something the NN candidate set cannot express — e.g. an
+    // attack-restage the gate rejects). Dropping (rather than mislabelling Pass)
+    // keeps every kept example's target a REAL, reachable intent — this is the fix
+    // for the Pass-collapse: fabricated Pass labels are gone, not just diluted.
+    fn make_example(gs: &Game, seat: PlayerId, intent: candidates::Intent, cfg: &TierConfig) -> Option<SupervisedExample> {
+        let cands = candidates::enumerate(gs, seat, cfg);
+        // Only keep actions the policy can actually choose at this state.
+        if intent != candidates::Intent::Pass && !cands.iter().any(|c| c.intent == intent) {
+            return None;
+        }
+        let (planes, h, w) = board_planes(gs, seat);
+        let vs = value_scalars(gs, seat);
+        let cand_feats: Vec<CandFeat> = cands.iter().map(|c| cand_feat(gs, seat, c)).collect();
+        let pi = one_hot_pi_for_intent(&cands, intent);
+        Some(SupervisedExample {
+            planes, h, w, value_scalars: vs,
+            cands_target: cand_feats.iter().map(|c| c.0).collect(),
+            cands_local: cand_feats.iter().map(|c| c.1.clone()).collect(),
+            cands_intent: cand_feats.iter().map(|c| c.2.clone()).collect(),
+            pi, z: 0.0,
+        })
+    }
+
     while g.live_players().len() > 1 && g.get_rounds_played() < cap {
         let cur = g.current_player();
 
-        // Capture turn-start state for the LEARNING example.
-        let cands_before = candidates::enumerate(&g, cur, cfg);
-        let (planes, h, w) = board_planes(&g, cur);
-        let vs = value_scalars(&g, cur);
-        let cand_feats: Vec<CandFeat> = cands_before.iter().map(|c| cand_feat(&g, cur, c)).collect();
+        // Snapshot turn-start state for the actionless-turn Pass example (the
+        // per-action examples capture their own phase-start state via the sink).
+        let g_turn_start = g.clone();
 
-        let g_before = g.clone();
+        // Drive the turn through the PER-ACTION recorder. Each realised action calls
+        // the sink with (intent, phase-start state) → enumerate candidates against
+        // the ACTUAL decision state so the one-hot lands on the real intent (not the
+        // Pass fallback the turn-start-only enumeration produced).
+        let mut turn_examples: Vec<SupervisedExample> = Vec::new();
+        {
+            let sink = &mut |intent: candidates::Intent, gs: &Game| {
+                // Light subsample of the repetitive Attack class so it doesn't
+                // swamp the army-chain classes (Outpost/Hire) the net must learn.
+                if intent == candidates::Intent::Attack && prng.next_f64() >= attack_keep {
+                    return;
+                }
+                if let Some(ex) = make_example(gs, cur, intent, cfg) {
+                    // Upweight the RARE-but-critical army-chain classes (Outpost
+                    // unlocks the soldier cap; without it HireSoldier is cap-gated
+                    // at 1). Duplicate so CE sees them more often without changing
+                    // the league's natural action frequencies for everything else.
+                    let reps = match intent {
+                        candidates::Intent::BuildOutpost => outpost_boost.max(1),
+                        candidates::Intent::HireSoldier => hire_boost.max(1),
+                        candidates::Intent::BuildMine => mine_boost.max(1),
+                        _ => 1,
+                    };
+                    for _ in 0..reps {
+                        turn_examples.push(ex.clone());
+                    }
+                }
+            };
+            if cur.0 == 0 {
+                bot_p0.record_turn(&mut g, cur, sink);
+            } else {
+                bot_p1.record_turn(&mut g, cur, sink);
+            }
+        }
 
-        // Let HARD (with ARMY_RUSH_PARAMS) drain its turn.
-        if cur.0 == 0 { bot_p0.plan_turn(&mut g, cur); } else { bot_p1.plan_turn(&mut g, cur); }
-
-        // Recover the dominant intent of the just-finished turn and one-hot it.
-        let detected = detect_dominant_intent(&g_before, &g, cur, &cands_before);
-        let pi = one_hot_pi_for_intent(&cands_before, detected);
-
-        // Push the example AFTER we know the chosen pi but BEFORE end_turn so the
-        // planes/value_scalars match the turn-start state (= the state on which
-        // HARD made its choice). z = 0.0 placeholder; back-filled below.
-        records.push((
-            cur,
-            SupervisedExample {
-                planes, h, w, value_scalars: vs,
-                cands_target: cand_feats.iter().map(|c| c.0).collect(),
-                cands_local: cand_feats.iter().map(|c| c.1.clone()).collect(),
-                cands_intent: cand_feats.iter().map(|c| c.2.clone()).collect(),
-                pi,
-                z: 0.0,
-            },
-        ));
+        if turn_examples.is_empty() {
+            // Actionless turn (or all actions un-enumerable) → subsampled Pass
+            // example (default keep 15%) so Pass stays represented (the policy must
+            // know WHEN to pass) without dominating.
+            if prng.next_f64() < pass_keep {
+                if let Some(ex) = make_example(&g_turn_start, cur, candidates::Intent::Pass, cfg) {
+                    records.push((cur, ex));
+                }
+            }
+        } else {
+            for ex in turn_examples {
+                records.push((cur, ex));
+            }
+        }
 
         match g.end_turn() {
             EndTurnOutcome::Win(p) => {
@@ -6142,8 +6262,57 @@ fn supervised_play_one_game(seed: u32, cfg: &TierConfig, width: i32, height: i32
     out
 }
 
-/// META-ANALYSIS §5 / Component A — entry point. Plays `games` HARD-vs-HARD
-/// matches, dumps every example to `<out>/dataset.json`.
+/// Recover the (single) intent index a one-hot `pi` over `cands` points at, for
+/// histogram reporting. Returns the intent of the argmax candidate.
+fn pi_intent_index(ex: &SupervisedExample) -> usize {
+    // The one-hot pi selects a candidate; that candidate's intent one-hot lives in
+    // cands_intent[chosen]. Recover the argmax of pi, then argmax of its intent vec.
+    let chosen = ex.pi.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).map(|(i, _)| i).unwrap_or(0);
+    let iv = ex.cands_intent.get(chosen);
+    match iv {
+        Some(v) => v.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).map(|(i, _)| i).unwrap_or(10),
+        None => 10, // Pass
+    }
+}
+
+fn intent_name(i: usize) -> &'static str {
+    match i {
+        0 => "BuildFarm", 1 => "BuildMine", 2 => "BuildVillage", 3 => "BuildOutpost",
+        4 => "BuildHydro", 5 => "BuildNuclear", 6 => "Expand", 7 => "HireSoldier",
+        8 => "Attack", 9 => "StackProducer", 10 => "Pass", 11 => "BuildStrangeDevice",
+        12 => "BuildBridge", 13 => "CrackDevice", 14 => "CrackHQ", 15 => "MarchSoldier",
+        _ => "?",
+    }
+}
+
+fn print_intent_histogram(dataset: &[SupervisedExample]) {
+    let mut hist = [0usize; INTENT_DIM];
+    for ex in dataset {
+        let i = pi_intent_index(ex).min(INTENT_DIM - 1);
+        hist[i] += 1;
+    }
+    let total = dataset.len().max(1);
+    println!("  --- recorded-dataset intent histogram ({} examples) ---", dataset.len());
+    let mut order: Vec<usize> = (0..INTENT_DIM).collect();
+    order.sort_by(|&a, &b| hist[b].cmp(&hist[a]));
+    for i in order {
+        if hist[i] == 0 { continue; }
+        println!("    {:<18} {:>8}  ({:>5.1}%)", intent_name(i), hist[i], 100.0 * hist[i] as f64 / total as f64);
+    }
+}
+
+/// SUPERVISED data-gen entry point (FIXED, SD3-league). Plays a configurable mix
+/// of scripted league matchups, recording PER-ACTION (state, intent, z) tuples,
+/// then dumps every example to `<out>/dataset.json` and prints an intent histogram
+/// (the proof the old Pass-collapse bug is fixed).
+///
+/// Flags:
+///   --games N            total games to play (split across the matchup mix)
+///   --seed S             base RNG seed
+///   --out DIR            output dir (writes DIR/dataset.json)
+///   --league "a:b,c:d"   matchup mix as comma-separated bot pairs (default is an
+///                        army-heavy SD3 mix). Bot names: strong_army, rusher,
+///                        marcher, device_rush, fortress, hard, hq_rush.
 fn run_supervised_from_hard(args: &[String]) {
     let games: usize = arg_val(args, "--games").and_then(|v| v.parse().ok()).unwrap_or(2000);
     let seed: u64 = arg_val(args, "--seed").and_then(|v| v.parse().ok()).unwrap_or(1);
@@ -6153,27 +6322,78 @@ fn run_supervised_from_hard(args: &[String]) {
     let width: i32 = arg_val(args, "--width").and_then(|v| v.parse().ok()).unwrap_or(14);
     let height: i32 = arg_val(args, "--height").and_then(|v| v.parse().ok()).unwrap_or(12);
     let cap: i64 = arg_val(args, "--cap").and_then(|v| v.parse().ok()).unwrap_or(300);
+    let pass_keep: f64 = arg_val(args, "--pass-keep").and_then(|v| v.parse().ok()).unwrap_or(0.15);
+    let attack_keep: f64 = arg_val(args, "--attack-keep").and_then(|v| v.parse().ok()).unwrap_or(0.35);
+    let outpost_boost: usize = arg_val(args, "--outpost-boost").and_then(|v| v.parse().ok()).unwrap_or(1);
+    let hire_boost: usize = arg_val(args, "--hire-boost").and_then(|v| v.parse().ok()).unwrap_or(1);
+    let mine_boost: usize = arg_val(args, "--mine-boost").and_then(|v| v.parse().ok()).unwrap_or(1);
     create_dir_all(&out).expect("create supervised out dir");
     let cfg = TRAINING_CONFIG;
+
+    // Default SD3 league mix: HEAVY on army builders (STRONG_ARMY, RUSHER) per the
+    // V2 §7 design, plus DEVICE + FORTRESS coverage, vs a mix incl. each other + HARD.
+    // Weights are relative; the `--games` budget is split proportionally.
+    let default_mix: Vec<(LeagueBot, LeagueBot, u32)> = vec![
+        (LeagueBot::StrongArmy, LeagueBot::Hard, 4),
+        (LeagueBot::StrongArmy, LeagueBot::Rusher, 3),
+        (LeagueBot::Rusher,     LeagueBot::Hard, 4),
+        (LeagueBot::Rusher,     LeagueBot::Fortress, 2),
+        (LeagueBot::StrongArmy, LeagueBot::Fortress, 2),
+        (LeagueBot::Marcher,    LeagueBot::Hard, 2),
+        (LeagueBot::DeviceRush, LeagueBot::StrongArmy, 1),
+        (LeagueBot::Fortress,   LeagueBot::Rusher, 1),
+    ];
+    let mix: Vec<(LeagueBot, LeagueBot, u32)> = match arg_val(args, "--league") {
+        Some(spec) => {
+            let mut v = Vec::new();
+            for pair in spec.split(',') {
+                let mut it = pair.split(':');
+                let a = it.next().and_then(LeagueBot::parse);
+                let b = it.next().and_then(LeagueBot::parse);
+                if let (Some(a), Some(b)) = (a, b) { v.push((a, b, 1)); }
+                else { eprintln!("cnn_train --supervised-from-hard: bad league pair '{}', ignoring", pair); }
+            }
+            if v.is_empty() { default_mix } else { v }
+        }
+        None => default_mix,
+    };
+
+    // Build the per-game matchup schedule by weight.
+    let total_w: u32 = mix.iter().map(|(_, _, w)| *w).sum::<u32>().max(1);
+    let mut schedule: Vec<(LeagueBot, LeagueBot)> = Vec::with_capacity(games);
+    for gi in 0..games {
+        // Pick a matchup by cycling weighted slots deterministically.
+        let slot = (gi as u32 * total_w / games.max(1) as u32) % total_w;
+        let mut acc = 0u32;
+        let mut chosen = (mix[0].0, mix[0].1);
+        for (a, b, w) in &mix {
+            acc += *w;
+            if slot < acc { chosen = (*a, *b); break; }
+        }
+        schedule.push(chosen);
+    }
+
     println!(
-        "cnn_train --supervised-from-hard: games={} seed={} out={} board={}x{} cap={} (HARD-vs-HARD, ARMY_RUSH_PARAMS on BOTH seats)",
-        games, seed, out.display(), width, height, cap
+        "cnn_train --supervised-from-hard: games={} seed={} out={} board={}x{} cap={} pass-keep={:.2}",
+        games, seed, out.display(), width, height, cap, pass_keep
     );
+    println!("  league mix (weighted): {:?}", mix.iter().map(|(a, b, w)| format!("{:?}-vs-{:?}x{}", a, b, w)).collect::<Vec<_>>());
     let start = Instant::now();
     let dataset: Vec<SupervisedExample> = (0..games)
         .into_par_iter()
         .flat_map(|gi| {
-            // Deterministic-ish: derive a per-game seed from the base seed +
-            // game index so reruns are reproducible.
             let game_seed = (seed as u32).wrapping_add(gi as u32);
-            let exs = supervised_play_one_game(game_seed, &cfg, width, height, cap);
+            let (b0, b1) = schedule[gi];
+            let exs = supervised_play_one_game(game_seed, &cfg, width, height, cap, b0, b1, pass_keep, attack_keep, outpost_boost, hire_boost, mine_boost);
             if gi % 200 == 0 {
-                println!("  game {}/{}: collected {} examples", gi, games, exs.len());
+                println!("  game {}/{} ({:?}-vs-{:?}): collected {} examples", gi, games, b0, b1, exs.len());
             }
             exs
         })
         .collect();
     let total = dataset.len();
+    eprintln!("  [debug] intent→Pass fallbacks (intent had no matching candidate): {}", SUP_FALLBACK.load(std::sync::atomic::Ordering::Relaxed));
+    print_intent_histogram(&dataset);
     let path = out.join("dataset.json");
     let json = serde_json::to_string(&dataset).expect("supervised dataset serialises");
     std::fs::write(&path, json).expect("write supervised dataset");
@@ -6560,6 +6780,65 @@ fn run_spatial_dump(args: &[String]) {
     println!("wrote {} — {}", out.display(), summary);
 }
 
+/// VALIDATE a supervised-pretrained net (or any SpatialNet) vs HARD. Loads from
+/// `--init`, runs `bench_vs_hard`, and prints the army-chain behavioural numbers
+/// that decide whether the supervised pass actually imitated the army-builder.
+fn run_validate_net(args: &[String]) {
+    let init: PathBuf = match arg_val(args, "--init") {
+        Some(v) => PathBuf::from(v),
+        None => { eprintln!("--validate-net: --init <SpatialNet weights json> REQUIRED"); std::process::exit(2); }
+    };
+    let games: usize = arg_val(args, "--bench-games").and_then(|v| v.parse().ok()).unwrap_or(40);
+    let sims: usize = arg_val(args, "--sims").and_then(|v| v.parse().ok()).unwrap_or(1);
+    let seed: u32 = arg_val(args, "--seed").and_then(|v| v.parse().ok()).unwrap_or(0xBEEF);
+    let cap: i64 = arg_val(args, "--cap").and_then(|v| v.parse().ok()).unwrap_or(150);
+    let width: i32 = arg_val(args, "--width").and_then(|v| v.parse().ok()).unwrap_or(14);
+    let height: i32 = arg_val(args, "--height").and_then(|v| v.parse().ok()).unwrap_or(12);
+
+    let net: SpatialNet = match std::fs::read_to_string(&init).ok().and_then(|s| serde_json::from_str::<SpatialNet>(&s).ok()) {
+        Some(n) if n.local_dim == SPATIAL_LOCAL_DIM && n.value_scalar_dim == VALUE_SCALAR_DIM => n,
+        Some(n) => { eprintln!("--validate-net: net local_dim={} value_scalar_dim={} != expected {}/{}", n.local_dim, n.value_scalar_dim, SPATIAL_LOCAL_DIM, VALUE_SCALAR_DIM); std::process::exit(1); }
+        None => { eprintln!("--validate-net: failed to load SpatialNet from {}", init.display()); std::process::exit(1); }
+    };
+    let cfg = TRAINING_CONFIG;
+    let mut tc = TrainCfg::default();
+    tc.width = width; tc.height = height; tc.sims = sims; tc.cap = cap; tc.bench_games = games;
+    // sims=1 ⇒ effectively greedy argmax over the net's policy (no real search).
+    println!("=== cnn_train --validate-net ===");
+    println!("net={} params={} games={} sims={} cap={}", init.display(), net.param_count(), games, sims, cap);
+    let br = bench_vs_hard(&net, &cfg, &tc, games, seed);
+
+    let n = br.n.max(1) as f64;
+    let outposts_per_game = br.champ_outposts_sum as f64 / n;
+    let max_soldiers_per_game = br.champ_max_soldiers_sum as f64 / n;
+    let true_win = br.true_win_vs_hard();
+    println!("\n--- VALIDATION (champion = supervised net, vs HARD) ---");
+    println!("  trueWinVsHard        : {:.3}", true_win);
+    println!("  raw win / loss / tie : {:.3} / {:.3} / {:.3}", br.win, br.loss, br.timeout);
+    println!("  outposts / game      : {:.3}  (sum {})", outposts_per_game, br.champ_outposts_sum);
+    println!("  PEAK soldiers / game : {:.3}  (sum {})", max_soldiers_per_game, br.champ_max_soldiers_sum);
+    println!("  peak-soldier bins    : [0]={} [1]={} [2]={} [3]={} [4+]={}",
+        br.champ_max_soldiers_bins[0], br.champ_max_soldiers_bins[1], br.champ_max_soldiers_bins[2],
+        br.champ_max_soldiers_bins[3], br.champ_max_soldiers_bins[4]);
+    println!("  villages / game      : {:.3}", br.champ_villages_sum as f64 / n);
+    println!("  bridges / game       : {:.3}", br.champ_bridges_sum as f64 / n);
+
+    // In-PLAY intent histogram (what the net actually chooses during the games).
+    let total_dec = br.decisions.max(1) as f64;
+    println!("\n  --- in-play intent histogram ({} decisions over {} games) ---", br.decisions, br.n);
+    let mut order: Vec<usize> = (0..NUM_INTENTS).collect();
+    order.sort_by(|&a, &b| br.intents[b].cmp(&br.intents[a]));
+    for i in order {
+        if br.intents[i] == 0 { continue; }
+        println!("    {:<18} {:>8}  ({:>5.1}%)", intent_name(i), br.intents[i], 100.0 * br.intents[i] as f64 / total_dec);
+    }
+    // VERDICT (per V2 §7 spirit): does it imitate the army-builder, not Pass?
+    let builds_army = outposts_per_game >= 0.3 && max_soldiers_per_game >= 1.5;
+    println!("\n  VERDICT: {} — outposts/game={:.2} (≥0.3?) peakSoldiers/game={:.2} (≥1.5?)",
+        if builds_army { "BUILDS ARMY (imitation succeeded)" } else { "WEAK — review" },
+        outposts_per_game, max_soldiers_per_game);
+}
+
 fn main() {
     // `--threads N` overrides the default (cores - 4) worker count. Parsed up
     // front because `init_thread_pool` runs before the per-subcommand parsing.
@@ -6618,6 +6897,14 @@ fn main() {
             return;
         }
         run_supervised_train(&args);
+        return;
+    }
+
+    // VALIDATE a (supervised-pretrained) net: play it vs HARD and report the
+    // army-chain behavioural numbers (outposts/game, peak soldiers, intent
+    // histogram, trueWin). The make-or-break check for the P3 supervised pass.
+    if args.iter().any(|a| a == "--validate-net") {
+        run_validate_net(&args);
         return;
     }
 

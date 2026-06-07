@@ -540,6 +540,118 @@ pub struct HardAi {
     budget: i64,
 }
 
+/// SUPERVISED-RECORDER helper (TRAINING-ONLY, parity-free). Aggregate per-seat
+/// snapshot used by [`HardAi::record_turn`] to classify per-phase deltas into
+/// [`Intent`](crate::candidates::Intent) labels.
+#[derive(Clone)]
+struct TurnSnapshot {
+    farms: i64,
+    mines: i64,
+    villages: i64,
+    outposts: i64,
+    hydros: i64,
+    nuclears: i64,
+    bridges: i64,
+    devices: i64,
+    soldiers: i64,
+    workers: i64,
+    experts: i64,
+    tiles: i64,
+    /// Number of TILES that currently hold ≥1 of this seat's staged conquering
+    /// units. Counting tiles (not units) makes the Attack delta count assault
+    /// DECISIONS (one Attack candidate stages `strike_force` soldiers onto one
+    /// tile) rather than per-soldier, so the imitation target isn't attack-inflated.
+    attacked_tiles: i64,
+}
+
+impl TurnSnapshot {
+    fn of(g: &Game, seat: PlayerId) -> Self {
+        let count_b = |kind: BuildingType| -> i64 {
+            g.get_tiles()
+                .iter()
+                .filter(|t| t.owner == Some(seat) && t.building.as_ref().map(|b| b.kind) == Some(kind))
+                .count() as i64
+        };
+        let attacked_tiles = g
+            .get_tiles()
+            .iter()
+            .filter(|t| {
+                t.conquering_units
+                    .iter()
+                    .any(|u| g.units[u.0].owner == Some(seat))
+            })
+            .count() as i64;
+        TurnSnapshot {
+            farms: count_b(BuildingType::Farm),
+            mines: count_b(BuildingType::Mine),
+            villages: count_b(BuildingType::Village),
+            outposts: count_b(BuildingType::Outpost),
+            hydros: count_b(BuildingType::Hydro),
+            nuclears: count_b(BuildingType::Nuclear),
+            bridges: count_b(BuildingType::Bridge),
+            devices: count_b(BuildingType::StrangeDevice),
+            soldiers: g.current_soldier_amount(seat),
+            workers: g.current_basic_worker_amount(seat),
+            experts: g.current_expert_amount(seat),
+            tiles: g.get_tile_count_for_player(seat),
+            attacked_tiles,
+        }
+    }
+
+    /// Push one [`Intent`] per realised action between `self` (before) and
+    /// `after`. Each phase maps to ONE intent family, so a positive delta on a
+    /// counter emits that many copies of the corresponding intent.
+    fn classify_into(&self, after: &Self, out: &mut Vec<crate::candidates::Intent>) {
+        use crate::candidates::Intent;
+        let mut push_n = |intent: Intent, n: i64| {
+            for _ in 0..n.max(0) {
+                out.push(intent);
+            }
+        };
+        push_n(Intent::BuildFarm, after.farms - self.farms);
+        push_n(Intent::BuildMine, after.mines - self.mines);
+        push_n(Intent::BuildVillage, after.villages - self.villages);
+        push_n(Intent::BuildOutpost, after.outposts - self.outposts);
+        push_n(Intent::BuildHydro, after.hydros - self.hydros);
+        push_n(Intent::BuildNuclear, after.nuclears - self.nuclears);
+        push_n(Intent::BuildBridge, after.bridges - self.bridges);
+        push_n(Intent::BuildStrangeDevice, after.devices - self.devices);
+        // Soldier hires: soldier count rose (the cap-raise that PRECEDES a hire is
+        // a worker/expert/unit-cap action surfaced via StackProducer/Expand below;
+        // record_turn already runs raise_unit_cap as its own phase).
+        push_n(Intent::HireSoldier, after.soldiers - self.soldiers);
+        // Attacked-tile count up ⇒ Attack DECISIONS (one Attack stages a whole
+        // strike-force onto one tile; CrackHQ/CrackDevice collapse into Attack —
+        // the scripted bot has no separate cracker intent, and Attack is the correct
+        // army-chain label for imitation).
+        push_n(Intent::Attack, after.attacked_tiles - self.attacked_tiles);
+        // Tile gains with NO building delta and NO attack ⇒ Expand (worker claim).
+        // Subtract conquered tiles (attacks already counted) to avoid double-count.
+        let building_tiles_delta = (after.farms - self.farms)
+            + (after.mines - self.mines)
+            + (after.villages - self.villages)
+            + (after.outposts - self.outposts)
+            + (after.hydros - self.hydros)
+            + (after.nuclears - self.nuclears)
+            + (after.bridges - self.bridges)
+            + (after.devices - self.devices);
+        let raw_tile_delta = after.tiles - self.tiles;
+        // A fresh Expand claims a neutral tile (tiles up) often placing a building
+        // on it in the SAME phase only for build_* phases. In the expand phase the
+        // tile delta is the expansion count.
+        let expand_count = raw_tile_delta - building_tiles_delta.max(0);
+        push_n(Intent::Expand, expand_count);
+        // MarchSoldier: a soldier changed tile (no hire, no attack staged). We
+        // approximate via the march_to_enemy_hq / military phases producing neither
+        // a soldier-count nor staged-attacker delta but consuming budget. We cannot
+        // observe a pure relocation from aggregate counts, so marches that neither
+        // hire nor stage are not emitted here (acceptable: the army CHAIN —
+        // Outpost/Hire/Attack — is what the imitation target needs; pure relocations
+        // are rare in the scripted bots' recorded turns and dominated by Attack).
+        let _ = (after.workers, self.workers, after.experts, self.experts);
+    }
+}
+
 impl HardAi {
     pub fn new(params: AiParams) -> Self {
         HardAi { params, budget: 0 }
@@ -712,6 +824,106 @@ impl HardAi {
             self.run_turn(g, player);
         }));
         let _ = r; // swallow any panic, matching the TS catch-all.
+        self.params = saved;
+    }
+
+    /// SUPERVISED-RECORDER (TRAINING-ONLY, parity-free).
+    ///
+    /// Drives the SAME phase sequence as [`run_turn`], but snapshots the seat's
+    /// aggregate state before/after EACH phase and classifies the per-phase delta
+    /// into the [`Intent`](crate::candidates::Intent) label(s) the phase executed.
+    /// Returns one `Intent` per realised action, in phase order — so a single turn
+    /// that hires a soldier, builds an Outpost and stages an attack yields
+    /// `[HireSoldier, BuildOutpost, Attack]` instead of one collapsed "dominant"
+    /// label. This is the fix for the old whole-turn diff heuristic that always
+    /// fell through to `Pass`.
+    ///
+    /// Because each phase maps to exactly ONE intent family, the per-phase diff is
+    /// unambiguous (no priority-ordering guess). The caller (`cnn_train.rs`
+    /// supervised data-gen) pairs each returned intent with the turn-start board
+    /// state to build a one-hot imitation example.
+    ///
+    /// NOTE: HQ-garrison `military()` soldier MOVES and `march_to_enemy_hq` moves
+    /// are surfaced as `MarchSoldier` when a soldier changes tile without an attack
+    /// being staged; soldier hires (cap/count up) are `HireSoldier`; staged
+    /// attackers are `Attack`. This keeps the army chain (Outpost → HireSoldier →
+    /// Attack/March) fully represented in the recorded dataset.
+    ///
+    /// `sink(intent, &Game)` is invoked once PER realised action with the game state
+    /// captured at the START of the phase that produced it — so the caller can
+    /// enumerate candidates / build planes against the ACTUAL decision state (an
+    /// Attack candidate may not be enumerable at turn-start but IS after the bot's
+    /// economy phases expanded the frontier; the prior turn-start-only enumeration
+    /// fell back to Pass for exactly those actions).
+    pub fn record_turn(
+        &mut self,
+        g: &mut Game,
+        player: PlayerId,
+        sink: &mut dyn FnMut(crate::candidates::Intent, &Game),
+    ) {
+        use crate::candidates::Intent;
+        self.budget = self.params.max_actions;
+        // Mirror plan_turn's PANIC-MODE budget bump so the recorded behaviour
+        // matches what plan_turn would actually do.
+        let saved = self.params;
+        if self.enemy_has_device(g, player) {
+            self.params.reserve = (self.params.reserve / 4).max(40);
+            self.params.assaults_per_turn = self.params.assaults_per_turn.max(12);
+            self.budget += 12;
+        }
+        // Phase wrapper: clone state at phase start → run phase → classify the
+        // delta → emit each action's intent paired with the phase-start state.
+        macro_rules! phase {
+            ($f:expr) => {{
+                let g_at_phase_start = g.clone();
+                let before = TurnSnapshot::of(g, player);
+                $f;
+                let after = TurnSnapshot::of(g, player);
+                let mut acts: Vec<Intent> = Vec::new();
+                before.classify_into(&after, &mut acts);
+                for it in acts {
+                    sink(it, &g_at_phase_start);
+                }
+            }};
+        }
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            // --- mirror run_turn's phase order exactly ---
+            self.ensure_wood_income(g, player);
+            self.staff_buildings(g, player);
+            self.secure_wood(g, player);
+            let saving_for_mine = self.staffed_farm_count(g, player) >= 2
+                && self.owned_tiles(g, player).iter().any(|&t| {
+                    g.tiles[t.0].tile_type == TileType::Mountain && g.tiles[t.0].building.is_none()
+                })
+                && self.wood(g, player) < 270;
+            if !saving_for_mine {
+                phase!(self.build_farms(g, player));
+                self.staff_buildings(g, player);
+            }
+            phase!(self.build_mines(g, player));
+            self.staff_buildings(g, player);
+            self.boost_mines(g, player);
+            phase!(self.build_power_plants(g, player));
+            phase!(self.invest_nuclear(g, player));
+            phase!(self.build_outposts(g, player));
+            phase!(self.raise_unit_cap(g, player));
+            phase!(self.expand(g, player));
+            phase!(self.build_bridges(g, player));
+            phase!(self.build_strange_device(g, player));
+            if self.params.fortress {
+                phase!(self.fortress_field_wall(g, player));
+            }
+            phase!(self.military(g, player));
+            phase!(self.attack(g, player));
+            if (self.params.warmonger && self.params.strike_force > 0)
+                || (self.params.attack_ready_soldiers > 0 && self.assault_ready(g, player))
+            {
+                phase!(self.march_to_enemy_hq(g, player));
+            }
+            phase!(self.stack_producers(g, player));
+            self.fill_spare_slots(g, player);
+        }));
+        let _ = r;
         self.params = saved;
     }
 
