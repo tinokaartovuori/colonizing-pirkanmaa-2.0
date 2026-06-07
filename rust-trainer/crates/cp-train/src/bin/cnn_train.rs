@@ -3736,6 +3736,28 @@ fn train_batch_lr_kl(
     (ploss / n, vloss / n)
 }
 
+/// Policy-ONLY batch step: trains the policy head + shared trunk on `pi`, leaving
+/// the value head (and its corrupting contribution to the shared trunk) untouched.
+/// The imitation/DAgger fix for the scale-instability (noisy z collapses the policy
+/// at scale). Returns (policy_loss, 0.0).
+fn train_batch_lr_policy_only(net: &mut SpatialNet, batch: &[&Example], lr: f64, l2: f64) -> (f64, f64) {
+    if batch.is_empty() {
+        return (0.0, 0.0);
+    }
+    let net_ref: &SpatialNet = net;
+    let (mut acc, ploss, _vloss) = batch
+        .par_iter()
+        .map(|ex| net_ref.train_grad_policy_only_scalars(&ex.planes, ex.h, ex.w, &ex.value_scalars, &ex.cands, &ex.pi))
+        .reduce(
+            || (SpatialGrad::zeros_like(net_ref), 0.0, 0.0),
+            |mut a, b| { a.0.add(&b.0); (a.0, a.1 + b.1, a.2 + b.2) },
+        );
+    let n = batch.len() as f64;
+    acc.scale(1.0 / n);
+    net.apply_grad(&acc, lr, l2);
+    (ploss / n, 0.0)
+}
+
 fn train_batch_lr(net: &mut SpatialNet, batch: &[&Example], lr: f64, l2: f64) -> (f64, f64) {
     if batch.is_empty() {
         return (0.0, 0.0);
@@ -6503,6 +6525,1009 @@ fn run_supervised_train(args: &[String]) {
     );
 }
 
+// ============================================================================
+// DAGGER (Dataset Aggregation) — the fix for the economy-patience wall.
+//
+// Plain behaviour-cloning (`--supervised`) imitated the STRONG-ARMY expert's
+// GOOD-economy states, then at play time the net hit its OWN poor-economy states
+// and mis-acted (classic distribution shift). DAgger eliminates exactly that: roll
+// the CURRENT net out greedily (the deploy policy, sims=1), record every
+// decision-state the net ACTUALLY visits, label each with what `strong_army` would
+// do FROM that state, aggregate into D, retrain fresh, iterate. The net is thus
+// trained on the distribution of states *it* visits, with correct expert labels.
+//
+// The single new primitive is `expert_label` (the strong-army first-action hook);
+// everything else reuses the supervised infra (`SupervisedExample`, `train_batch_lr`,
+// `board_planes`/`value_scalars`/`cand_feat`/`one_hot_pi_for_intent`, `bench_vs_hard`).
+// DAgger is parity-FREE (training-only; touches no parity-locked candidate/economy
+// logic).
+// ============================================================================
+
+/// The expert label for a decision-state: the FIRST intent `strong_army` would take
+/// from `s` for player `p`. `record_turn` mirrors `run_turn`'s exact phase order and
+/// classifies per-action intents (the fix that killed the old Pass-collapse bug);
+/// `None` ⇒ the expert would take no action ⇒ caller labels `Pass`.
+fn expert_label(s: &Game, p: PlayerId) -> Option<candidates::Intent> {
+    // record_turn MUTATES g — clone first so the net's live rollout is untouched.
+    let mut g = s.clone();
+    let mut bot = HardAi::strong_army();
+    let mut first: Option<candidates::Intent> = None;
+    bot.record_turn(&mut g, p, &mut |intent, _state| {
+        if first.is_none() {
+            first = Some(intent);
+        }
+    });
+    first
+}
+
+/// Module-level twin of the nested `make_example` in `supervised_play_one_game`:
+/// encode (state, seat) → planes + value-scalars + per-candidate features, with the
+/// one-hot `pi` placed on the candidate matching `intent` (Pass-fallback). Returns
+/// `None` when `intent` is not enumerable at `gs` (so every kept example's target is
+/// a REAL, reachable intent — same Pass-collapse guard as the recorder).
+fn make_example_for(
+    gs: &Game,
+    seat: PlayerId,
+    intent: candidates::Intent,
+    cfg: &TierConfig,
+) -> Option<SupervisedExample> {
+    let cands = candidates::enumerate(gs, seat, cfg);
+    if intent != candidates::Intent::Pass && !cands.iter().any(|c| c.intent == intent) {
+        return None;
+    }
+    let (planes, h, w) = board_planes(gs, seat);
+    let vs = value_scalars(gs, seat);
+    let cand_feats: Vec<CandFeat> = cands.iter().map(|c| cand_feat(gs, seat, c)).collect();
+    let pi = one_hot_pi_for_intent(&cands, intent);
+    Some(SupervisedExample {
+        planes,
+        h,
+        w,
+        value_scalars: vs,
+        cands_target: cand_feats.iter().map(|c| c.0).collect(),
+        cands_local: cand_feats.iter().map(|c| c.1.clone()).collect(),
+        cands_intent: cand_feats.iter().map(|c| c.2.clone()).collect(),
+        pi,
+        z: 0.0,
+    })
+}
+
+/// Like [`make_example_for`] but FIRST applies the deploy-time safety scaffold
+/// (`scaffold_ensure` = `ensure_wood_income` + `staff_income`) to a clone of `gs`,
+/// so the recorded INPUT state is encoded EXACTLY as the bench / deploy pipeline
+/// produces it. CRITICAL train/serve-skew fix: the expert's `record_turn` emits
+/// phase-start states staffed by the EXPERT's `staff_buildings`, which place workers
+/// differently from the NN controller's `staff_income` that ALWAYS runs at play
+/// time. Recording expert-staffed states (the BC seed + β-turns) then evaluating
+/// scaffold-staffed states is a systematic input mismatch that no amount of data
+/// fixes — the net fits the expert-staffed manifold (diag-train gap −2.6) but
+/// collapses to Pass on the scaffold-staffed bench manifold (diag-pass gap +5.4).
+/// We scaffold the clone so the label's intent is re-checked against the SCAFFOLDED
+/// candidate set (so every kept example's target is still reachable post-scaffold).
+fn make_example_for_scaffolded(
+    gs: &Game,
+    seat: PlayerId,
+    intent: candidates::Intent,
+    cfg: &TierConfig,
+) -> Option<SupervisedExample> {
+    let mut g = gs.clone();
+    scaffold_ensure(&mut g, seat, cfg);
+    make_example_for(&g, seat, intent, cfg)
+}
+
+/// Class-balance upweighting: push `ex` into `out` `reps` times, where `reps` is
+/// boosted for the RARE-but-critical army-chain intents (Outpost unlocks the soldier
+/// cap; Mine funds it; Hire fields it). Mirrors the `--outpost-boost`/`--mine-boost`/
+/// `--hire-boost` replication the supervised recorder uses — without it the one-hot
+/// CE drowns these classes (the diagnosed reason DAgger round 1 had BuildOutpost at
+/// 0.2% and the net never chose it in play).
+fn push_boosted(
+    out: &mut Vec<SupervisedExample>,
+    ex: SupervisedExample,
+    intent: candidates::Intent,
+    outpost_boost: usize,
+    mine_boost: usize,
+    hire_boost: usize,
+) {
+    let reps = match intent {
+        candidates::Intent::BuildOutpost => outpost_boost.max(1),
+        candidates::Intent::BuildMine => mine_boost.max(1),
+        candidates::Intent::HireSoldier => hire_boost.max(1),
+        _ => 1,
+    };
+    for _ in 1..reps {
+        out.push(ex.clone());
+    }
+    out.push(ex);
+}
+
+/// The net's deterministic (temperature-0) greedy choice over `cands`: one trunk
+/// forward (`forward_board_scalars`) reused for every candidate's `score_candidate_into`,
+/// then argmax — the canonical learner policy (identical to `complete_root_turn`'s
+/// greedy completion). CRITICAL: `mcts_select` with `n_sims=1` does NOT do this — at
+/// the root all edge-visits are 0, so the PUCT U-term `prior·√Σvisits/(1+N)` is 0 for
+/// every edge and `chosen` collapses to candidate 0, completely net-INDEPENDENT. The
+/// real deploy/training policy uses `sims=64`; for the DAgger rollout we use this cheap
+/// net-greedy policy (the policy head's own argmax, what MCTS searches on top of).
+fn net_greedy_choice(net: &SpatialNet, g: &Game, player: PlayerId, cands: &[candidates::Candidate]) -> usize {
+    let (planes, h, w) = board_planes(g, player);
+    let cache = net.forward_board_scalars(&planes, h, w, &value_scalars(g, player));
+    let mut scratch = PolicyScratch::new();
+    let mut best = 0usize;
+    let mut best_s = f64::NEG_INFINITY;
+    for (i, c) in cands.iter().enumerate() {
+        let (tgt, local, intent) = cand_feat(g, player, c);
+        let s = net.score_candidate_into(&cache, tgt, &local, &intent, &mut scratch);
+        if s > best_s {
+            best_s = s;
+            best = i;
+        }
+    }
+    best
+}
+
+/// Drive ONE champ turn with the net's pure policy-head greedy (no recording, no
+/// MCTS) — the bench twin of `dagger_rollout_turn`. Tallies the chosen intents.
+fn net_greedy_turn(
+    net: &SpatialNet,
+    g: &mut Game,
+    cur: PlayerId,
+    cfg: &TierConfig,
+    intents: &mut [u64; NUM_INTENTS],
+    decisions: &mut u64,
+) {
+    scaffold_ensure(g, cur, cfg);
+    loop {
+        let cands = candidates::enumerate(g, cur, cfg);
+        if cands.len() <= 1 {
+            break;
+        }
+        let idx = net_greedy_choice(net, g, cur, &cands);
+        let chosen = &cands[idx];
+        *decisions += 1;
+        let ii = chosen.intent as usize;
+        if ii < NUM_INTENTS {
+            intents[ii] += 1;
+        }
+        if chosen.intent == candidates::Intent::Pass {
+            break;
+        }
+        if !candidates::execute_action(g, cur, cfg, &chosen.action) {
+            break;
+        }
+        scaffold_staff(g, cur, cfg);
+    }
+}
+
+/// DIAGNOSTIC: at one champ decision-state, return
+/// (net_argmax_intent, pass_score, best_nonpass_score, expert_label).
+/// `pass_score`/`best_nonpass_score` are the raw policy-head scalars (pre-softmax).
+fn diag_state(
+    net: &SpatialNet,
+    g: &Game,
+    player: PlayerId,
+    cfg: &TierConfig,
+) -> Option<(candidates::Intent, f64, f64, candidates::Intent)> {
+    let cands = candidates::enumerate(g, player, cfg);
+    if cands.len() <= 1 {
+        return None;
+    }
+    let (planes, h, w) = board_planes(g, player);
+    let cache = net.forward_board_scalars(&planes, h, w, &value_scalars(g, player));
+    let mut scratch = PolicyScratch::new();
+    let mut best_idx = 0usize;
+    let mut best_s = f64::NEG_INFINITY;
+    let mut pass_s = f64::NEG_INFINITY;
+    let mut best_nonpass_s = f64::NEG_INFINITY;
+    for (i, c) in cands.iter().enumerate() {
+        let (tgt, local, intent) = cand_feat(g, player, c);
+        let s = net.score_candidate_into(&cache, tgt, &local, &intent, &mut scratch);
+        if s > best_s { best_s = s; best_idx = i; }
+        if c.intent == candidates::Intent::Pass {
+            if s > pass_s { pass_s = s; }
+        } else if s > best_nonpass_s {
+            best_nonpass_s = s;
+        }
+    }
+    let argmax = cands[best_idx].intent;
+    let label = expert_label(g, player).unwrap_or(candidates::Intent::Pass);
+    Some((argmax, pass_s, best_nonpass_s, label))
+}
+
+/// Run the diagnostic: play `games` games TWICE — once net-greedy drives champ,
+/// once the strong_army expert drives champ — and at every champ decision-state
+/// tally (a) net argmax-Pass%, (b) mean(pass_score − best_nonpass_score),
+/// SPLIT by state-source AND conditioned on whether the EXPERT would Pass there.
+/// Decisive test: distribution-shift (Pass% high only on net-states) vs global
+/// Pass-overscoring (Pass% high everywhere, esp. on expert-NON-pass states).
+fn run_diag_pass(args: &[String]) {
+    let init: PathBuf = match arg_val(args, "--init") {
+        Some(v) => PathBuf::from(v),
+        None => { eprintln!("--diag-pass: --init <net json> REQUIRED"); std::process::exit(2); }
+    };
+    let games: usize = arg_val(args, "--games").and_then(|v| v.parse().ok()).unwrap_or(20);
+    let cap: i64 = arg_val(args, "--cap").and_then(|v| v.parse().ok()).unwrap_or(150);
+    let width: i32 = 14; let height: i32 = 12;
+    let seed: u32 = arg_val(args, "--seed").and_then(|v| v.parse().ok()).unwrap_or(0xD1A6);
+    let net: SpatialNet = serde_json::from_str(&std::fs::read_to_string(&init).unwrap()).unwrap();
+    let cfg = TRAINING_CONFIG;
+
+    // Accumulators: [source][expert_says_nonpass] → (count, argmax_pass_count, sum_gap)
+    // source: 0 = net-driven states, 1 = expert-driven states.
+    #[derive(Default, Clone, Copy)]
+    struct Acc { n: u64, argmax_pass: u64, sum_gap: f64 }
+    let results: Vec<[[Acc; 2]; 2]> = (0..games).into_par_iter().map(|gi| {
+        let mut acc = [[Acc::default(); 2]; 2];
+        let s = seed.wrapping_add((gi as u32).wrapping_mul(2_654_435_761));
+        for source in 0..2usize {
+            // source 0: net drives champ. source 1: expert drives champ.
+            let champ_seat = (gi % 2) as usize;
+            let mut g = Game::new(width, height, &["P1", "P2"]);
+            g.generate_map(width, height, s);
+            let placer = HardAi::hard();
+            let mut hard = HardAi::hard();
+            let mut champ_expert = HardAi::strong_army();
+            for _ in 0..2 {
+                let cur = g.current_player();
+                if cur.0 == champ_seat { placer.place_headquarters(&mut g, cur); }
+                else { hard.place_headquarters(&mut g, cur); }
+                g.change_turn();
+            }
+            let mut last_sig = board_signature(&g, 2);
+            let mut last_progress = g.get_rounds_played();
+            while g.live_players().len() > 1 && g.get_rounds_played() < cap {
+                let cur = g.current_player();
+                if cur.0 == champ_seat {
+                    // Walk this turn's decision-states, probing the net at each, then
+                    // advancing by the DRIVER (net or expert) so the visited
+                    // distribution matches `source`.
+                    scaffold_ensure(&mut g, cur, &cfg);
+                    loop {
+                        let cands = candidates::enumerate(&g, cur, &cfg);
+                        if cands.len() <= 1 { break; }
+                        if let Some((argmax, pass_s, best_np, label)) = diag_state(&net, &g, cur, &cfg) {
+                            let says_np = if label != candidates::Intent::Pass { 1 } else { 0 };
+                            let a = &mut acc[source][says_np];
+                            a.n += 1;
+                            if argmax == candidates::Intent::Pass { a.argmax_pass += 1; }
+                            // gap = pass - best_nonpass (>0 ⇒ net prefers Pass)
+                            if best_np.is_finite() { a.sum_gap += pass_s - best_np; }
+                        }
+                        // advance by driver
+                        if source == 0 {
+                            let idx = net_greedy_choice(&net, &g, cur, &cands);
+                            let chosen = &cands[idx];
+                            if chosen.intent == candidates::Intent::Pass { break; }
+                            if !candidates::execute_action(&mut g, cur, &cfg, &chosen.action) { break; }
+                            scaffold_staff(&mut g, cur, &cfg);
+                        } else {
+                            // expert drives: take its FIRST action then re-loop (so we
+                            // probe each expert decision-state). Use record_turn once
+                            // to advance the whole turn, but we want per-action probing;
+                            // simplest: take expert's first intent via execute.
+                            let label = expert_label(&g, cur).unwrap_or(candidates::Intent::Pass);
+                            if label == candidates::Intent::Pass { break; }
+                            // find a candidate matching the label and execute it
+                            match cands.iter().find(|c| c.intent == label) {
+                                Some(c) => {
+                                    if !candidates::execute_action(&mut g, cur, &cfg, &c.action) { break; }
+                                    scaffold_staff(&mut g, cur, &cfg);
+                                }
+                                None => break,
+                            }
+                        }
+                    }
+                } else {
+                    hard.plan_turn(&mut g, cur);
+                }
+                match g.end_turn() {
+                    EndTurnOutcome::Win(_) => break,
+                    EndTurnOutcome::Tie => break,
+                    _ => {}
+                }
+                let _ = &mut champ_expert;
+                let r = g.get_rounds_played();
+                let sig = board_signature(&g, 2);
+                if sig != last_sig { last_sig = sig; last_progress = r; }
+                else if r - last_progress >= STALL_ROUNDS && !device_on_board(&g) { break; }
+            }
+        }
+        acc
+    }).collect();
+
+    let mut tot = [[Acc::default(); 2]; 2];
+    for r in &results {
+        for src in 0..2 { for k in 0..2 {
+            tot[src][k].n += r[src][k].n;
+            tot[src][k].argmax_pass += r[src][k].argmax_pass;
+            tot[src][k].sum_gap += r[src][k].sum_gap;
+        }}
+    }
+    println!("=== --diag-pass ({} games, net={}) ===", games, init.display());
+    println!("Reads: 'expert NON-pass' = states where strong_army would act (build/hire/attack).");
+    println!("  gap = pass_score - best_nonpass_score  (>0 ⇒ net OVER-scores Pass)\n");
+    let lab = |src: usize| if src == 0 { "NET-driven states  " } else { "EXPERT-driven states" };
+    for src in 0..2 {
+        for k in 0..2 {
+            let a = tot[src][k];
+            if a.n == 0 { continue; }
+            let kind = if k == 1 { "expert NON-pass" } else { "expert Pass    " };
+            println!("  {} | {} : n={:>6}  net-argmax-Pass={:>5.1}%  mean-gap={:+.4}",
+                lab(src), kind, a.n,
+                100.0 * a.argmax_pass as f64 / a.n as f64,
+                a.sum_gap / a.n as f64);
+        }
+    }
+}
+
+/// DIAGNOSTIC: probe the net on the EXACT training-state distribution — replay
+/// strong_army-vs-strong_army games via `record_turn` (the same recorder the BC
+/// dataset used, NO scaffold) and at every emitted (state, expert_intent) check the
+/// net's argmax. If the net argmax-Passes here too → the net never fit; if it does
+/// NOT Pass here but DOES in play (`--diag-pass`) → it's a TRAIN/PLAY input mismatch
+/// (the scaffold). Reports, for non-Pass-labelled training states: net-argmax-Pass%,
+/// net-argmax==label% (top-1 accuracy), mean(pass-best_nonpass gap).
+fn run_diag_train(args: &[String]) {
+    let init: PathBuf = match arg_val(args, "--init") {
+        Some(v) => PathBuf::from(v),
+        None => { eprintln!("--diag-train: --init <net json> REQUIRED"); std::process::exit(2); }
+    };
+    let games: usize = arg_val(args, "--games").and_then(|v| v.parse().ok()).unwrap_or(40);
+    let width: i32 = 14; let height: i32 = 12;
+    let seed: u32 = arg_val(args, "--seed").and_then(|v| v.parse().ok()).unwrap_or(0x77A1);
+    let scaffold = args.iter().any(|a| a == "--scaffold");
+    let net: SpatialNet = serde_json::from_str(&std::fs::read_to_string(&init).unwrap()).unwrap();
+    let cfg = TRAINING_CONFIG;
+
+    #[derive(Default, Clone, Copy)]
+    struct Acc { n: u64, argmax_pass: u64, argmax_eq_label: u64, sum_gap: f64 }
+    let results: Vec<[Acc; 2]> = (0..games).into_par_iter().map(|gi| {
+        // [0] = expert-Pass states, [1] = expert NON-pass states.
+        let mut acc = [Acc::default(); 2];
+        let s = seed.wrapping_add((gi as u32).wrapping_mul(2_654_435_761));
+        let mut g = Game::new(width, height, &["P1", "P2"]);
+        g.generate_map(width, height, s);
+        let p0 = HardAi::strong_army();
+        let p1 = HardAi::strong_army();
+        for i in 0..2 { let cur = g.current_player(); if i == 0 { p0.place_headquarters(&mut g, cur); } else { p1.place_headquarters(&mut g, cur); } g.change_turn(); }
+        let mut b0 = HardAi::strong_army();
+        let mut b1 = HardAi::strong_army();
+        let mut last_sig = board_signature(&g, 2);
+        let mut last_progress = g.get_rounds_played();
+        let netr = &net; let cfgr = &cfg;
+        while g.live_players().len() > 1 && g.get_rounds_played() < 150 {
+            let cur = g.current_player();
+            let bot = if cur.0 == 0 { &mut b0 } else { &mut b1 };
+            // record_turn emits (intent, state-at-phase-start) — the EXACT training tuples.
+            let probes: std::cell::RefCell<Vec<(candidates::Intent, Game)>> = std::cell::RefCell::new(Vec::new());
+            bot.record_turn(&mut g, cur, &mut |intent, gs| {
+                probes.borrow_mut().push((intent, gs.clone()));
+            });
+            for (intent, gs) in probes.into_inner() {
+                let mut gs = gs;
+                if scaffold { scaffold_ensure(&mut gs, cur, cfgr); }
+                let cands = candidates::enumerate(&gs, cur, cfgr);
+                if cands.len() <= 1 { continue; }
+                // skip examples whose label isn't enumerable (recorder drops these too)
+                if intent != candidates::Intent::Pass && !cands.iter().any(|c| c.intent == intent) { continue; }
+                let (planes, h, w) = board_planes(&gs, cur);
+                let cache = netr.forward_board_scalars(&planes, h, w, &value_scalars(&gs, cur));
+                let mut scratch = PolicyScratch::new();
+                let mut best_i = 0usize; let mut best_s = f64::NEG_INFINITY;
+                let mut pass_s = f64::NEG_INFINITY; let mut best_np = f64::NEG_INFINITY;
+                for (i, c) in cands.iter().enumerate() {
+                    let (tgt, local, io) = cand_feat(&gs, cur, c);
+                    let sc = netr.score_candidate_into(&cache, tgt, &local, &io, &mut scratch);
+                    if sc > best_s { best_s = sc; best_i = i; }
+                    if c.intent == candidates::Intent::Pass { if sc > pass_s { pass_s = sc; } }
+                    else if sc > best_np { best_np = sc; }
+                }
+                let argmax = cands[best_i].intent;
+                let k = if intent != candidates::Intent::Pass { 1 } else { 0 };
+                let a = &mut acc[k];
+                a.n += 1;
+                if argmax == candidates::Intent::Pass { a.argmax_pass += 1; }
+                if argmax == intent { a.argmax_eq_label += 1; }
+                if pass_s.is_finite() && best_np.is_finite() { a.sum_gap += pass_s - best_np; }
+            }
+            match g.end_turn() { EndTurnOutcome::Win(_) | EndTurnOutcome::Tie => break, _ => {} }
+            let r = g.get_rounds_played();
+            let sig = board_signature(&g, 2);
+            if sig != last_sig { last_sig = sig; last_progress = r; }
+            else if r - last_progress >= STALL_ROUNDS && !device_on_board(&g) { break; }
+        }
+        acc
+    }).collect();
+
+    let mut tot = [Acc::default(); 2];
+    for r in &results { for k in 0..2 { tot[k].n += r[k].n; tot[k].argmax_pass += r[k].argmax_pass; tot[k].argmax_eq_label += r[k].argmax_eq_label; tot[k].sum_gap += r[k].sum_gap; } }
+    println!("=== --diag-train ({} games, net={}) ===", games, init.display());
+    println!("Probes the net on the EXACT training-state distribution (strong_army record_turn, NO scaffold).");
+    println!("If net does NOT Pass here but DOES in --diag-pass ⇒ train/play input mismatch (scaffold).\n");
+    for k in 0..2 {
+        let a = tot[k];
+        if a.n == 0 { continue; }
+        let kind = if k == 1 { "expert NON-pass" } else { "expert Pass    " };
+        println!("  TRAIN states | {} : n={:>6}  net-argmax-Pass={:>5.1}%  top1-acc={:>5.1}%  mean-gap={:+.4}",
+            kind, a.n,
+            100.0 * a.argmax_pass as f64 / a.n as f64,
+            100.0 * a.argmax_eq_label as f64 / a.n as f64,
+            a.sum_gap / a.n as f64);
+    }
+}
+
+/// Bench the net's POLICY HEAD (temperature-0 greedy, no MCTS) vs HARD over `games`.
+/// This is the correct gate for a DAgger-trained policy: MCTS at the deploy sims
+/// Pass-collapses while the value head is still weak (so an MCTS bench measures the
+/// value head, not the policy), and sims=1 MCTS is net-INDEPENDENT. Returns
+/// (trueWin incl. tile-tiebreak, outposts/game, peakSoldiers/game, intent tally,
+/// total decisions). Mirrors `bench_vs_opponent`'s setup + stall logic.
+fn bench_net_greedy(
+    net: &SpatialNet,
+    cfg: &TierConfig,
+    width: i32,
+    height: i32,
+    cap: i64,
+    games: usize,
+    base_seed: u32,
+) -> (f64, f64, f64, [u64; NUM_INTENTS], u64) {
+    let recs: Vec<(bool, i64, i64, [u64; NUM_INTENTS], u64)> = (0..games)
+        .into_par_iter()
+        .map(|gi| {
+            let seed = base_seed.wrapping_add((gi as u32).wrapping_mul(2_654_435_761));
+            let champ_seat = (gi % 2) as usize;
+            let mut g = Game::new(width, height, &["P1", "P2"]);
+            g.generate_map(width, height, seed);
+            let placer = HardAi::hard();
+            let mut hard = HardAi::hard();
+            for _ in 0..2 {
+                let cur = g.current_player();
+                if cur.0 == champ_seat { placer.place_headquarters(&mut g, cur); }
+                else { hard.place_headquarters(&mut g, cur); }
+                g.change_turn();
+            }
+            let mut champ_max_soldiers = 0i64;
+            let mut winner: Option<PlayerId> = None;
+            let mut intents = [0u64; NUM_INTENTS];
+            let mut decisions = 0u64;
+            let mut last_sig = board_signature(&g, 2);
+            let mut last_progress = g.get_rounds_played();
+            while g.live_players().len() > 1 && g.get_rounds_played() < cap {
+                let cur = g.current_player();
+                if cur.0 == champ_seat {
+                    net_greedy_turn(net, &mut g, cur, cfg, &mut intents, &mut decisions);
+                } else {
+                    hard.plan_turn(&mut g, cur);
+                }
+                champ_max_soldiers = champ_max_soldiers.max(g.current_soldier_amount(PlayerId(champ_seat)));
+                match g.end_turn() {
+                    EndTurnOutcome::Win(p) => { winner = Some(p); break; }
+                    EndTurnOutcome::Tie => break,
+                    _ => {}
+                }
+                let r = g.get_rounds_played();
+                let sig = board_signature(&g, 2);
+                if sig != last_sig { last_sig = sig; last_progress = r; }
+                else if r - last_progress >= STALL_ROUNDS && !device_on_board(&g) { break; }
+            }
+            let winner = winner.or_else(|| { let l = g.live_players(); if l.len() == 1 { Some(l[0]) } else { None } });
+            let total = g.get_tile_count().max(1) as f64;
+            let cf = g.get_tile_count_for_player(PlayerId(champ_seat)) as f64 / total;
+            let hf = g.get_tile_count_for_player(PlayerId(1 - champ_seat)) as f64 / total;
+            let champ_won = match winner { Some(p) => p.0 == champ_seat, None => cf > hf };
+            let bc = cp_ai::metrics::building_counts(&g, PlayerId(champ_seat));
+            (champ_won, bc.outpost, champ_max_soldiers, intents, decisions)
+        })
+        .collect();
+    let n = recs.len().max(1) as f64;
+    let wins = recs.iter().filter(|r| r.0).count() as f64;
+    let outposts: i64 = recs.iter().map(|r| r.1).sum();
+    let soldiers: i64 = recs.iter().map(|r| r.2).sum();
+    let mut intents = [0u64; NUM_INTENTS];
+    let mut decisions = 0u64;
+    for r in &recs {
+        for i in 0..NUM_INTENTS { intents[i] += r.3[i]; }
+        decisions += r.4;
+    }
+    (wins / n, outposts as f64 / n, soldiers as f64 / n, intents, decisions)
+}
+
+/// Drive ONE of the net's turns greedily (mirrors `cnn_plan_turn`'s loop) while
+/// recording the DAgger examples: at every decision-state, BEFORE the net acts,
+/// label the state with `expert_label` and emit a `SupervisedExample` (z filled by
+/// the caller at terminal). Then execute the NET's OWN greedy choice so the rollout
+/// stays on the net's visited distribution — the crux of DAgger.
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
+fn dagger_rollout_turn(
+    net: &SpatialNet,
+    g: &mut Game,
+    cur: PlayerId,
+    cfg: &TierConfig,
+    pass_keep: f64,
+    attack_keep: f64,
+    outpost_boost: usize,
+    mine_boost: usize,
+    hire_boost: usize,
+    explore_eps: f64,
+    force_progress: bool,
+    prng: &mut XorShift32,
+    out: &mut Vec<SupervisedExample>,
+) {
+    scaffold_ensure(g, cur, cfg);
+    // Cap the per-turn action count so a force_progress rollout can't loop forever
+    // (e.g. an Expand that doesn't change the board-signature each step).
+    let mut budget = cfg.budget.max(1);
+    loop {
+        if budget <= 0 { break; }
+        let cands = candidates::enumerate(g, cur, cfg);
+        if cands.len() <= 1 {
+            break;
+        }
+        // Expert label for THIS decision-state (clone-and-run; g untouched).
+        let label = expert_label(g, cur).unwrap_or(candidates::Intent::Pass);
+        // Subsample the over-represented Pass / Attack labels so the army-chain
+        // classes the net must learn aren't swamped (same spirit as the recorder's
+        // `--pass-keep` / `--attack-keep`).
+        let keep = match label {
+            candidates::Intent::Pass => prng.next_f64() < pass_keep,
+            candidates::Intent::Attack => prng.next_f64() < attack_keep,
+            _ => true,
+        };
+        if keep {
+            if let Some(ex) = make_example_for(g, cur, label, cfg) {
+                push_boosted(out, ex, label, outpost_boost, mine_boost, hire_boost);
+            }
+        }
+        // The net's OWN greedy action (temperature-0 policy-head argmax — net-dependent).
+        let greedy_idx = net_greedy_choice(net, g, cur, &cands);
+        // EXPLORATION (the Pass-collapse-escape lever): a degenerate Pass-collapsed
+        // net Passes from turn 1 → the rollout breaks immediately → DAgger only ever
+        // sees opening states + the β-mix EXPERT distribution (which BC already had),
+        // never the net's own poor-economy MID-GAME states it must be corrected on.
+        // To generate that on-policy coverage we (a) with prob `explore_eps` take a
+        // uniform-random candidate, and (b) when `force_progress` is on and the net
+        // would Pass, instead take the net's best NON-Pass candidate (its own ranking,
+        // not the expert's) so the turn keeps advancing into new states — each still
+        // EXPERT-labelled. Ross et al. (DAgger) require on-policy state coverage; a
+        // collapsed policy yields none without this.
+        let choice_idx = if explore_eps > 0.0 && prng.next_f64() < explore_eps {
+            (prng.next_f64() * cands.len() as f64).floor() as usize % cands.len()
+        } else if force_progress && cands[greedy_idx].intent == candidates::Intent::Pass {
+            // best NON-Pass candidate by the net's own score; fall back to greedy
+            // (Pass) only if literally no non-Pass candidate exists.
+            best_nonpass_choice(net, g, cur, &cands).unwrap_or(greedy_idx)
+        } else {
+            greedy_idx
+        };
+        let chosen = &cands[choice_idx];
+        if chosen.intent == candidates::Intent::Pass {
+            break;
+        }
+        if !candidates::execute_action(g, cur, cfg, &chosen.action) {
+            break;
+        }
+        scaffold_staff(g, cur, cfg);
+        budget -= 1;
+    }
+}
+
+/// The index of the highest-net-scored NON-Pass candidate (None if all are Pass).
+fn best_nonpass_choice(net: &SpatialNet, g: &Game, player: PlayerId, cands: &[candidates::Candidate]) -> Option<usize> {
+    let (planes, h, w) = board_planes(g, player);
+    let cache = net.forward_board_scalars(&planes, h, w, &value_scalars(g, player));
+    let mut scratch = PolicyScratch::new();
+    let mut best: Option<usize> = None;
+    let mut best_s = f64::NEG_INFINITY;
+    for (i, c) in cands.iter().enumerate() {
+        if c.intent == candidates::Intent::Pass { continue; }
+        let (tgt, local, intent) = cand_feat(g, player, c);
+        let s = net.score_candidate_into(&cache, tgt, &local, &intent, &mut scratch);
+        if s > best_s { best_s = s; best = Some(i); }
+    }
+    best
+}
+
+/// Play ONE DAgger rollout game: the net drives `champ_seat`, the scripted league
+/// `opp` drives the other seat. With probability `beta` the STRONG-ARMY expert drives
+/// the champ turn instead of the net (the classic DAgger β-mix, Ross et al.) — this
+/// steers the trajectory into the expert's economy-patience states (Mine→Outpost→army)
+/// that the net never reaches on its own, so those states get into the dataset. EVERY
+/// champ-turn (expert- or net-driven) records (state, EXPERT-label) examples with the
+/// army-chain class boosts; `z` is back-filled to the champ seat's terminal
+/// win(+1)/loss(−1)/tie(0) so the value head learns the realised outcome distribution.
+/// Mirrors `bench_vs_opponent`'s setup + `supervised_play_one_game`'s stall/terminal logic.
+#[allow(clippy::too_many_arguments)]
+fn dagger_play_one_game(
+    net: &SpatialNet,
+    cfg: &TierConfig,
+    width: i32,
+    height: i32,
+    cap: i64,
+    champ_seat: usize,
+    opp: LeagueBot,
+    beta: f64,
+    pass_keep: f64,
+    attack_keep: f64,
+    outpost_boost: usize,
+    mine_boost: usize,
+    hire_boost: usize,
+    explore_eps: f64,
+    force_progress: bool,
+    seed: u32,
+) -> Vec<SupervisedExample> {
+    let n_players = 2usize;
+    let mut prng = XorShift32::new(seed ^ 0x0DA6_6E72);
+    let mut g = Game::new(width, height, &["P1", "P2"]);
+    g.generate_map(width, height, seed);
+    let placer = HardAi::hard();
+    let mut opp_bot = opp.make();
+    // The expert that drives the champ seat on β-turns (and is the labeller).
+    let mut champ_expert = HardAi::strong_army();
+    for _ in 0..n_players {
+        let cur = g.current_player();
+        if cur.0 == champ_seat {
+            placer.place_headquarters(&mut g, cur);
+        } else {
+            opp_bot.place_headquarters(&mut g, cur);
+        }
+        g.change_turn();
+    }
+
+    let mut recorded: Vec<SupervisedExample> = Vec::new();
+    let mut winner: Option<PlayerId> = None;
+    let mut last_sig = board_signature(&g, n_players);
+    let mut last_progress = g.get_rounds_played();
+
+    while g.live_players().len() > 1 && g.get_rounds_played() < cap {
+        let cur = g.current_player();
+        if cur.0 == champ_seat {
+            if prng.next_f64() < beta {
+                // β-turn: the EXPERT drives champ's whole turn via record_turn (which
+                // both mutates g forward AND emits per-action (phase-start state, intent)
+                // to the sink). Same recording path as the BC recorder — so β-turns add
+                // expert-distribution outpost/army states the net can't reach alone.
+                champ_expert.record_turn(&mut g, cur, &mut |intent, gs| {
+                    let keep = match intent {
+                        candidates::Intent::Pass => prng.next_f64() < pass_keep,
+                        candidates::Intent::Attack => prng.next_f64() < attack_keep,
+                        _ => true,
+                    };
+                    if keep {
+                        // Encode with the DEPLOY scaffold so β-turn (expert) example
+                        // INPUTS match the bench/play pipeline — kills the train/serve
+                        // staffing skew (see `make_example_for_scaffolded`).
+                        if let Some(ex) = make_example_for_scaffolded(gs, cur, intent, cfg) {
+                            push_boosted(&mut recorded, ex, intent, outpost_boost, mine_boost, hire_boost);
+                        }
+                    }
+                });
+            } else {
+                dagger_rollout_turn(
+                    net, &mut g, cur, cfg, pass_keep, attack_keep,
+                    outpost_boost, mine_boost, hire_boost, explore_eps, force_progress,
+                    &mut prng, &mut recorded,
+                );
+            }
+        } else {
+            opp_bot.plan_turn(&mut g, cur);
+        }
+        match g.end_turn() {
+            EndTurnOutcome::Win(p) => {
+                winner = Some(p);
+                break;
+            }
+            EndTurnOutcome::Tie => break,
+            _ => {}
+        }
+        let r = g.get_rounds_played();
+        let sig = board_signature(&g, n_players);
+        if sig != last_sig {
+            last_sig = sig;
+            last_progress = r;
+        } else if r - last_progress >= STALL_ROUNDS && !device_on_board(&g) {
+            break;
+        }
+    }
+
+    let winner_pid = winner.or_else(|| {
+        let live = g.live_players();
+        if live.len() == 1 { Some(live[0]) } else { None }
+    });
+    let z = match winner_pid {
+        Some(w) if w.0 == champ_seat => 1.0,
+        Some(_) => -1.0,
+        None => 0.0,
+    };
+    for ex in recorded.iter_mut() {
+        ex.z = z;
+    }
+    recorded
+}
+
+/// Train a FRESH SpatialNet on the (aggregated) DAgger dataset — hard-target CE on
+/// the expert-intent one-hot + MSE on z + L2. Same recipe as `run_supervised_train`
+/// (DAgger retrains from scratch on the growing aggregate each round). Trains BOTH
+/// heads (value MSE runs) so the seed is RL-fine-tunable.
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
+fn train_dagger_net(
+    dataset: &[SupervisedExample],
+    small_net: bool,
+    epochs: usize,
+    batch: usize,
+    lr: f64,
+    l2: f64,
+    policy_only: bool,
+    seed: u64,
+) -> SpatialNet {
+    let n = dataset.len();
+    let mut net = if small_net {
+        SpatialNet::default_small_with_value_scalars(PLANE_COUNT, SPATIAL_LOCAL_DIM, INTENT_DIM, VALUE_SCALAR_DIM, seed)
+    } else {
+        SpatialNet::default_with_value_scalars(PLANE_COUNT, SPATIAL_LOCAL_DIM, INTENT_DIM, VALUE_SCALAR_DIM, seed)
+    };
+    // Convert SupervisedExample → Example PER BATCH (not the whole set up front):
+    // the aggregated D can be ~40k examples × ~36 KB planes ≈ several GB, and a
+    // full up-front clone would double peak memory and risk OOM on a 32 GB box.
+    // Per-batch construction bounds the extra allocation to `batch` examples.
+    let to_example = |s: &SupervisedExample| -> Example {
+        Example {
+            planes: s.planes.clone(),
+            h: s.h,
+            w: s.w,
+            value_scalars: s.value_scalars.clone(),
+            cands: s.cand_feats(),
+            pi: s.pi.clone(),
+            seat: PlayerId(0),
+            phi: 0.0,
+            z: s.z,
+            chosen_intent: candidates::Intent::Pass,
+            owned_standing_device: false,
+            value_only: false,
+        }
+    };
+    // Clamp the batch to the dataset size so a small aggregate (n < batch) still
+    // trains at least one batch (otherwise `s + batch <= n` is never true → 0 steps).
+    let batch = batch.min(n).max(1);
+    let mut rng = XorShift32::new(seed as u32 ^ 0xACEDB17);
+    for ep in 1..=epochs {
+        let mut idx: Vec<usize> = (0..n).collect();
+        for k in (1..n).rev() {
+            let j = (rng.next_f64() * (k as f64 + 1.0)).floor() as usize;
+            idx.swap(k, j.min(k));
+        }
+        let mut ploss = 0.0;
+        let mut vloss = 0.0;
+        let mut steps = 0usize;
+        let mut s = 0;
+        while s + batch <= n {
+            let batch_examples: Vec<Example> = idx[s..s + batch].iter().map(|&k| to_example(&dataset[k])).collect();
+            let bview: Vec<&Example> = batch_examples.iter().collect();
+            let (p, v) = if policy_only {
+                train_batch_lr_policy_only(&mut net, &bview, lr, l2)
+            } else {
+                train_batch_lr(&mut net, &bview, lr, l2)
+            };
+            ploss += p;
+            vloss += v;
+            steps += 1;
+            s += batch;
+        }
+        if steps > 0 {
+            ploss /= steps as f64;
+            vloss /= steps as f64;
+        }
+        println!("    epoch {ep:>2}: policy_loss={ploss:.4} value_loss={vloss:.4} ({steps} batches)");
+    }
+    net
+}
+
+/// Parse `--dagger-opponents "a,b,c"` into a per-game opponent rotation (the net
+/// always drives one seat; the opponent varies per game). Weighting is by
+/// repetition. Default: contested mid/late-game coverage — heavy on HARD +
+/// STRONG_ARMY (the yardstick), plus rusher/fortress/device/marcher breadth.
+fn parse_dagger_opponents(args: &[String]) -> Vec<LeagueBot> {
+    let default_mix = vec![
+        LeagueBot::Hard,
+        LeagueBot::StrongArmy,
+        LeagueBot::Hard,
+        LeagueBot::Rusher,
+        LeagueBot::StrongArmy,
+        LeagueBot::Fortress,
+        LeagueBot::DeviceRush,
+        LeagueBot::Marcher,
+    ];
+    match arg_val(args, "--dagger-opponents") {
+        Some(spec) => {
+            let v: Vec<LeagueBot> = spec.split(',').filter_map(LeagueBot::parse).collect();
+            if v.is_empty() { default_mix } else { v }
+        }
+        None => default_mix,
+    }
+}
+
+/// DAGGER driver. Per round: (1) roll the current net out vs the league collecting
+/// expert-labelled visited states, (2) aggregate into D, (3) retrain a fresh net on
+/// D, (4) save + quick-bench vs HARD (the make-or-break: do outposts/soldiers rise
+/// in the net's OWN play?). Writes `champion-dagger.json` (+ per-round snapshots)
+/// and the growing `dataset.json` to `--out`.
+fn run_dagger(args: &[String]) {
+    let rounds: usize = arg_val(args, "--dagger-rounds").and_then(|v| v.parse().ok()).unwrap_or(4);
+    let games: usize = arg_val(args, "--dagger-games").and_then(|v| v.parse().ok()).unwrap_or(200);
+    let bench_games: usize = arg_val(args, "--dagger-bench-games").and_then(|v| v.parse().ok()).unwrap_or(40);
+    let epochs: usize = arg_val(args, "--epochs").and_then(|v| v.parse().ok()).unwrap_or(8);
+    let batch: usize = arg_val(args, "--batch").and_then(|v| v.parse().ok()).unwrap_or(128);
+    let lr: f64 = arg_val(args, "--lr").and_then(|v| v.parse().ok()).unwrap_or(0.01);
+    let l2: f64 = arg_val(args, "--l2").and_then(|v| v.parse().ok()).unwrap_or(1e-5);
+    let seed: u64 = arg_val(args, "--seed").and_then(|v| v.parse().ok()).unwrap_or(1);
+    let cap: i64 = arg_val(args, "--cap").and_then(|v| v.parse().ok()).unwrap_or(150);
+    let width: i32 = arg_val(args, "--width").and_then(|v| v.parse().ok()).unwrap_or(14);
+    let height: i32 = arg_val(args, "--height").and_then(|v| v.parse().ok()).unwrap_or(12);
+    let pass_keep: f64 = arg_val(args, "--pass-keep").and_then(|v| v.parse().ok()).unwrap_or(0.15);
+    let attack_keep: f64 = arg_val(args, "--attack-keep").and_then(|v| v.parse().ok()).unwrap_or(0.35);
+    // Class-balance boosts for the rare army-chain intents (the diagnosed round-1
+    // failure: BuildOutpost at 0.2% → CE never learns it). Outpost is heaviest.
+    let outpost_boost: usize = arg_val(args, "--outpost-boost").and_then(|v| v.parse().ok()).unwrap_or(8);
+    let mine_boost: usize = arg_val(args, "--mine-boost").and_then(|v| v.parse().ok()).unwrap_or(3);
+    let hire_boost: usize = arg_val(args, "--hire-boost").and_then(|v| v.parse().ok()).unwrap_or(1);
+    // DAgger β-mix schedule: on round i (1-based) the expert drives a champ turn with
+    // prob β_i = beta0 · decay^(i-1) — high early (steer into expert outpost states),
+    // decaying so later rounds train mostly on the net's OWN visited distribution.
+    let beta0: f64 = arg_val(args, "--dagger-beta0").and_then(|v| v.parse().ok()).unwrap_or(0.5);
+    let beta_decay: f64 = arg_val(args, "--dagger-beta-decay").and_then(|v| v.parse().ok()).unwrap_or(0.5);
+    // ROLLOUT EXPLORATION (Pass-collapse escape): `--rollout-eps` = prob of a uniform-
+    // random candidate per rollout decision; `--rollout-force-progress` (default ON) =
+    // when the net would Pass, take its best NON-Pass candidate instead so a collapsed
+    // net still advances into diverse mid-game states for expert relabelling. These give
+    // DAgger the on-policy state coverage a degenerate Pass-collapsed policy can't.
+    let explore_eps: f64 = arg_val(args, "--rollout-eps").and_then(|v| v.parse().ok()).unwrap_or(0.10);
+    let force_progress: bool = !args.iter().any(|a| a == "--no-rollout-force-progress");
+    // POLICY-ONLY training (default ON): the imitation value target z is near-random
+    // (≈50/50 expert-vs-league), so a noisy value loss (≈0.78) perturbs the SHARED
+    // trunk and re-collapses the policy to Pass at scale. Train the policy head alone.
+    let policy_only: bool = !args.iter().any(|a| a == "--dagger-train-value");
+    // Default to the SMALL net (the BC seed + every redesign run is small); allow
+    // `--net-size large` to override.
+    let small_net = !arg_val(args, "--net-size").map(|v| v.eq_ignore_ascii_case("large")).unwrap_or(false)
+        && !args.iter().any(|a| a == "--large-net");
+    let init: PathBuf = match arg_val(args, "--init") {
+        Some(v) => PathBuf::from(v),
+        None => {
+            eprintln!("--dagger: --init <seed SpatialNet weights json> REQUIRED (the BC seed, e.g. checkpoints-cnn-sup-p3/champion-supervised.json)");
+            std::process::exit(2);
+        }
+    };
+    let out_dir: PathBuf = arg_val(args, "--out")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("rust-trainer/checkpoints-cnn-dagger"));
+    create_dir_all(&out_dir).expect("create dagger out dir");
+    let cfg = TRAINING_CONFIG;
+    let opponents = parse_dagger_opponents(args);
+
+    // Load the seed net (round-1 rollout policy).
+    let mut net: SpatialNet = match std::fs::read_to_string(&init).ok().and_then(|s| serde_json::from_str::<SpatialNet>(&s).ok()) {
+        Some(n) if n.local_dim == SPATIAL_LOCAL_DIM && n.value_scalar_dim == VALUE_SCALAR_DIM => n,
+        Some(n) => { eprintln!("--dagger: seed net local_dim={} value_scalar_dim={} != expected {}/{}", n.local_dim, n.value_scalar_dim, SPATIAL_LOCAL_DIM, VALUE_SCALAR_DIM); std::process::exit(1); }
+        None => { eprintln!("--dagger: failed to load seed SpatialNet from {}", init.display()); std::process::exit(1); }
+    };
+
+    // Optionally seed the aggregate with an existing BC dataset (standard DAgger D₀).
+    let mut dataset: Vec<SupervisedExample> = match arg_val(args, "--seed-dataset") {
+        Some(p) => {
+            let raw = std::fs::read_to_string(&p).unwrap_or_else(|e| {
+                eprintln!("--dagger: failed to read --seed-dataset {}: {}", p, e);
+                std::process::exit(1);
+            });
+            let d: Vec<SupervisedExample> = serde_json::from_str(&raw).unwrap_or_else(|e| {
+                eprintln!("--dagger: failed to parse --seed-dataset {}: {}", p, e);
+                std::process::exit(1);
+            });
+            println!("--dagger: seeded aggregate with {} BC examples from {}", d.len(), p);
+            d
+        }
+        None => Vec::new(),
+    };
+    // Apply the army-chain boosts to the seed D₀ too (it is pre-baked one-hot, so we
+    // replicate by inspecting each example's argmax intent) — otherwise the 70k BC
+    // examples re-drown Outpost/Mine the rollout boosts are trying to surface.
+    if !dataset.is_empty() && (outpost_boost > 1 || mine_boost > 1 || hire_boost > 1) {
+        let before = dataset.len();
+        let mut extra: Vec<SupervisedExample> = Vec::new();
+        for ex in dataset.iter() {
+            let reps = match pi_intent_index(ex) {
+                3 => outpost_boost, // BuildOutpost
+                1 => mine_boost,    // BuildMine
+                7 => hire_boost,    // HireSoldier
+                _ => 1,
+            };
+            for _ in 1..reps.max(1) {
+                extra.push(ex.clone());
+            }
+        }
+        dataset.extend(extra);
+        println!("--dagger: boosted seed D₀ {} → {} examples (outpost×{} mine×{} hire×{})",
+            before, dataset.len(), outpost_boost, mine_boost, hire_boost);
+    }
+
+    println!("=== cnn_train --dagger ===");
+    println!(
+        "seed-net={} rounds={} games/round={} cap={} net-size={} epochs={} lr={} beta0={} decay={} out={}",
+        init.display(), rounds, games, cap, if small_net { "small" } else { "large" }, epochs, lr, beta0, beta_decay, out_dir.display()
+    );
+    println!("  opponents (per-game rotation): {:?}", opponents);
+    println!("  boosts: outpost×{} mine×{} hire×{}  keep: pass={} attack={}", outpost_boost, mine_boost, hire_boost, pass_keep, attack_keep);
+    println!("  rollout exploration: eps={} force-progress={}  policy-only-train={}", explore_eps, force_progress, policy_only);
+    let overall = Instant::now();
+
+    for round in 1..=rounds {
+        let r_start = Instant::now();
+        let beta = beta0 * beta_decay.powi((round - 1) as i32);
+        println!("\n--- DAgger round {round}/{rounds} (β={beta:.3}) ---");
+        println!("  [1/4] rolling out current net ({games} games, expert drives ~{:.0}% of champ turns) collecting expert-labelled states...", beta * 100.0);
+        let base = (seed as u32).wrapping_add((round as u32).wrapping_mul(0x9E3779B9));
+        let net_ref = &net;
+        let cfg_ref = &cfg;
+        let opp_ref = &opponents;
+        let new_examples: Vec<SupervisedExample> = (0..games)
+            .into_par_iter()
+            .flat_map(|gi| {
+                let gseed = base.wrapping_add((gi as u32).wrapping_mul(2_654_435_761));
+                let champ_seat = gi % 2;
+                let opp = opp_ref[gi % opp_ref.len()];
+                dagger_play_one_game(
+                    net_ref, cfg_ref, width, height, cap, champ_seat, opp,
+                    beta, pass_keep, attack_keep, outpost_boost, mine_boost, hire_boost,
+                    explore_eps, force_progress, gseed,
+                )
+            })
+            .collect();
+        println!("  collected {} new examples (expert labels on net-visited states):", new_examples.len());
+        print_intent_histogram(&new_examples);
+        dataset.extend(new_examples);
+        println!("  [2/4] aggregated dataset size: {} examples", dataset.len());
+
+        println!("  [3/4] retraining fresh net on aggregated D...");
+        net = train_dagger_net(&dataset, small_net, epochs, batch, lr, l2, policy_only, seed);
+
+        // Persist: champion-dagger.json (the latest), a per-round snapshot, and the
+        // growing dataset (re-usable as D for `--supervised` or a resumed --dagger).
+        let champ_path = out_dir.join("champion-dagger.json");
+        let json = serde_json::to_string(&net).expect("SpatialNet serialises");
+        std::fs::write(&champ_path, &json).expect("write champion-dagger.json");
+        let snap = out_dir.join(format!("champion-dagger-r{round}.json"));
+        std::fs::write(&snap, &json).expect("write dagger round snapshot");
+        let ds_path = out_dir.join("dataset.json");
+        std::fs::write(&ds_path, serde_json::to_string(&dataset).expect("dagger dataset serialises")).expect("write dagger dataset.json");
+
+        // [4/4] POLICY-HEAD greedy bench vs HARD — the make-or-break. NOT MCTS: the
+        // weak BC value head Pass-collapses under search, and sims=1 MCTS is
+        // net-independent; the policy-argmax greedy is the honest measure of what
+        // DAgger is training (army-building). The value head (trained via z) is for
+        // the later RL-MCTS fine-tune.
+        let (true_win, outposts_per_game, max_soldiers_per_game, intents, decisions) =
+            bench_net_greedy(&net, &cfg, width, height, cap, bench_games, base ^ 0xB00B);
+        let builds_army = outposts_per_game >= 0.3 && max_soldiers_per_game >= 1.5;
+        println!(
+            "  [4/4] policy-greedy bench vs HARD ({} games): trueWin={:.3} outposts/game={:.3} peakSoldiers/game={:.3}  → {}",
+            bench_games, true_win, outposts_per_game, max_soldiers_per_game,
+            if builds_army { "BUILDS ARMY ✓" } else { "weak (no army yet)" }
+        );
+        // In-play intent histogram (does the net CHOOSE BuildOutpost/BuildMine/Hire?).
+        let total_dec = decisions.max(1) as f64;
+        let mut order: Vec<usize> = (0..NUM_INTENTS).collect();
+        order.sort_by(|&a, &b| intents[b].cmp(&intents[a]));
+        let top: Vec<String> = order.iter().filter(|&&i| intents[i] > 0).take(8)
+            .map(|&i| format!("{}={:.0}%", intent_name(i), 100.0 * intents[i] as f64 / total_dec)).collect();
+        println!("        in-play intents: {}", top.join(" "));
+        println!("  round {round} done in {:.1}s (champion → {})", r_start.elapsed().as_secs_f64(), champ_path.display());
+    }
+    println!(
+        "\ncnn_train --dagger: {} rounds done in {:.1}s → {}/champion-dagger.json (validate: --validate-net --init {}/champion-dagger.json)",
+        rounds, overall.elapsed().as_secs_f64(), out_dir.display(), out_dir.display()
+    );
+}
+
 /// Initialise the global rayon pool ONCE. Worker threads default to cores - 4
 /// (leave 4 cores free so the desktop stays responsive while maximising
 /// parallel self-play / eval for unattended runs), or `override_threads` when a
@@ -6801,11 +7826,38 @@ fn run_validate_net(args: &[String]) {
         None => { eprintln!("--validate-net: failed to load SpatialNet from {}", init.display()); std::process::exit(1); }
     };
     let cfg = TRAINING_CONFIG;
+    // `--greedy`: bench the POLICY HEAD directly (temperature-0 argmax, no MCTS).
+    // This is the honest measure of a (DAgger/BC) policy: MCTS sims=1 is net-
+    // INDEPENDENT (PUCT root has 0 visits → U-term 0 → always candidate 0), and MCTS
+    // at the deploy sims Pass-collapses while the value head is still weak.
+    if args.iter().any(|a| a == "--greedy") {
+        println!("=== cnn_train --validate-net --greedy (policy-head argmax, no MCTS) ===");
+        println!("net={} params={} games={} cap={}", init.display(), net.param_count(), games, cap);
+        let (true_win, opg, mspg, intents, decisions) = bench_net_greedy(&net, &cfg, width, height, cap, games, seed);
+        println!("\n--- POLICY-GREEDY VALIDATION (vs HARD) ---");
+        println!("  trueWinVsHard        : {:.3}", true_win);
+        println!("  outposts / game      : {:.3}", opg);
+        println!("  PEAK soldiers / game : {:.3}", mspg);
+        let total_dec = decisions.max(1) as f64;
+        let mut order: Vec<usize> = (0..NUM_INTENTS).collect();
+        order.sort_by(|&a, &b| intents[b].cmp(&intents[a]));
+        println!("  --- in-play intent histogram ({} decisions) ---", decisions);
+        for i in order {
+            if intents[i] == 0 { continue; }
+            println!("    {:<18} {:>8}  ({:>5.1}%)", intent_name(i), intents[i], 100.0 * intents[i] as f64 / total_dec);
+        }
+        let builds_army = opg >= 0.3 && mspg >= 1.5;
+        println!("\n  VERDICT: {} — outposts/game={:.2} (≥0.3?) peakSoldiers/game={:.2} (≥1.5?)",
+            if builds_army { "BUILDS ARMY" } else { "WEAK — review" }, opg, mspg);
+        return;
+    }
     let mut tc = TrainCfg::default();
     tc.width = width; tc.height = height; tc.sims = sims; tc.cap = cap; tc.bench_games = games;
-    // sims=1 ⇒ effectively greedy argmax over the net's policy (no real search).
-    println!("=== cnn_train --validate-net ===");
+    println!("=== cnn_train --validate-net (MCTS sims={sims}) ===");
     println!("net={} params={} games={} sims={} cap={}", init.display(), net.param_count(), games, sims, cap);
+    if sims <= 1 {
+        eprintln!("  WARNING: sims=1 MCTS is NET-INDEPENDENT (always picks candidate 0). Use --greedy to measure the policy head, or --sims 64 for the deploy policy.");
+    }
     let br = bench_vs_hard(&net, &cfg, &tc, games, seed);
 
     let n = br.n.max(1) as f64;
@@ -6900,11 +7952,54 @@ fn main() {
         return;
     }
 
+    // DAGGER (Dataset Aggregation) — roll the current net out, label its visited
+    // states with the strong_army expert, aggregate, retrain, iterate. The fix for
+    // the economy-patience wall plain BC couldn't cross (distribution shift).
+    if args.iter().any(|a| a == "--dagger") {
+        if args.iter().any(|a| a == "--help" || a == "-h") {
+            println!(
+                "cnn_train --dagger: DAgger — iteratively label the net's OWN visited states with strong_army's action, aggregate, retrain."
+            );
+            println!(
+                "  required: --init <seed net json> (e.g. checkpoints-cnn-sup-p3/champion-supervised.json)"
+            );
+            println!(
+                "  flags: --dagger-rounds N (4) --dagger-games N (200) --dagger-bench-games N (40) --out DIR --seed-dataset <BC dataset.json> --dagger-opponents \"hard,strong_army,...\""
+            );
+            println!(
+                "         β-mix: --dagger-beta0 F (0.5) --dagger-beta-decay F (0.5)  |  class-balance: --outpost-boost N (8) --mine-boost N (3) --hire-boost N (1) --pass-keep F (0.15) --attack-keep F (0.35)"
+            );
+            println!(
+                "         training: --epochs N (8) --batch N (128) --lr F (0.01) --l2 F (1e-5) --cap C (150) --net-size small|large --seed S"
+            );
+            println!(
+                "         PASS-COLLAPSE FIX: --rollout-eps F (0.10, ε-random rollout actions) --no-rollout-force-progress (disable best-non-Pass-on-Pass) --dagger-train-value (re-enable value head; default = policy-only train)"
+            );
+            println!(
+                "         NOTE: a noisy z + too many gradient steps re-collapse the policy to Pass — keep total steps ≈300 (e.g. 800 games × 3 epochs). β-turn + on-policy states are now scaffold-encoded to match the deploy pipeline (the train/serve-skew fix)."
+            );
+            return;
+        }
+        run_dagger(&args);
+        return;
+    }
+
     // VALIDATE a (supervised-pretrained) net: play it vs HARD and report the
     // army-chain behavioural numbers (outposts/game, peak soldiers, intent
     // histogram, trueWin). The make-or-break check for the P3 supervised pass.
     if args.iter().any(|a| a == "--validate-net") {
         run_validate_net(&args);
+        return;
+    }
+
+    // DIAGNOSTIC: Pass-collapse root-cause probe (distribution-shift vs global
+    // Pass-overscoring). See `run_diag_pass`.
+    if args.iter().any(|a| a == "--diag-pass") {
+        run_diag_pass(&args);
+        return;
+    }
+    if args.iter().any(|a| a == "--diag-train") {
+        run_diag_train(&args);
         return;
     }
 

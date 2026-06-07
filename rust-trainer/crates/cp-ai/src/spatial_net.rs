@@ -507,7 +507,41 @@ impl SpatialNet {
         z: f64,
     ) -> (SpatialGrad, f64, f64) {
         let cache = self.forward_board_scalars(planes, h, w, value_scalars);
-        self.train_grad_cached_inner(&cache, &[], &[], z, true)
+        self.train_grad_cached_inner(&cache, &[], &[], z, true, false)
+    }
+
+    /// POLICY-ONLY gradient: trains the policy head (+ shared trunk) toward the
+    /// one-hot/visit policy `pi` and produces NO value gradient (value head + its
+    /// contribution to the shared trunk are skipped). The mirror image of
+    /// [`train_grad_value_only_scalars`]. Use for imitation/DAgger where the value
+    /// target `z` is near-random (≈50/50 expert-vs-league) — a noisy value loss
+    /// (stuck ≈0.78) keeps perturbing the SHARED conv trunk toward a useless
+    /// constant, and with enough gradient steps that corruption dominates the policy
+    /// head and re-collapses it to Pass (observed: 400-game round Pass 28%, but
+    /// 800/2000-game rounds Pass 94-96%). Training the policy head alone removes that
+    /// interference so the imitation signal survives at scale. `z`/value loss are
+    /// reported as 0.0. Training-only (no forward-inference change) → parity-neutral.
+    pub fn train_grad_policy_only_scalars(
+        &self,
+        planes: &[f64],
+        h: usize,
+        w: usize,
+        value_scalars: &[f64],
+        candidates: &[(Option<(usize, usize)>, Vec<f64>, Vec<f64>)],
+        pi: &[f64],
+    ) -> (SpatialGrad, f64, f64) {
+        let cache = self.forward_board_scalars(planes, h, w, value_scalars);
+        self.train_grad_cached_policy_only(&cache, candidates, pi)
+    }
+
+    /// Cached variant of [`train_grad_policy_only_scalars`].
+    pub fn train_grad_cached_policy_only(
+        &self,
+        cache: &BoardCache,
+        candidates: &[(Option<(usize, usize)>, Vec<f64>, Vec<f64>)],
+        pi: &[f64],
+    ) -> (SpatialGrad, f64, f64) {
+        self.train_grad_cached_inner(cache, candidates, pi, 0.0, false, true)
     }
 
     /// Same as [`train_grad`](Self::train_grad) but reuses a prebuilt cache.
@@ -518,7 +552,7 @@ impl SpatialNet {
         pi: &[f64],
         z: f64,
     ) -> (SpatialGrad, f64, f64) {
-        self.train_grad_cached_inner(cache, candidates, pi, z, false)
+        self.train_grad_cached_inner(cache, candidates, pi, z, false, false)
     }
 
     /// Like [`train_grad_scalars`](Self::train_grad_scalars) but adds a
@@ -547,7 +581,7 @@ impl SpatialNet {
     ) -> (SpatialGrad, f64, f64) {
         let cache = self.forward_board_scalars(planes, h, w, value_scalars);
         if kl_weight == 0.0 {
-            return self.train_grad_cached_inner(&cache, candidates, pi, z, false);
+            return self.train_grad_cached_inner(&cache, candidates, pi, z, false, false);
         }
         debug_assert_eq!(anchor_pi.len(), candidates.len());
         self.train_grad_cached_kl_inner(&cache, candidates, pi, z, anchor_pi, kl_weight)
@@ -707,8 +741,10 @@ impl SpatialNet {
         pi: &[f64],
         z: f64,
         value_only: bool,
+        policy_only: bool,
     ) -> (SpatialGrad, f64, f64) {
         debug_assert!(value_only || candidates.len() == pi.len());
+        debug_assert!(!(value_only && policy_only));
         let d = self.d;
         let (h, w) = (cache.h, cache.w);
 
@@ -721,8 +757,12 @@ impl SpatialNet {
         let mut grad_global = vec![0.0f64; d];
 
         // ----- Value head -----------------------------------------------------
+        // Skipped entirely for policy-only examples (no value target / no value grad,
+        // and crucially no value contribution to the SHARED trunk via grad_global).
+        let mut value_loss = 0.0f64;
+        if !policy_only {
         let vf = self.value_forward(cache);
-        let value_loss = (vf.value - z) * (vf.value - z);
+        value_loss = (vf.value - z) * (vf.value - z);
         // d(value_loss)/d(value) = 2*(value - z); through final tanh:
         // value = tanh(out_pre), d value/d out_pre = 1 - value^2.
         let d_value = 2.0 * (vf.value - z);
@@ -744,6 +784,7 @@ impl SpatialNet {
         for c in 0..d {
             grad_global[c] += grad_value_in[c];
         }
+        } // end `if !policy_only` (value head)
 
         // ----- Policy head (per candidate) ------------------------------------
         // Scores then softmax cross-entropy: dL/d score_c = p_c - pi_c.
