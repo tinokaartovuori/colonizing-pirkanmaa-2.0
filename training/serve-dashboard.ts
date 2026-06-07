@@ -150,9 +150,9 @@ function buildData(dir: string): Record<string, unknown> {
     registry: readJsonlSafe(join(REPO_ROOT, 'models', 'registry.jsonl')),
     championPtr: readJsonSafe(join(REPO_ROOT, 'models', 'CHAMPION.json')),
     research: [
-      { id: 'research', title: 'Tutkimus', md: readText(join(REPO_ROOT, 'rust-trainer', 'TRAINING-RESEARCH.md')) },
-      { id: 'design', title: 'AlphaZero-suunnitelma', md: readText(join(REPO_ROOT, 'rust-trainer', 'ALPHAZERO-DESIGN.md')) },
-      { id: 'reward', title: 'Palkkiosignaalit', md: readText(join(REPO_ROOT, 'rust-trainer', 'REWARD-DESIGN.md')) },
+      { id: 'research', title: 'Research', md: readText(join(REPO_ROOT, 'rust-trainer', 'TRAINING-RESEARCH.md')) },
+      { id: 'design', title: 'AlphaZero design', md: readText(join(REPO_ROOT, 'rust-trainer', 'ALPHAZERO-DESIGN.md')) },
+      { id: 'reward', title: 'Reward signals', md: readText(join(REPO_ROOT, 'rust-trainer', 'REWARD-DESIGN.md')) },
     ].filter((d) => d.md != null),
   };
 }
@@ -214,7 +214,7 @@ server.listen(port, '127.0.0.1', () => {
 // Polls /data.json every 5s and re-renders the active tab in place.
 // ===========================================================================
 const PAGE = /* html */ `<!doctype html>
-<html lang="fi">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -385,7 +385,7 @@ tr.oldarc td{color:var(--faint)}
 </style>
 </head>
 <body>
-<div class="banner" id="banner">yhteys katkesi — yritetään uudelleen…</div>
+<div class="banner" id="banner">connection lost — retrying…</div>
 <header>
   <div class="hdr">
     <div class="hrow">
@@ -432,14 +432,26 @@ function f2(x,d){ var n=num(x); return n==null?'—':n.toFixed(d==null?2:d); }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
 function timeAgo(iso){ if(!iso) return '—'; var t=Date.parse(iso); if(isNaN(t)) return '—';
   var s=Math.max(0,Math.round((Date.now()-t)/1000));
-  if(s<60) return s+' s sitten'; if(s<3600) return Math.round(s/60)+' min sitten';
-  if(s<86400) return Math.round(s/3600)+' h sitten'; return Math.round(s/86400)+' pv sitten'; }
+  if(s<60) return s+' s ago'; if(s<3600) return Math.round(s/60)+' min ago';
+  if(s<86400) return Math.round(s/3600)+' h ago'; return Math.round(s/86400)+' d ago'; }
 function lastN(arr){ if(CTRL.win<=0||!arr) return arr; return arr.slice(Math.max(0,arr.length-CTRL.win)); }
 function smooth(vals){ if(!CTRL.smooth) return vals; var w=Math.max(2,Math.round(vals.length/24)); var out=[];
   for(var i=0;i<vals.length;i++){ var a=Math.max(0,i-w),s=0,n=0; for(var j=a;j<=i;j++){ if(vals[j]!=null){s+=vals[j];n++;} } out.push(n?s/n:null);} return out; }
 function field(rows,key){ return rows.map(function(r){ return num(r[key]); }); }
 function has(rows,key){ return rows.some(function(r){ return num(r[key])!=null; }); }
 function tip(t){ return '<span class="tip" title="'+esc(t)+'">ⓘ</span>'; }
+// HONEST standing-expert count for a benchmark row: prefer standingExpertsPerGame,
+// else derive (minesWithExpert + plantsWithExpert) / nGames. NOT expertsHiredPerGame
+// (policy-only, ≈0 because the economy scaffold places experts). null = no data.
+function standingExperts(h){
+  if(!h) return null;
+  var s=num(h.standingExpertsPerGame);
+  if(s!=null) return s;
+  var ng=num(h.nGames)||1;
+  var me=num(h.minesWithExpert), pe=num(h.plantsWithExpert);
+  if(me==null && pe==null) return null;
+  return ((me||0)+(pe||0))/ng;
+}
 
 var C = { good:'#4dd2a0', raw:'#5aa9ff', illusion:'#ff9e64', bad:'#ff6b6b',
   tie:'#8b97a3', mil:'#c792ea', econ:'#7fdbff', grid:'#222b35', muted:'#7a8794', faint:'#4a5560' };
@@ -450,7 +462,7 @@ function chart(xs, series, opts){
   opts = opts||{};
   var H = opts.h||190, W=600, padL=40, padR=opts.rightAxis?40:10, padT=8, padB=18;
   var n = xs.length;
-  if(!n){ return '<div class="empty">ei dataa</div>'; }
+  if(!n){ return '<div class="empty">no data</div>'; }
   var allv=[]; series.forEach(function(s){ if(s.axis!=='r') s.vals.forEach(function(v){ if(v!=null) allv.push(v);}); });
   if(opts.band){ opts.band.lo.concat(opts.band.hi).forEach(function(v){ if(v!=null) allv.push(v); }); }
   var y0 = opts.y0!=null?opts.y0:(allv.length?Math.min.apply(null,allv):0);
@@ -485,7 +497,7 @@ function chart(xs, series, opts){
    layers: [{key|vals, color, label}], built from rows. */
 function stackedArea(xs, layers, opts){
   opts=opts||{}; var H=opts.h||190, W=600, padL=40, padR=10, padT=8, padB=18, n=xs.length;
-  if(!n) return '<div class="empty">ei dataa</div>';
+  if(!n) return '<div class="empty">no data</div>';
   var x0=xs[0],x1=xs[n-1]; if(x0===x1)x1=x0+1;
   function X(v){ return padL+(v-x0)/(x1-x0)*(W-padL-padR); }
   function Y(v){ return padT+(1-v)*(H-padT-padB); }
@@ -512,7 +524,7 @@ function stackedArea(xs, layers, opts){
 /* ---- horizontal bars with optional 50% ref tick ---- */
 function hbars(items, opts){
   opts=opts||{}; var max=opts.max!=null?opts.max:1;
-  if(!items.length) return '<div class="empty">ei dataa</div>';
+  if(!items.length) return '<div class="empty">no data</div>';
   return items.map(function(it){
     var v=it.val==null?0:it.val, w=Math.max(0,Math.min(1,v/max))*100;
     var col=it.color||(it.warn?C.illusion:C.good);
@@ -545,7 +557,7 @@ function spark(vals, color, h){
 
 /* ---- markdown (dependency-free, minimal) ---- */
 function md(src){
-  if(!src) return '<div class="empty">ei dokumenttia</div>';
+  if(!src) return '<div class="empty">no document</div>';
   var lines=src.split('\\n'), out=[], inCode=false, inUl=false;
   function closeUl(){ if(inUl){ out.push('</ul>'); inUl=false; } }
   for(var i=0;i<lines.length;i++){ var ln=lines[i];
@@ -585,13 +597,13 @@ function renderToolbar(){
   var wins=[[0,'All'],[200,'200'],[100,'100'],[50,'50'],[25,'25']];
   var seg=wins.map(function(w){ return '<button class="seg'+(CTRL.win===w[0]?' sel':'')+'" data-win="'+w[0]+'">'+w[1]+'</button>'; }).join('');
   document.getElementById('toolbar').innerHTML=
-    '<span class="seglbl">ikkuna</span><span class="segmented">'+seg+'</span>'
+    '<span class="seglbl">window</span><span class="segmented">'+seg+'</span>'
     +'<span class="segmented"><button class="seg'+(CTRL.smooth?' sel':'')+'" id="smoothBtn">smooth</button></span>'
     +'<span class="dim" id="genRange"></span>';
   document.querySelectorAll('[data-win]').forEach(function(b){ b.onclick=function(){ CTRL.win=Number(b.dataset.win); renderToolbar(); renderActive(); }; });
   document.getElementById('smoothBtn').onclick=function(){ CTRL.smooth=!CTRL.smooth; renderToolbar(); renderActive(); };
   var log=(STATE&&STATE.log)||[];
-  if(log.length){ var w=lastN(log); document.getElementById('genRange').textContent='gen '+w[0].gen+'–'+w[w.length-1].gen+' · '+w.length+' it.'; }
+  if(log.length){ var w=lastN(log); document.getElementById('genRange').textContent='gen '+w[0].gen+'–'+w[w.length-1].gen+' · '+w.length+' iters'; }
 }
 
 /* ===================== header ===================== */
@@ -604,7 +616,7 @@ function renderHeader(){
   document.getElementById('hmeta').innerHTML =
     'champion: <b>'+esc(champ||'—')+'</b>'
     + (s.champion&&s.champion.git_commit? ' · git '+esc(String(s.champion.git_commit).slice(0,7)) : '')
-    + ' · päivitetty '+timeAgo(s.updated);
+    + ' · updated '+timeAgo(s.updated);
 
   // KPI strip — the always-true numbers.
   var hist=s.winHistory||[];
@@ -616,14 +628,14 @@ function renderHeader(){
   function kpi(cls,id,lbl,valHtml,extra){ return '<div class="kpi '+cls+'" id="kpi-'+id+'"><span class="lbl">'+lbl+'</span>'
     +'<span class="val">'+valHtml+'</span>'+(extra||'')+'</div>'; }
   document.getElementById('kstrip').innerHTML =
-    kpi('honest','honest','Honest win '+tip('trueWinVsHard — voitot pl. vastustajan konkurssi (mirage). Tämä on mittatikku.'),
+    kpi('honest','honest','Honest win '+tip('trueWinVsHard — wins excl. opponent bankruptcy (mirage). This is the yardstick.'),
         '<span id="v-honest">'+pct(honest)+'</span><span class="d" id="d-honest"></span>', trueSpark)
-    + kpi('raw','raw','Raw win '+tip('winRate — sis. konkurssivoitot. Ero honestiin = mirage.'),
+    + kpi('raw','raw','Raw win '+tip('winRate — incl. bankruptcy wins. Gap to honest = mirage.'),
         '<span id="v-raw">'+pct(raw)+'</span><span class="d" id="d-raw"></span>'
         + '<div class="gapnote">mirage '+(honest!=null&&raw!=null?('+'+(100*(raw-honest)).toFixed(1)+'pp'):'—')+'</div>')
-    + kpi('tie','tie','Self-play tie '+tip('spTie / (spTie+spDecisive) — draw-attractor vahti.'),
+    + kpi('tie','tie','Self-play tie '+tip('spTie / (spTie+spDecisive) — draw-attractor watch.'),
         '<span id="v-tie">'+(tieFrac!=null?pct(tieFrac):'—')+'</span>')
-    + kpi('thru','thru','Läpäisy','<span id="v-thru">'+(gps!=null?f2(gps,3):'—')+'</span><span class="lbl" style="font-size:9px">g/s</span>');
+    + kpi('thru','thru','Throughput','<span id="v-thru">'+(gps!=null?f2(gps,3):'—')+'</span><span class="lbl" style="font-size:9px">g/s</span>');
   flashKpi('honest', honest); flashKpi('raw', raw);
 }
 function flashKpi(id, v){
@@ -648,11 +660,11 @@ function panelOverview(){
     var rawV=smooth(hist.map(function(h){return num(h.winRate);}));
     cards.push(card('★ Win-rate vs HARD — honest vs raw','span2 wide',
       chart(hx,[
-        {vals:rawV,color:C.raw,label:'raw (sis. konkurssi)',w:1.4},
+        {vals:rawV,color:C.raw,label:'raw (incl. bankruptcy)',w:1.4},
         {vals:trueV,color:C.good,label:'honest (trueWin)',w:2.4,dots:hist.length<40}
       ],{h:220,pctY:true,y0:0,y1:1,band:CTRL.smooth?null:{lo:trueV,hi:rawV,color:C.illusion}}),
-      'Vihreä = rehellinen voittoaste; sininen = raaka (sis. konkurssimirage). Amber-vyö = ero.'));
-  } else cards.push(card('★ Win-rate vs HARD','span2 wide','<div class="empty">ei benchmark-historiaa vielä</div>'));
+      'Green = honest win-rate; blue = raw (incl. bankruptcy mirage). Amber band = the gap.'));
+  } else cards.push(card('★ Win-rate vs HARD','span2 wide','<div class="empty">no benchmark history yet</div>'));
 
   // outcome composition (champ wins by cause + loss + tie) — from benchmark champWins/hardWins
   if(hist.length && hist.some(function(h){return h.champWins;})){
@@ -669,7 +681,7 @@ function panelOverview(){
       {vals:L.device,color:C.mil,label:'device'},
       {vals:L.tiebreak,color:C.tie,label:'tie/bank'},
       {vals:L.loss,color:C.faint,label:'loss'}
-    ],{h:190}),'Miten voitot syntyvät — tavoite on siirtää econ-conquestista device/military suuntaan.'));
+    ],{h:190}),'How wins are produced — the goal is to shift from econ-conquest toward device/military.'));
   }
 
   // loss + entropy (secondary axis)
@@ -679,20 +691,20 @@ function panelOverview(){
       {vals:smooth(field(log,'policyLoss')),color:C.raw,label:'policy loss'},
       {vals:smooth(field(log,'valueLoss')),color:C.good,label:'value loss'},
       {vals:smooth(field(log,'policyEntropy')),color:C.illusion,label:'entropy (R)',axis:'r',dash:true}
-    ],{h:190,rightAxis:true}),'Entropy oik. akselilla — romahdus = mode-collapse.'));
+    ],{h:190,rightAxis:true}),'Entropy on the right axis — a collapse = mode-collapse.'));
   }
   // value calibration
   if(has(log,'valPredWin')||has(log,'valPredLoss')){
     var vx=log.map(function(r){return r.gen;});
-    cards.push(card('Value-head kalibrointi','',chart(vx,[
+    cards.push(card('Value-head calibration','',chart(vx,[
       {vals:smooth(field(log,'valPredWin')),color:C.good,label:'pred|win'},
       {vals:smooth(field(log,'valPredDraw')),color:C.tie,label:'pred|draw'},
       {vals:smooth(field(log,'valPredLoss')),color:C.bad,label:'pred|loss'}
-    ],{h:190,y0:-1,y1:1}),'Pitäisi erottua: win→+1, loss→−1. Lähellä toisiaan = draw-attractor.'));
+    ],{h:190,y0:-1,y1:1}),'Should separate: win→+1, loss→−1. Close together = draw-attractor.'));
   }
   // health micro-tiles
   var b=s.benchLatest||{}, lt=s.latest||{};
-  cards.push(card('Terveysmittarit','',
+  cards.push(card('Health metrics','',
     '<div class="tiles">'
     + tile('Bankruptcy share', pct(b.bankruptcyWinShare), b.bankruptcyWinShare>0.1)
     + tile('Avg game len', b.roundsByOutcome? f2((num(b.roundsByOutcome.win)+num(b.roundsByOutcome.loss))/2,0)+' r':'—')
@@ -710,11 +722,11 @@ function panelEconomy(){
   var b=s.benchLatest||{};
   if(hist.length){
     var hx=hist.map(function(h){return h.gen;});
-    cards.push(card('Rakennukset / peli','',chart(hx,[
+    cards.push(card('Buildings / game','',chart(hx,[
       {vals:smooth(hist.map(function(h){return num(h.villagesPerGame);})),color:C.econ,label:'villages'},
       {vals:smooth(hist.map(function(h){return num(h.outpostsPerGame);})),color:C.mil,label:'outposts'},
       {vals:smooth(hist.map(function(h){return num(h.bridgesPerGame);})),color:C.raw,label:'bridges'}
-    ],{h:190,y0:0}),'Talous- ja armeijaketjun rakennustahti.'));
+    ],{h:190,y0:0}),'Build pace of the economy and army chain.'));
   }
   // ★ MINE STAFFING (mineWorkerBins + expert lever). The REAL per-mine worker
   // distribution: # of champ mines staffed by 1 / 2 / 3+ BasicWorkers, plus how
@@ -724,28 +736,28 @@ function panelEconomy(){
     var mwb=b.mineWorkerBins;
     var keys=['1','2','3'], maxv=Math.max(1, num(mwb['1'])||0, num(mwb['2'])||0, num(mwb['3'])||0);
     var ghost = hist.length>1 ? (hist[Math.max(0,hist.length-6)].mineWorkerBins||{}) : {};
-    var items=keys.map(function(k){ return { name:k+' työläistä / kaivos', val:num(mwb[k])||0, right:String(num(mwb[k])||0)+(ghost[k]!=null?(' ('+ghost[k]+')'):''),
+    var items=keys.map(function(k){ return { name:k+' workers / mine', val:num(mwb[k])||0, right:String(num(mwb[k])||0)+(ghost[k]!=null?(' ('+ghost[k]+')'):''),
       color:k==='1'?'#3a5a66':(k==='2'?'#5a93a8':C.econ) }; });
     var nExp=num(b.minesWithExpert)||0, nMines=num(b.mineCount)||0;
     var nPExp=num(b.plantsWithExpert), nPlants=num(b.plantCount);
-    var expRow='<div class="hbar"><span class="nm">kaivos expertillä</span><span class="track"><span class="fill" style="width:'
+    var expRow='<div class="hbar"><span class="nm">mine w/ expert</span><span class="track"><span class="fill" style="width:'
       +(nMines>0?Math.round(nExp/nMines*100):0)+'%;background:'+C.good+'"></span></span>'
       +'<span class="n">'+nExp+' / '+nMines+'</span></div>';
     // Plant (Hydro/Nuclear) expert leverage row — only when the field is present
     // (old benchmark rows lack plantsWithExpert/plantCount). Keeps the EXPERT-VIPU
     // block consistent with the honest standing-expert KPI above.
     if(nPlants!=null){
-      expRow+='<div class="hbar"><span class="nm">voimala expertillä</span><span class="track"><span class="fill" style="width:'
+      expRow+='<div class="hbar"><span class="nm">plant w/ expert</span><span class="track"><span class="fill" style="width:'
         +(nPlants>0?Math.round((nPExp||0)/nPlants*100):0)+'%;background:'+C.good+'"></span></span>'
         +'<span class="n">'+(nPExp||0)+' / '+nPlants+'</span></div>';
     }
-    cards.push(card('★ Kaivosten miehitys '+tip('Kuinka monella työläisellä kaivos pyörii (mineWorkerBins, summattu bench-peleistä) + montako kaivosta/voimalaa on expertillä. Expert + työläiset = metalli/energia ×2. Talous-scaffold asettaa expertit (ks. Asiantuntijat-paneeli). Suluissa ~5 gen sitten.'),'',
+    cards.push(card('★ Mine staffing '+tip('How many workers each mine runs with (mineWorkerBins, summed over bench games) + how many mines/plants have an expert. Expert + workers = metal/energy ×2. The economy scaffold places the experts (see Experts panel). In parens: ~5 gen ago.'),'',
       hbars(items,{max:maxv})
-      +'<div class="well" style="margin-top:8px"><div class="dim" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em">Expert-vipu (tuotanto ×2)</div>'+expRow+'</div>',
-      'experttejä kaivoksilla: '+nExp+' / '+nMines+(nPlants!=null?(', voimaloilla: '+(nPExp||0)+' / '+nPlants):'')+'. Ali-miehitetty + ilman expertiä = metalli pullonkaula.'));
+      +'<div class="well" style="margin-top:8px"><div class="dim" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em">Expert lever (output ×2)</div>'+expRow+'</div>',
+      'experts on mines: '+nExp+' / '+nMines+(nPlants!=null?(', on plants: '+(nPExp||0)+' / '+nPlants):'')+'. Under-staffed + no expert = metal bottleneck.'));
   } else {
-    cards.push(card('★ Kaivosten miehitys '+tip('Per-kaivos työläisjakauma + expert-vipu (mineWorkerBins / minesWithExpert). Puuttuu vanhoista ajoista.'),'',
-      '<div class="empty">—  (ei mineWorkerBins-dataa tässä ajossa)</div>',''));
+    cards.push(card('★ Mine staffing '+tip('Per-mine worker distribution + expert lever (mineWorkerBins / minesWithExpert). Absent in old runs.'),'',
+      '<div class="empty">—  (no mineWorkerBins data in this run)</div>',''));
   }
   // SOLDIER STACKING (stackBins) — peak champ SOLDIERS on a single tile (metric M6),
   // bucketed per bench game. (Was previously MISLABELED as mine manning.)
@@ -753,10 +765,10 @@ function panelEconomy(){
     var sb=b.stackBins;
     var skeys=['1','2','3'], smaxv=Math.max(1, num(sb['1'])||0, num(sb['2'])||0, num(sb['3'])||0);
     var sghost = hist.length>1 ? (hist[Math.max(0,hist.length-6)].stackBins||{}) : {};
-    var sitems=skeys.map(function(k){ return { name:k+' sotilasta / ruutu', val:num(sb[k])||0, right:String(num(sb[k])||0)+(sghost[k]!=null?(' ('+sghost[k]+')'):''),
+    var sitems=skeys.map(function(k){ return { name:k+' soldiers / tile', val:num(sb[k])||0, right:String(num(sb[k])||0)+(sghost[k]!=null?(' ('+sghost[k]+')'):''),
       color:k==='1'?'#5a5a3a':(k==='2'?'#9a8a4a':C.mil) }; });
-    cards.push(card('Sotilaspino / ruutu (peak) '+tip('Huippumäärä mestarin sotilaita YHDELLÄ ruudulla (M6), bucketoitu bench-peleittäin. Suluissa ~5 gen sitten.'),'',
-      hbars(sitems,{max:smaxv}),'Sotilaiden pinoaminen yhteen ruutuun (ei kaivosten miehitys).'));
+    cards.push(card('Soldier stack / tile (peak) '+tip('Peak champion soldiers on a SINGLE tile (M6), bucketed per bench game. In parens: ~5 gen ago.'),'',
+      hbars(sitems,{max:smaxv}),'Stacking soldiers onto one tile (not mine staffing).'));
   }
   // EXPERTS — HONEST standing-expert metric. The economy SCAFFOLD (controller.rs
   // staff_income → add_expert_reserve) places experts on mines/plants mechanically;
@@ -765,33 +777,25 @@ function panelEconomy(){
   // count standing on the champion's board: standingExpertsPerGame when emitted,
   // else derived from (minesWithExpert + plantsWithExpert) / nGames for old rows.
   // The net-chosen number is shown as a small secondary line, clearly labelled.
-  function standExp(h){
-    var s=num(h.standingExpertsPerGame);
-    if(s!=null) return s;
-    var ng=num(h.nGames)||1;
-    var me=num(h.minesWithExpert), pe=num(h.plantsWithExpert);
-    if(me==null && pe==null) return null; // genuinely no data
-    return ((me||0)+(pe||0))/ng;
-  }
   if(hist.length){
     var ex=hist.map(function(h){return h.gen;});
-    var standVals=hist.map(standExp);
+    var standVals=hist.map(standingExperts);
     var hiredVals=hist.map(function(h){return num(h.expertsHiredPerGame);});
     var maxStand=Math.max.apply(null,standVals.map(function(v){return v||0;}).concat([1]));
-    cards.push(card('Asiantuntijat / peli '+tip('REHELLINEN standing-expert luku: montako Asiantuntijaa mestarin laudalla / peli (kaivos + ydin/vesi), sis. talous-scaffoldin asettamat. Lähde: standingExpertsPerGame (tai johdettu minesWithExpert+plantsWithExpert / nGames). Eri kuin expertsHiredPerGame, joka laskee VAIN policyn itse valitsemat (≈0; scaffold hoitaa loput).'),'',
+    cards.push(card('Experts / game '+tip('HONEST standing-expert count: how many experts on the champion board / game (mine + nuclear/hydro), incl. those placed by the economy scaffold. Source: standingExpertsPerGame (or derived minesWithExpert+plantsWithExpert / nGames). Differs from expertsHiredPerGame, which counts ONLY experts the policy picks itself (≈0; the scaffold places the rest).'),'',
       chart(ex,[
-        {vals:standVals,color:C.good,label:'standing experts/peli (scaffold+policy)',dots:true,w:2},
-        {vals:hiredVals,color:C.illusion,label:'policy-chosen (scaffold asettaa loput)',dots:true,dash:true}
+        {vals:standVals,color:C.good,label:'standing experts/game (scaffold+policy)',dots:true,w:2},
+        {vals:hiredVals,color:C.illusion,label:'policy-chosen (scaffold places the rest)',dots:true,dash:true}
       ],{h:160,y0:0,y1:Math.max(1,maxStand)}),
-      'Asiantuntijat boostaavat tuotantoa (metalli/energia ×2) ja porttaavat armeijaketjun. Vihreä = oikeasti laudalla; harmaa = vain policyn valinnat (scaffold asettaa loput).'));
+      'Experts boost output (metal/energy ×2) and gate the army chain. Green = actually on the board; gray = policy picks only (scaffold places the rest).'));
   }
   // win-by-villages / win-by-outposts payoff
   if(b.winByOutpostsBuilt){
-    cards.push(card('Maksaako econ-linja takaisin? '+tip('Voittoaste ehdolla outpostien/kylien määrä.'),'',
-      '<div class="well"><div class="dim" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em">Outpostit rakennettu</div>'
+    cards.push(card('Does the economy pay back? '+tip('Win-rate conditioned on the number of outposts/villages.'),'',
+      '<div class="well"><div class="dim" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em">Outposts built</div>'
       + winBy(b.winByOutpostsBuilt) + '</div>'
-      + (b.winByVillagesBuilt?'<div class="well" style="margin-top:8px"><div class="dim" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em">Kylät rakennettu</div>'+winBy(b.winByVillagesBuilt)+'</div>':''),
-      'Outpostit korreloivat voittamisen kanssa (signaali armeijaketjusta).'));
+      + (b.winByVillagesBuilt?'<div class="well" style="margin-top:8px"><div class="dim" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em">Villages built</div>'+winBy(b.winByVillagesBuilt)+'</div>':''),
+      'Outposts correlate with winning (a signal from the army chain).'));
   }
   // metal balance proxy (client-side, sd3 constants). Uses the REAL per-mine
   // worker distribution (mineWorkerBins) when present; old runs fall back to 0.
@@ -804,15 +808,15 @@ function panelEconomy(){
     var metalIn = workerSlots/nGames*20; // ~20 metal/worker-round (sd3 mine output)
     var metalOut = (num(b.outpostsPerGame)||0)*5 + (num(b.maxSoldiersPerGame)||0)*30; // upkeep proxies
     var bal = metalIn - metalOut;
-    cards.push(card('Metallitase (johdettu) '+tip('mine-tuotto − outpost-upkeep(−5) − sotilas-kustannus(−30). Alle 0 = talous ei rahoita militaaria (juurisyy).'),'',
+    cards.push(card('Metal balance (derived) '+tip('mine output − outpost upkeep(−5) − soldier cost(−30). Below 0 = the economy cannot fund the military (root cause).'),'',
       '<div class="tiles">'
-      + tile('Kaivoksia/peli', f2(minesPerGame,2))
-      + tile('Metalli sisään ≈', f2(metalIn,0))
-      + tile('Metalli ulos ≈', f2(metalOut,0))
-      + tile('Tase ≈', f2(bal,0), bal<0)
-      + '</div>','Karkea proxy sd3-vakioista (CLAUDE.md). Alle 0 = dokumentoitu pullonkaula.'));
+      + tile('Mines/game', f2(minesPerGame,2))
+      + tile('Metal in ≈', f2(metalIn,0))
+      + tile('Metal out ≈', f2(metalOut,0))
+      + tile('Balance ≈', f2(bal,0), bal<0)
+      + '</div>','Rough proxy from sd3 constants (CLAUDE.md). Below 0 = the documented bottleneck.'));
   }
-  if(!cards.length) cards.push(card('Talous','wide','<div class="empty">ei talousmittareita tässä ajossa</div>'));
+  if(!cards.length) cards.push(card('Economy','wide','<div class="empty">no economy metrics in this run</div>'));
   fill('economy', cards.join(''));
 }
 function winBy(obj){
@@ -831,10 +835,13 @@ function panelMilitary(){
   var nGames=num(b.nGames)||1;
   var mines=((num(b.mineWorkerBins&&b.mineWorkerBins['1'])||0)+(num(b.mineWorkerBins&&b.mineWorkerBins['2'])||0)+(num(b.mineWorkerBins&&b.mineWorkerBins['3'])||0))/nGames;
   var soldiers = num(b.maxSoldiersPerGame);
+  // Expert step uses the HONEST standing-expert metric (incl. scaffold-placed),
+  // NOT expertsHiredPerGame (policy-only, ≈0) which falsely zeroed this step.
+  var experts = standingExperts(b);
   var stages=[
     {nm:'Wood', ct: num(b.villagesPerGame)!=null? f2(num(b.villagesPerGame)+mines+2,1):null, raw:(num(b.villagesPerGame)||0)+mines+2, note:'econ-proxy'},
     {nm:'Mine', ct: f2(mines,2), raw:mines, note:'metal source'},
-    {nm:'Expert', ct: f2(b.expertsHiredPerGame,2), raw:num(b.expertsHiredPerGame), note:'prod boost'},
+    {nm:'Expert', ct: f2(experts,2), raw:experts!=null?experts:0, note:'prod boost (standing, incl. scaffold)'},
     {nm:'Outpost', ct: f2(b.outpostsPerGame,2), raw:num(b.outpostsPerGame), note:'soldier-cap +3'},
     {nm:'Soldiers', ct: f2(soldiers,2), raw:soldiers, note:'fielded (peak/game)'}
   ];
@@ -851,41 +858,41 @@ function panelMilitary(){
       +'<div class="ct'+((st.raw||0)<0.05?' z':'')+'">'+(st.ct||'—')+'</div><div class="nm" title="'+esc(st.note)+'">'+st.nm+'</div></div>';
   });
   fhtml+='</div>';
-  cards.push(card('★ Armeijaketju: wood → mine → expert → outpost → soldiers','span2 wide',fhtml,
-    'Per peli (uusin benchmark). Amber-reunus = suurin pudotus (pullonkaula). Expert=0 katkaisee ketjun.'));
+  cards.push(card('★ Army chain: wood → mine → expert → outpost → soldiers','span2 wide',fhtml,
+    'Per game (latest benchmark). Amber border = biggest drop (bottleneck). Expert=0 breaks the chain.'));
 
   // soldier utilization (useful vs useless + attack/defend/idle)
-  cards.push(card('Sotilaiden hyödyllisyys '+tip('Kun kone vihdoin rakentaa sotilaita, tekevätkö ne mitään?'),'',
-    '<div class="well"><div class="dim" style="font-size:10px">useful vs useless roundit</div>'
+  cards.push(card('Soldier usefulness '+tip('When the AI finally builds soldiers, do they do anything?'),'',
+    '<div class="well"><div class="dim" style="font-size:10px">useful vs useless rounds</div>'
     + stackBar([{label:'useful',v:num(b.soldierUsefulRounds)||0,color:C.good},{label:'useless',v:num(b.soldierUselessRounds)||0,color:C.bad}])
     + '<div class="dim" style="font-size:10px;margin-top:8px">attack / defend / idle</div>'
     + stackBar([{label:'attack',v:num(b.soldierAttack)||0,color:C.bad},{label:'defend',v:num(b.soldierDefend)||0,color:C.raw},{label:'idle',v:num(b.soldierIdle)||0,color:C.tie}])
     + '</div>',
-    '0% attack / 97% defend = sotilaat puhtaasti puolustavia (ei hyökkää = ei voita conquestilla).'));
+    '0% attack / 97% defend = soldiers are purely defensive (no attacking = no conquest wins).'));
 
   // soldier army size over gens + capacity envelope + champSoldierBins
   if(hist.length){
     var ax=hist.map(function(h){return h.gen;});
     var cap=hist.map(function(h){ return 1 + 3*(num(h.outpostsPerGame)||0); });
-    cards.push(card('Armeijan koko vs kapasiteetti','',chart(ax,[
+    cards.push(card('Army size vs capacity','',chart(ax,[
       {vals:cap,color:C.faint,label:'cap (HQ+1+3·outpost)',dash:true},
       {vals:smooth(hist.map(function(h){return num(h.maxSoldiersPerGame);})),color:C.mil,label:'soldiers fielded',w:2.2}
-    ],{h:190,y0:0}),'Kapasiteettisokeus: ilman outposteja katto ≈ 1 sotilas koko pelin.'));
+    ],{h:190,y0:0}),'Capacity blindness: without outposts the cap ≈ 1 soldier the whole game.'));
   }
   if(b.champSoldierBins){
     var sbins=b.champSoldierBins, ks=['0','1','2','3','4+'];
     var mx=Math.max.apply(null,ks.map(function(k){return num(sbins[k])||0;}))||1;
-    cards.push(card('Armeijan kokojakauma (peak/peli)','',hbars(ks.map(function(k){
-      return {name:k+' sotilasta',val:num(sbins[k])||0,right:String(num(sbins[k])||0),color:k==='0'?C.bad:C.mil};
-    }),{max:mx}),'Suurin osa peleistä armeijattomia.'));
+    cards.push(card('Army size distribution (peak/game)','',hbars(ks.map(function(k){
+      return {name:k+' soldiers',val:num(sbins[k])||0,right:String(num(sbins[k])||0),color:k==='0'?C.bad:C.mil};
+    }),{max:mx}),'Most games are army-less.'));
   }
   // assault counters (known-zero)
-  cards.push(card('Hyökkäyslaskurit '+tip('crackDevice/HQ — voittoehdon rynnäkkö. 0 = ei koskaan rynnäköi.'),'',
+  cards.push(card('Assault counters '+tip('crackDevice/HQ — the win-condition assault. 0 = never assaults.'),'',
     '<div class="tiles">'
-    + tile('CrackDevice yrit.', String(num(b.crackDeviceAttempts)||0), (num(b.crackDeviceAttempts)||0)===0)
-    + tile('CrackDevice onn.', String(num(b.crackDeviceSuccesses)||0), (num(b.crackDeviceSuccesses)||0)===0)
-    + tile('CrackHQ yrit.', String(num(b.crackHQAttempts)||0), (num(b.crackHQAttempts)||0)===0)
-    + tile('CrackHQ onn.', String(num(b.crackHQSuccesses)||0), (num(b.crackHQSuccesses)||0)===0)
+    + tile('CrackDevice attempts', String(num(b.crackDeviceAttempts)||0), (num(b.crackDeviceAttempts)||0)===0)
+    + tile('CrackDevice successes', String(num(b.crackDeviceSuccesses)||0), (num(b.crackDeviceSuccesses)||0)===0)
+    + tile('CrackHQ attempts', String(num(b.crackHQAttempts)||0), (num(b.crackHQAttempts)||0)===0)
+    + tile('CrackHQ successes', String(num(b.crackHQSuccesses)||0), (num(b.crackHQSuccesses)||0)===0)
     + '</div>'));
   fill('military', cards.join(''));
 }
@@ -904,9 +911,9 @@ function panelOpponents(){
     return {name:o[1], val:v, right:(v!=null?pct(v,0):'—')+(nPer?(' n='+nPer):''),
       warn:(nPer!=null&&nPer<30), color:(v!=null&&v>=0.5)?C.good:C.illusion}; })
     .filter(function(it){ return it.val!=null; });
-  cards.push(card('★ Liiga win-rate (benchmark, vs HARD-bot + skriptit)','span2 wide',
-    items.length? hbars(items,{max:1,ref:0.5}) : '<div class="empty">ei benchVs*-dataa tässä ajossa</div>',
-    'Auktoritatiivinen: champion vs skriptattu liiga. 50% viiva referenssinä; amber jos n<30.'));
+  cards.push(card('★ League win-rate (benchmark, vs HARD bot + scripts)','span2 wide',
+    items.length? hbars(items,{max:1,ref:0.5}) : '<div class="empty">no benchVs* data in this run</div>',
+    'Authoritative: champion vs the scripted league. 50% line as reference; amber if n<30.'));
 
   // per-opponent training trend small-multiples (N-gated)
   if(log.length){
@@ -918,12 +925,12 @@ function panelOpponents(){
       return '<div class="tile"><div class="lbl" style="'+(bad?'color:var(--bad)':'')+'">'+o[1]+'</div>'
         + spark(vals,bad?C.bad:C.good,28) + '<div class="sub">'+(last!=null?pct(last,0):'—')+'</div></div>';
     }).filter(Boolean).join('');
-    cards.push(card('Per-vastustaja treeni-trendi '+tip('spVs* self-play probet, N-gated (N>0). Punainen = heikoin matchup.'),'span2 wide',
-      sm? '<div class="tiles">'+sm+'</div>' : '<div class="empty">ei spVs*-probeja vielä</div>',
-      'Treeni-aikainen self-play-mittaus; benchmark yllä on auktoritatiivinen.'));
+    cards.push(card('Per-opponent training trend '+tip('spVs* self-play probes, N-gated (N>0). Red = weakest matchup.'),'span2 wide',
+      sm? '<div class="tiles">'+sm+'</div>' : '<div class="empty">no spVs* probes yet</div>',
+      'Training-time self-play measure; the benchmark above is authoritative.'));
   }
   // seat bias
-  cards.push(card('Seat-bias '+tip('winSeat0 vs winSeat1 — epäsymmetria.'),'',
+  cards.push(card('Seat bias '+tip('winSeat0 vs winSeat1 — asymmetry.'),'',
     hbars([{name:'seat 0',val:num(b.winSeat0),right:pct(b.winSeat0,0),color:C.raw},
            {name:'seat 1',val:num(b.winSeat1),right:pct(b.winSeat1,0),color:C.mil}],{max:1,ref:0.5})));
   fill('opponents', cards.join(''));
@@ -974,25 +981,25 @@ function drawReplayFrame(canvas,r,fi){
 }
 function replaySide(r,fi){
   var f=r.frames[fi]; var meta=oppMeta(R_SRC); var self=r.mode==='self';
-  var blue=(self?'AI #1':'Meidän AI')+' (sininen)';
-  var red=(self?'AI #2':(r.mode==='hard'?'Hard CPU':meta[2]))+' (punainen)';
-  var turn=f.p===0?'<span class="blue">'+blue+'</span>':(f.p===1?'<span class="red">'+red+'</span>':'asetelma');
+  var blue=(self?'AI #1':'Our AI')+' (blue)';
+  var red=(self?'AI #2':(r.mode==='hard'?'Hard CPU':meta[2]))+' (red)';
+  var turn=f.p===0?'<span class="blue">'+blue+'</span>':(f.p===1?'<span class="red">'+red+'</span>':'setup');
   var res;
   var rr = r.result||{};
-  if(rr.winnerSeat===0) res='<span class="blue">'+blue+'</span> voitti — '+esc(rr.cause);
-  else if(rr.winnerSeat===1) res='<span class="red">'+red+'</span> voitti — '+esc(rr.cause);
-  else res='ratkeamaton';
+  if(rr.winnerSeat===0) res='<span class="blue">'+blue+'</span> won — '+esc(rr.cause);
+  else if(rr.winnerSeat===1) res='<span class="red">'+red+'</span> won — '+esc(rr.cause);
+  else res='unresolved';
   var modeStr=self?' · self-play':(r.mode==='hard'?' · vs hard':' · vs '+(meta[2]));
-  return '<div class="big">Iteraatio '+esc(r.iter)+modeStr+'</div>'
-    + 'Kierros <b style="color:var(--ink)">'+esc(f.r)+'</b> · vuoro: '+turn+'<br>'
-    + 'Ruutu '+(fi+1)+'/'+r.frames.length+'<br><br>'
-    + '<b style="color:var(--ink)">Lopputulos:</b><br>'+res+' ('+esc(rr.rounds!=null?rr.rounds:'?')+' kierrosta)';
+  return '<div class="big">Iteration '+esc(r.iter)+modeStr+'</div>'
+    + 'Round <b style="color:var(--ink)">'+esc(f.r)+'</b> · turn: '+turn+'<br>'
+    + 'Frame '+(fi+1)+'/'+r.frames.length+'<br><br>'
+    + '<b style="color:var(--ink)">Result:</b><br>'+res+' ('+esc(rr.rounds!=null?rr.rounds:'?')+' rounds)';
 }
 function replaySrcToggle(){
   var legacyStarted=false;
-  var html='<span class="seglbl">liiga</span>';
+  var html='<span class="seglbl">league</span>';
   OPPS.forEach(function(o){
-    if(o[3]&&!legacyStarted){ legacyStarted=true; html+='<span class="seglbl">vanhat</span>'; }
+    if(o[3]&&!legacyStarted){ legacyStarted=true; html+='<span class="seglbl">legacy</span>'; }
     html+='<button class="seg rsel'+(o[3]?' legacy':'')+(o[0]===R_SRC?' sel':'')+'" data-src="'+o[0]+'">'+esc(o[2])+'</button>';
   });
   return '<div class="segmented" style="margin-bottom:10px;width:100%">'+html+'</div>';
@@ -1015,8 +1022,8 @@ function panelReplay(){
   var meta=oppMeta(R_SRC), self=R_SRC==='self', scripted=R_SRC!=='hard'&&R_SRC!=='self';
   var batch=batchKey(R_SRC); if(batch!==R_BATCH){ R_BATCH=batch; R_IDX=0; }
   var r=activeReplay(); var n=gamesFor(R_SRC).length;
-  var title='<h3>Live-peli — '+(self?'AI vs AI':(scripted?('AI vs '+meta[2]):'AI vs Hard CPU'))
-    +' <span class="dim" style="text-transform:none">· '+(n||0)+' tuoretta peliä/iteraatio</span></h3>';
+  var title='<h3>Live game — '+(self?'AI vs AI':(scripted?('AI vs '+meta[2]):'AI vs Hard CPU'))
+    +' <span class="dim" style="text-transform:none">· '+(n||0)+' fresh games/iteration</span></h3>';
   var key=R_SRC+':'+R_IDX+':'+(r&&r.frames?(r.iter+':'+r.seed+':'+r.frames.length):'none');
   if(key===R_KEY && panel.dataset.k===key){ return; }
   R_KEY=key; R_FRAME=0;
@@ -1024,36 +1031,36 @@ function panelReplay(){
     var fn='replay'+(R_SRC==='hard'?'':R_SRC==='self'?'_selfplay':'_vs_'+R_SRC)+'.json';
     panel.dataset.k='';
     panel.innerHTML='<div class="card wide">'+title+replaySrcToggle()
-      +'<div class="empty">Ei replayta — odotetaan tiedostoa <code>'+esc(fn)+'</code> (kirjoitetaan joka --replay-every).'
-      +(meta[3]?' Tämä on vanha liigan ulkopuolinen vastustaja.':'')+'</div></div>';
+      +'<div class="empty">No replay — waiting for file <code>'+esc(fn)+'</code> (written every --replay-every).'
+      +(meta[3]?' This is an old non-league opponent.':'')+'</div></div>';
     wireReplayToggle(); return;
   }
   panel.dataset.k=key;
   var latestIter=STATE.latest&&typeof STATE.latest.gen==='number'?STATE.latest.gen:null;
   var staleBy=(latestIter!=null&&typeof r.iter==='number')?(latestIter-r.iter):null;
-  var stale=(staleBy!=null&&staleBy>=25)?'<div class="note" style="color:var(--illusion);margin-bottom:8px">⚠ Replay iteraatiosta '+r.iter+', koulutus jo '+latestIter+' ('+staleBy+' jäljessä).</div>':'';
-  var blueLbl=self?'AI #1':'meidän AI', redLbl=self?'AI #2':(scripted?meta[2]:'Hard CPU');
+  var stale=(staleBy!=null&&staleBy>=25)?'<div class="note" style="color:var(--illusion);margin-bottom:8px">⚠ Replay from iteration '+r.iter+', training already at '+latestIter+' ('+staleBy+' behind).</div>':'';
+  var blueLbl=self?'AI #1':'our AI', redLbl=self?'AI #2':(scripted?meta[2]:'Hard CPU');
   panel.innerHTML='<div class="card wide">'+title+replaySrcToggle()+stale
     +'<div class="stage"><canvas id="replayCanvas"></canvas><div class="side" id="replaySide"></div></div>'
     +'<div class="ctl"><button class="btn" id="replayPlay"></button>'
     +'<input type="range" id="replayScrub" min="0" max="'+(r.frames.length-1)+'" value="0">'
     +'<span id="replaySpeed" style="cursor:pointer;color:var(--accent);font-weight:600;user-select:none"></span>'
-    +'<button class="btn" id="replayNext" title="Selaa tämän iteraation pelit">Seuraava peli ⏭</button>'
+    +'<button class="btn" id="replayNext" title="Browse this iteration\\'s games">Next game ⏭</button>'
     +'<span id="replayGamePos" class="dim" style="font-size:11px"></span></div>'
-    +'<div class="leg"><span style="color:#5aa9ff">sininen='+esc(blueLbl)+'</span> · <span style="color:#ff6b6b">punainen='+esc(redLbl)+'</span>'
-    +' · maasto: <span style="color:#3a9fd0">joki</span> <span style="color:#8a929c">vuori</span> <span style="color:#3f8a5c">metsä</span> ruoho'
-    +' · kirjaimet=rakennukset (F mine V O H N B silta ★ HQ <span style="color:#c792ea">◆ Strange Device</span>) · keltainen numero=sotilaat</div>'
+    +'<div class="leg"><span style="color:#5aa9ff">blue='+esc(blueLbl)+'</span> · <span style="color:#ff6b6b">red='+esc(redLbl)+'</span>'
+    +' · terrain: <span style="color:#3a9fd0">river</span> <span style="color:#8a929c">mountain</span> <span style="color:#3f8a5c">forest</span> grass'
+    +' · letters=buildings (F mine V O H N B bridge ★ HQ <span style="color:#c792ea">◆ Strange Device</span>) · yellow number=soldiers</div>'
     +'</div>';
   wireReplayToggle();
   var playBtn=document.getElementById('replayPlay'),scrub=document.getElementById('replayScrub'),speed=document.getElementById('replaySpeed');
-  function syncPlay(){ playBtn.textContent=R_PLAYING?'⏸ tauko':'▶ toista'; playBtn.className='btn'+(R_PLAYING?' on':''); }
+  function syncPlay(){ playBtn.textContent=R_PLAYING?'⏸ pause':'▶ play'; playBtn.className='btn'+(R_PLAYING?' on':''); }
   function syncSpeed(){ speed.textContent=(R_FPS/6).toFixed(1).replace(/\\.0$/,'')+'×'; }
   playBtn.onclick=function(){ R_PLAYING=!R_PLAYING; syncPlay(); };
   scrub.oninput=function(){ R_PLAYING=false; syncPlay(); R_FRAME=Number(scrub.value); var a=activeReplay();
     drawReplayFrame(document.getElementById('replayCanvas'),a,R_FRAME); document.getElementById('replaySide').innerHTML=replaySide(a,R_FRAME); };
   speed.onclick=function(){ var steps=[3,6,12,24,48]; var i=steps.indexOf(R_FPS); R_FPS=steps[(i<0?steps.length-1:i+1)%steps.length]; syncSpeed(); restartReplayTimer(); };
   var nextBtn=document.getElementById('replayNext'),gamePos=document.getElementById('replayGamePos');
-  function syncPos(){ var nn=gamesFor(R_SRC).length||1; gamePos.textContent='peli '+(R_IDX+1)+'/'+nn+' · iter '+(r.iter!=null?r.iter:'?'); }
+  function syncPos(){ var nn=gamesFor(R_SRC).length||1; gamePos.textContent='game '+(R_IDX+1)+'/'+nn+' · iter '+(r.iter!=null?r.iter:'?'); }
   nextBtn.onclick=function(){ var nn=gamesFor(R_SRC).length; if(nn<2){ syncPos(); return; } R_IDX=(R_IDX+1)%nn; R_KEY=''; panel.dataset.k=''; R_FRAME=0; R_PLAYING=true; panelReplay(); };
   syncPlay(); syncSpeed(); syncPos();
   drawReplayFrame(document.getElementById('replayCanvas'),r,0);
@@ -1116,7 +1123,7 @@ function drawSpatial(canvas,spn){
 function panelSpatial(){
   var panel=document.querySelector('[data-panel="spatial"]'); if(!panel) return;
   var spn=spatialFrames(STATE&&STATE.spatial);
-  if(!spn){ panel.innerHTML='<div class="card wide"><h3>CNN spatial</h3><div class="empty">ei spatial.jsonia (ei-CNN ajo)</div></div>'; return; }
+  if(!spn){ panel.innerHTML='<div class="card wide"><h3>CNN spatial</h3><div class="empty">no spatial.json (non-CNN run)</div></div>'; return; }
   var af=activeSpFrame(spn), f=af.frame;
   var hasVm=(f.valueMap||[]).some(function(v){return v!=null;});
   var frameSel=spn.frames.map(function(fr,i){ return '<button class="seg'+(i===af.idx?' sel':'')+'" data-spf="'+i+'">'+esc(fr.label||('#'+i))+'</button>'; }).join('');
@@ -1125,14 +1132,14 @@ function panelSpatial(){
   var tm=(f.topMoves||[]).filter(function(m){return m&&m.idx>=0;}).slice(0,6).map(function(m){
     return '<div class="tm"><span>'+esc(m.intent)+' <span class="dim">@'+m.idx+'</span></span><span>p='+f2(m.prob,3)+'</span><span class="dim">v='+f2(m.valueAfter,2)+'</span></div>';
   }).join('');
-  panel.innerHTML='<div class="card wide"><h3>CNN spatial — mitä verkko ajattelee '+tip('policy = mihin verkko haluaa toimia; Δ-value = valueAfter − root; value = raaka per-tile arvo.')+'</h3>'
-    +'<div class="ctl"><span class="seglbl">vaihe</span><span class="segmented">'+frameSel+'</span>'
-    +'<span class="seglbl">kerros</span><span class="segmented">'+mapSel+'</span>'
+  panel.innerHTML='<div class="card wide"><h3>CNN spatial — what the net is thinking '+tip('policy = where the net wants to act; Δ-value = valueAfter − root; value = raw per-tile value.')+'</h3>'
+    +'<div class="ctl"><span class="seglbl">frame</span><span class="segmented">'+frameSel+'</span>'
+    +'<span class="seglbl">layer</span><span class="segmented">'+mapSel+'</span>'
     +'<span class="dim">round '+esc(f.round)+' · value='+f2(f.value,3)+' · iter '+esc(spn.iter)+'</span></div>'
     +'<div class="stage" style="margin-top:10px"><canvas id="spatialCanvas"></canvas>'
     +'<div class="side"><div class="big">Net verdict: <span style="color:'+((num(f.value)||0)>=0?'var(--good)':'var(--bad)')+'">'+f2(f.value,3)+'</span></div>'
     +'<div class="topmoves"><div class="dim" style="font-size:10px;text-transform:uppercase">top moves</div>'+(tm||'<div class="empty">—</div>')+'</div></div></div>'
-    +'<div class="leg">policy: <span style="color:#ffcb6b">heikko</span>→<span style="color:#ff6b6b">vahva</span> · Δ/value: <span style="color:#ff6b6b">neg</span>→<span style="color:#4dd2a0">pos</span></div>'
+    +'<div class="leg">policy: <span style="color:#ffcb6b">weak</span>→<span style="color:#ff6b6b">strong</span> · Δ/value: <span style="color:#ff6b6b">neg</span>→<span style="color:#4dd2a0">pos</span></div>'
     +'</div>';
   document.querySelectorAll('[data-spf]').forEach(function(b){ b.onclick=function(){ SP_FRAME=Number(b.dataset.spf); panelSpatial(); }; });
   document.querySelectorAll('[data-spm]').forEach(function(b){ if(b.disabled) return; b.onclick=function(){ SP_MAP=b.dataset.spm; panelSpatial(); }; });
@@ -1159,18 +1166,18 @@ function panelModels(){
   cards.push(card('Champion','',
     crow? '<div class="tiles">'+tile('id',crow.id)+tile('arc',crow.arc)+tile('type',crow.type)
       +tile('honest win', crow.winrate_vs_hard!=null?pct(crow.winrate_vs_hard):'—')
-      +tile('rekisteröity', crow.created_utc?crow.created_utc.slice(0,10):'—')+'</div>'
+      +tile('registered', crow.created_utc?crow.created_utc.slice(0,10):'—')+'</div>'
       +(crow.notes?'<div class="note" style="margin-top:8px">'+esc(crow.notes)+'</div>':'')
-      : '<div class="empty">ei championia rekisterissä</div>',
-    s.championPtr&&Object.keys(ptr).length? '' : 'CHAMPION.json tyhjä → fallback: uusin sd3 / korkein trueWin.'));
+      : '<div class="empty">no champion in registry</div>',
+    s.championPtr&&Object.keys(ptr).length? '' : 'CHAMPION.json empty → fallback: latest sd3 / highest trueWin.'));
   // lineage grouped by arc
   var byArc={}; reg.forEach(function(r){ (byArc[r.arc]=byArc[r.arc]||[]).push(r); });
   var arcs=Object.keys(byArc).sort();
   var rows='';
-  var arcNote={ 'sd':'Strange-Device perusarkku (vanha)', 'sd2':'Outpost-rebalance', 'sd3':'metalli-/armeijatalous rebalance (nyk.)' };
+  var arcNote={ 'sd':'Strange-Device base arc (old)', 'sd2':'Outpost rebalance', 'sd3':'metal/army-economy rebalance (current)' };
   arcs.forEach(function(arc){
     var old=(arc!=='sd3');
-    rows+='<tr style="background:var(--panel2)"><td colspan="6"><b>'+esc(arc)+'</b> <span class="dim">'+esc(arcNote[arc]||'')+(old?' · ei vertailukelpoinen nyk. arkkuun':'')+'</span></td></tr>';
+    rows+='<tr style="background:var(--panel2)"><td colspan="6"><b>'+esc(arc)+'</b> <span class="dim">'+esc(arcNote[arc]||'')+(old?' · not comparable to current arc':'')+'</span></td></tr>';
     byArc[arc].slice().reverse().forEach(function(r){
       var isC=r.id===champ, isDep=Object.keys(dep).some(function(a){return dep[a]===r.id;});
       rows+='<tr class="'+(isC?'champ ':'')+(old?'oldarc':'')+'"><td>'+esc(r.id)+(isDep?' <span class="pill dep">deployed</span>':'')+(isC?' <span class="pill dep">champ</span>':'')+'</td>'
@@ -1181,10 +1188,10 @@ function panelModels(){
         +'<td><span class="pill exp">'+esc(r.status||'')+'</span></td></tr>';
     });
   });
-  cards.push(card('Lineage (rekisteri, ryhmitelty arkun mukaan)','wide',
-    reg.length? '<div class="tblwrap"><table><thead><tr><th>id</th><th>type</th><th>honest win</th><th>parent</th><th>rekisteröity</th><th>status</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
-      : '<div class="empty">ei rekisteröityjä malleja</div>',
-    'Eri arkut (sd/sd2/sd3) eivät ole vertailukelpoisia — eri pelisäännöt.'));
+  cards.push(card('Lineage (registry, grouped by arc)','wide',
+    reg.length? '<div class="tblwrap"><table><thead><tr><th>id</th><th>type</th><th>honest win</th><th>parent</th><th>registered</th><th>status</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
+      : '<div class="empty">no registered models</div>',
+    'Different arcs (sd/sd2/sd3) are not comparable — different game rules.'));
   fill('models', cards.join(''));
 }
 
@@ -1193,22 +1200,22 @@ function panelBuild(){
   var s=STATE, bs=s.buildStatus, bl=s.buildLog||[]; var cards=[];
   if(bs&&Array.isArray(bs.phases)){
     var done=bs.phases.filter(function(p){return p.status==='done';}).length;
-    cards.push(card('Build-prosessi','',
-      '<div class="dim" style="font-size:11px;margin-bottom:6px">'+done+'/'+bs.phases.length+' vaihetta valmis</div>'
+    cards.push(card('Build process','',
+      '<div class="dim" style="font-size:11px;margin-bottom:6px">'+done+'/'+bs.phases.length+' phases done</div>'
       + bs.phases.map(function(p){ return '<div class="phase"><span class="st '+esc(p.status)+'"></span>'+esc(p.name||p.id||'')+'<span class="dim" style="margin-left:auto;font-size:10px">'+esc(p.status||'')+'</span></div>'; }).join('')));
   }
-  cards.push(card('Build-loki','wide',
+  cards.push(card('Build log','wide',
     bl.length? '<div class="feed">'+bl.slice().reverse().slice(0,200).map(function(e){
       var lv=e.level||'info'; var col=lv==='error'?C.bad:(lv==='warn'?C.illusion:C.muted);
       return '<div class="row"><span class="ts">'+esc((e.ts||'').slice(11,19))+'</span> <span style="color:'+col+'">'+esc(e.msg||e.message||JSON.stringify(e))+'</span></div>';
-    }).join('')+'</div>' : '<div class="empty">ei build-lokia (build-log.jsonl puuttuu)</div>'));
+    }).join('')+'</div>' : '<div class="empty">no build log (build-log.jsonl missing)</div>'));
   fill('build', cards.join(''));
 }
 function panelResearch(){
   var s=STATE, docs=[];
   // docs are no longer in /data.json by default; keep a graceful empty.
   var research=s.research||[];
-  if(!research.length){ fill('research', card('Tutkimus','wide','<div class="empty">ei tutkimusdokumentteja (rust-trainer/*.md). Lisää data.json:iin tarvittaessa.</div>')); return; }
+  if(!research.length){ fill('research', card('Research','wide','<div class="empty">no research documents (rust-trainer/*.md). Add to data.json if needed.</div>')); return; }
   if(RES_TAB>=research.length) RES_TAB=0;
   var seg=research.map(function(d,i){ return '<button class="seg'+(i===RES_TAB?' sel':'')+'" data-res="'+i+'">'+esc(d.title)+'</button>'; }).join('');
   fill('research', '<div class="card wide"><div class="segmented" style="margin-bottom:12px">'+seg+'</div><div class="md">'+md(research[RES_TAB].md)+'</div></div>');
@@ -1246,7 +1253,7 @@ function setStatus(){
   var dot=document.getElementById('statusDot'), banner=document.getElementById('banner');
   var age=(Date.now()-LAST_OK)/1000;
   dot.className='dot'+(age>60?' dead':(age>15?' stale':''));
-  dot.title='last /data.json OK '+Math.round(age)+'s sitten';
+  dot.title='last /data.json OK '+Math.round(age)+'s ago';
   banner.className='banner'+(age>15&&LAST_OK?' show':'');
 }
 function poll(){
@@ -1262,7 +1269,7 @@ document.addEventListener('keydown',function(e){
   var r=activeReplay(); if(!r||!r.frames) return;
   if(e.key==='ArrowRight'){ R_PLAYING=false; R_FRAME=(R_FRAME+1)%r.frames.length; drawReplayFrame(document.getElementById('replayCanvas'),r,R_FRAME); }
   else if(e.key==='ArrowLeft'){ R_PLAYING=false; R_FRAME=(R_FRAME-1+r.frames.length)%r.frames.length; drawReplayFrame(document.getElementById('replayCanvas'),r,R_FRAME); }
-  else if(e.key===' '){ e.preventDefault(); R_PLAYING=!R_PLAYING; var pb=document.getElementById('replayPlay'); if(pb){ pb.textContent=R_PLAYING?'⏸ tauko':'▶ toista'; pb.className='btn'+(R_PLAYING?' on':''); } }
+  else if(e.key===' '){ e.preventDefault(); R_PLAYING=!R_PLAYING; var pb=document.getElementById('replayPlay'); if(pb){ pb.textContent=R_PLAYING?'⏸ pause':'▶ play'; pb.className='btn'+(R_PLAYING?' on':''); } }
 });
 
 /* ===================== init ===================== */
