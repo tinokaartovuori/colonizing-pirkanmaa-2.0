@@ -3877,6 +3877,11 @@ struct BenchResult {
     // Bins: [1, 2, 3]. Bin 0 = "champion never had a soldier this game" → omitted
     // from the stacking display (already covered by champSoldierBins).
     stack_bins: [u32; 3],
+    // Economy-scaffold health (parity-free): standing experts + metal income + mines
+    // summed across bench games (per-game averages printed by `--validate-net`).
+    champ_metal_income_sum: f64,
+    champ_experts_sum: i64,
+    champ_mines_sum: i64,
     // M7 — sum of experts hired by champ over all bench games (also visible per-game
     // via `extra.hire_expert`, but expose explicit per-bench `expertsHiredPerGame`).
     // M8 — frontier ratio averaged across rounds, averaged across games.
@@ -4216,6 +4221,11 @@ struct GameRec {
     crack_device_success: bool,
     crack_hq_attempts: u64,
     crack_hq_success: bool,
+    /// Champion's metal income/round at game end (economy-scaffold health: a
+    /// fully-staffed mine = 80) and the number of STANDING Experts on champ tiles.
+    champ_metal_income: f64,
+    champ_experts: i64,
+    champ_mines: i64,
 }
 
 /// CNN (greedy MCTS) vs the held-out HARD heuristic. Champion seat alternates by
@@ -4261,6 +4271,7 @@ fn bench_vs_opponent(net: &SpatialNet, cfg: &TierConfig, tc: &TrainCfg, games: u
             // "fields an army" behavioral signal). Sampled after each turn resolves;
             // `current_soldier_amount` is the actual count on the board (not the cap).
             let mut champ_max_soldiers = 0i64;
+            let mut champ_peak_metal = 0.0f64;
             let mut winner: Option<PlayerId> = None;
             let mut cause: Option<WinCause> = None;
             // M1–M2 / M6 / M8 — per-round behavioral roll for the CHAMPION seat.
@@ -4289,6 +4300,7 @@ fn bench_vs_opponent(net: &SpatialNet, cfg: &TierConfig, tc: &TrainCfg, games: u
                     hard.plan_turn(&mut g, cur);
                 }
                 champ_max_soldiers = champ_max_soldiers.max(g.current_soldier_amount(PlayerId(champ_seat)));
+                champ_peak_metal = champ_peak_metal.max(cp_ai::metrics::metal_income_per_round(&g, PlayerId(champ_seat)));
                 if !device_built && g.has_strange_device() { device_built = true; }
                 if !champ_device_built && g.player_owns_strange_device(PlayerId(champ_seat)) { champ_device_built = true; }
                 if !hard_device_built && g.player_owns_strange_device(PlayerId(hard_seat)) { hard_device_built = true; }
@@ -4370,6 +4382,12 @@ fn bench_vs_opponent(net: &SpatialNet, cfg: &TierConfig, tc: &TrainCfg, games: u
                 crack_device_success,
                 crack_hq_attempts,
                 crack_hq_success,
+                champ_metal_income: champ_peak_metal,
+                champ_experts: g.get_tiles().iter().filter(|t| t.owner == Some(PlayerId(champ_seat)))
+                    .flat_map(|t| t.units.iter())
+                    .filter(|&&u| g.units[u.0].kind == cp_sim::UnitType::Expert).count() as i64,
+                champ_mines: g.get_tiles().iter().filter(|t| t.owner == Some(PlayerId(champ_seat))
+                    && t.building.as_ref().map(|b| b.kind) == Some(BuildingType::Mine)).count() as i64,
             }
         })
         .collect();
@@ -4393,6 +4411,7 @@ fn bench_vs_opponent(net: &SpatialNet, cfg: &TierConfig, tc: &TrainCfg, games: u
         villages_built_games: [0; 4], villages_built_wins: [0; 4],
         outposts_built_games: [0; 4], outposts_built_wins: [0; 4],
         stack_bins: [0; 3],
+        champ_metal_income_sum: 0.0, champ_experts_sum: 0, champ_mines_sum: 0,
         frontier_ratio_sum: 0.0, frontier_ratio_games: 0,
         champ_win_rounds_sum: 0, champ_win_rounds_n: 0,
         champ_loss_rounds_sum: 0, champ_loss_rounds_n: 0,
@@ -4424,6 +4443,9 @@ fn bench_vs_opponent(net: &SpatialNet, cfg: &TierConfig, tc: &TrainCfg, games: u
         if rec.hard_device_built && !hard_device_win { r.hard_device_denied += 1; }
         // Per-skill behavioral SUMS (averaged per-game on the dashboard).
         r.champ_villages_sum += rec.champ_villages;
+        r.champ_metal_income_sum += rec.champ_metal_income;
+        r.champ_experts_sum += rec.champ_experts;
+        r.champ_mines_sum += rec.champ_mines;
         r.champ_outposts_sum += rec.champ_outposts;
         r.champ_max_soldiers_sum += rec.champ_max_soldiers;
         // Plan-B behavioural metrics fold-in.
@@ -7858,7 +7880,11 @@ fn run_validate_net(args: &[String]) {
     if sims <= 1 {
         eprintln!("  WARNING: sims=1 MCTS is NET-INDEPENDENT (always picks candidate 0). Use --greedy to measure the policy head, or --sims 64 for the deploy policy.");
     }
+    cp_ai::controller::diag::reset();
     let br = bench_vs_hard(&net, &cfg, &tc, games, seed);
+    if cp_ai::controller::diag::on() {
+        cp_ai::controller::diag::dump(&format!("validate-net MCTS sims={sims} games={games}"));
+    }
 
     let n = br.n.max(1) as f64;
     let outposts_per_game = br.champ_outposts_sum as f64 / n;
@@ -7874,6 +7900,14 @@ fn run_validate_net(args: &[String]) {
         br.champ_max_soldiers_bins[3], br.champ_max_soldiers_bins[4]);
     println!("  villages / game      : {:.3}", br.champ_villages_sum as f64 / n);
     println!("  bridges / game       : {:.3}", br.champ_bridges_sum as f64 / n);
+    println!("  experts hired / game : {:.3}  (net-chosen only)", br.extra.hire_expert as f64 / n);
+    println!("  standing experts/game: {:.3}  (incl. economy scaffold)", br.champ_experts_sum as f64 / n);
+    println!("  mines / game         : {:.3}", br.champ_mines_sum as f64 / n);
+    println!("  PEAK metal income/game: {:.1}  (per mine {:.1}; fully-staffed mine = 80)",
+        br.champ_metal_income_sum / n,
+        if br.champ_mines_sum > 0 { br.champ_metal_income_sum / br.champ_mines_sum as f64 } else { 0.0 });
+    println!("  soldier stack bins   : [1]={} [2]={} [3]={}",
+        br.stack_bins[0], br.stack_bins[1], br.stack_bins[2]);
 
     // In-PLAY intent histogram (what the net actually chooses during the games).
     let total_dec = br.decisions.max(1) as f64;
@@ -8210,6 +8244,7 @@ mod tests {
             villages_built_games: [0; 4], villages_built_wins: [0; 4],
             outposts_built_games: [0; 4], outposts_built_wins: [0; 4],
             stack_bins: [0; 3],
+            champ_metal_income_sum: 0.0, champ_experts_sum: 0, champ_mines_sum: 0,
             frontier_ratio_sum: 0.0, frontier_ratio_games: 0,
             champ_win_rounds_sum: 0, champ_win_rounds_n: 0,
             champ_loss_rounds_sum: 0, champ_loss_rounds_n: 0,

@@ -21,6 +21,68 @@ use cp_sim::{BuildingType, Game, PlayerId, TileId, TileType, UnitId, UnitType};
 
 use crate::mlp::Genome;
 
+// --- TEMP staffing diagnostics (env-gated, parity-free) ----------------------
+// Enabled by setting CP_DIAG_STAFF=1. Counts expert-add attempts and their
+// failure reasons, plus worker adds, across all controller staffing calls.
+// REMOVE before finalizing (or leave: pure eprintln/atomics, no behaviour change).
+pub mod diag {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    pub static ENABLED: AtomicU64 = AtomicU64::new(u64::MAX); // u64::MAX = "unchecked"
+    pub static EXPERT_ATTEMPT: AtomicU64 = AtomicU64::new(0);
+    pub static EXPERT_OK: AtomicU64 = AtomicU64::new(0);
+    pub static EXPERT_FAIL_NOSLOT: AtomicU64 = AtomicU64::new(0);
+    pub static EXPERT_FAIL_NOSPACE: AtomicU64 = AtomicU64::new(0);
+    pub static EXPERT_FAIL_UNAFFORD: AtomicU64 = AtomicU64::new(0);
+    pub static EXPERT_FAIL_BUY: AtomicU64 = AtomicU64::new(0);
+    pub static WORKER_OK: AtomicU64 = AtomicU64::new(0);
+    pub static VILLAGE_OK: AtomicU64 = AtomicU64::new(0);
+    pub static MINE_EXPERT_GATE_SKIP: AtomicU64 = AtomicU64::new(0); // expert pass not reached on mine
+    pub static UNAFFORD_MONEY_SUM: AtomicU64 = AtomicU64::new(0);
+    pub static UNAFFORD_DRAIN5_SUM: AtomicU64 = AtomicU64::new(0);
+
+    pub fn on() -> bool {
+        let cached = ENABLED.load(Ordering::Relaxed);
+        if cached != u64::MAX {
+            return cached == 1;
+        }
+        let v = std::env::var("CP_DIAG_STAFF").map(|s| s == "1").unwrap_or(false);
+        ENABLED.store(if v { 1 } else { 0 }, Ordering::Relaxed);
+        v
+    }
+    pub fn inc(c: &AtomicU64) {
+        c.fetch_add(1, Ordering::Relaxed);
+    }
+    pub fn reset() {
+        for c in [
+            &EXPERT_ATTEMPT, &EXPERT_OK, &EXPERT_FAIL_NOSLOT, &EXPERT_FAIL_NOSPACE,
+            &EXPERT_FAIL_UNAFFORD, &EXPERT_FAIL_BUY, &WORKER_OK, &VILLAGE_OK,
+            &MINE_EXPERT_GATE_SKIP, &UNAFFORD_MONEY_SUM, &UNAFFORD_DRAIN5_SUM,
+        ] {
+            c.store(0, Ordering::Relaxed);
+        }
+    }
+    pub fn dump(label: &str) {
+        eprintln!(
+            "[DIAG-STAFF {label}] expert_attempt={} expert_ok={} fail(noslot={} nospace={} unafford={} buy={}) worker_ok={} village_ok={} mine_expert_gate_skip={}",
+            EXPERT_ATTEMPT.load(Ordering::Relaxed),
+            EXPERT_OK.load(Ordering::Relaxed),
+            EXPERT_FAIL_NOSLOT.load(Ordering::Relaxed),
+            EXPERT_FAIL_NOSPACE.load(Ordering::Relaxed),
+            EXPERT_FAIL_UNAFFORD.load(Ordering::Relaxed),
+            EXPERT_FAIL_BUY.load(Ordering::Relaxed),
+            WORKER_OK.load(Ordering::Relaxed),
+            VILLAGE_OK.load(Ordering::Relaxed),
+            MINE_EXPERT_GATE_SKIP.load(Ordering::Relaxed),
+        );
+        let nf = EXPERT_FAIL_UNAFFORD.load(Ordering::Relaxed).max(1);
+        eprintln!(
+            "[DIAG-STAFF {label}] at-unafford avg money={} avg drain*5={} (expert needs money>=270+drain*5)",
+            UNAFFORD_MONEY_SUM.load(Ordering::Relaxed) / nf,
+            UNAFFORD_DRAIN5_SUM.load(Ordering::Relaxed) / nf,
+        );
+    }
+}
+
 /// One discretionary decision in the NN loop, captured BEFORE the chosen intent
 /// executes. The parity exporter / harness consumes these. Mirrors the TS
 /// `DecisionTrace`.
@@ -398,7 +460,11 @@ impl<'a> NeuralAiController<'a> {
         if !s::affords(g, player, &basic_worker_cost(), s::STAFF_RESERVE) {
             return false;
         }
-        g.ai_buy_and_place_unit("BasicWorker", tid)
+        let ok = g.ai_buy_and_place_unit("BasicWorker", tid);
+        if ok && diag::on() {
+            diag::inc(&diag::WORKER_OK);
+        }
+        ok
     }
 
     fn add_expert(&self, g: &mut Game, player: PlayerId, tid: TileId) -> bool {
@@ -410,6 +476,18 @@ impl<'a> NeuralAiController<'a> {
     /// uses the low `STAFF_RESERVE` rather than the strategic `cfg.reserve` (otherwise
     /// the 250-money Expert was almost never affordable early and the plants/mines ran
     /// far below optimal output — the metal-economy starvation root cause).
+    ///
+    /// AFFORDABILITY (metal-economy root-cause fix, 2026-06-07): the Expert is a ONE-TIME
+    /// capital spend that DOUBLES a mine (or enables a plant) — the single
+    /// highest-leverage economic action. The general `affords()` keeps a 5-rounds-of-drain
+    /// solvency buffer (`money >= cost + reserve + drain*5`); instrumentation showed that
+    /// buffer (avg `drain*5 ≈ 411`) — NOT the raw 250 cost — blocked ~46% of expert
+    /// purchases (player typically held ~368 money, plenty for the 250 expert, but short
+    /// of the ~681 the drain buffer demanded). A mine expert returns METAL not money, so
+    /// it never "pays back" the money buffer, making the gate permanently unreachable as
+    /// the economy grows. We instead gate it like an income build: raw resources + keep a
+    /// modest money FLOOR (the strategic reserve + ~1 round of drain), so it never empties
+    /// the treasury but is not strangled by a 5-round buffer it can't earn back in money.
     fn add_expert_reserve(
         &self,
         g: &mut Game,
@@ -417,16 +495,46 @@ impl<'a> NeuralAiController<'a> {
         tid: TileId,
         reserve: i64,
     ) -> bool {
+        if diag::on() {
+            diag::inc(&diag::EXPERT_ATTEMPT);
+        }
         if g.free_unit_amount(player) <= 0 {
+            if diag::on() {
+                diag::inc(&diag::EXPERT_FAIL_NOSLOT);
+            }
             return false;
         }
         if !g.tiles[tid.0].has_space_for_units() {
+            if diag::on() {
+                diag::inc(&diag::EXPERT_FAIL_NOSPACE);
+            }
             return false;
         }
-        if !s::affords(g, player, &expert_cost(), reserve) {
+        // Income-build affordability: keep `reserve` + ~1 round of money drain as a floor
+        // (solvency-safe) rather than the 5-round buffer of `affords()` (the root-cause
+        // gate that blocked experts as the economy grew — see doc above).
+        let floor = reserve + m::money_drain_per_round(g, player).ceil() as i64;
+        if !s::affords_income_build(g, player, &expert_cost(), floor) {
+            if diag::on() {
+                diag::inc(&diag::EXPERT_FAIL_UNAFFORD);
+                diag::UNAFFORD_MONEY_SUM
+                    .fetch_add(m::money(g, player).max(0) as u64, std::sync::atomic::Ordering::Relaxed);
+                diag::UNAFFORD_DRAIN5_SUM.fetch_add(
+                    (m::money_drain_per_round(g, player) * 5.0).max(0.0) as u64,
+                    std::sync::atomic::Ordering::Relaxed,
+                );
+            }
             return false;
         }
-        g.ai_buy_and_place_unit("Expert", tid)
+        let ok = g.ai_buy_and_place_unit("Expert", tid);
+        if diag::on() {
+            if ok {
+                diag::inc(&diag::EXPERT_OK);
+            } else {
+                diag::inc(&diag::EXPERT_FAIL_BUY);
+            }
+        }
+        ok
     }
 
     /// Number of BasicWorkers currently on a tile.
@@ -739,6 +847,9 @@ impl<'a> NeuralAiController<'a> {
         };
         debug_assert_eq!(g.current_player(), player);
         let built = g.ai_build_building("Village", spot);
+        if built && diag::on() {
+            diag::inc(&diag::VILLAGE_OK);
+        }
         if built {
             // The unit cap is cached (`free_unit_amount` reads `max_unit_amount`); refresh
             // it so the immediately-following `staff_income` can spend the +3 new slots.
@@ -782,8 +893,12 @@ impl<'a> NeuralAiController<'a> {
         // --- Pass 0: MINES + PLANTS first, to OPTIMAL (metal/energy fund the army) ---
         // Metal is the army bottleneck, so the scarce unit cap goes to mines/plants
         // BEFORE farms (money is rarely the constraint — see the metal-economy root
-        // cause). Each mine -> 1 worker -> expert (doubles output) -> 2nd worker = 80
-        // metal/round; each plant -> worker + expert (else produces 0).
+        // cause).
+        //
+        // Each mine -> 1 worker -> expert (doubles output) -> 2nd worker = 80 metal/round;
+        // each plant -> worker + expert (else produces 0). Per-mine sequential so a mine
+        // that already has a worker completes to its expert + 2nd worker before the cap is
+        // spent elsewhere (full-staffing one mine = 80 metal beats two half-mines = 40+40).
         for tid in producers(g, &[BuildingType::Mine]) {
             self.ensure_worker(g, player, tid); // 1st worker
             if self.cfg.experts
@@ -791,6 +906,11 @@ impl<'a> NeuralAiController<'a> {
                 && !m::has_type(g, tid, UnitType::Expert)
             {
                 self.add_expert_reserve(g, player, tid, s::STAFF_RESERVE); // expert: ×2
+            } else if diag::on()
+                && self.cfg.experts
+                && !m::has_type(g, tid, UnitType::Expert)
+            {
+                diag::inc(&diag::MINE_EXPERT_GATE_SKIP);
             }
             if self.worker_count(g, tid) < 2 && g.tiles[tid.0].has_space_for_units() {
                 self.add_worker(g, player, tid); // 2nd worker
