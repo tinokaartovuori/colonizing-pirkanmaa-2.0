@@ -47,6 +47,10 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 /// PUCT exploration constant (mirrors `search.rs` SearchConfig default 1.5).
 const C_PUCT: f64 = 1.5;
+/// KataGo forced-playout constant `k` (Wu 2019 "Accelerating Self-Play Learning in
+/// Go", §forced playouts): each root child with prior `P(c)` is forced to
+/// `n_forced(c) = sqrt(k · P(c) · N_root)` visits before PUCT applies. k≈2.
+const FORCED_K: f64 = 2.0;
 /// Prior softmax temperature over `score_candidate` (mirrors `tau_prior`).
 const TAU: f64 = 1.0;
 /// FIX 2 margin: under `--turn-search-spend`, when the greedy policy says Pass the
@@ -436,6 +440,17 @@ struct Mcts<'a> {
     /// break-on-Pass completion reinforced. Only consulted when `turn_search` is on.
     /// Default false = the exact break-on-Pass behaviour.
     turn_search_spend: bool,
+    /// KataGo playout-cap lever (#2) — FORCED PLAYOUTS. When true, ROOT edge
+    /// selection forces each child with prior `P(c)` to receive at least
+    /// `n_forced(c) = sqrt(FORCED_K · P(c) · N_root)` visits before normal PUCT
+    /// applies: any root edge below its forced quota is selected unconditionally
+    /// (ties → lowest index), guaranteeing the deep recorded search explores rare
+    /// (low-prior) decisive intents. Only meaningful for the DEEP (recorded)
+    /// searches under `--playout-cap-frac`; the fast (non-recorded) searches leave
+    /// this false → pure PUCT, exactly as before. Forced visits are SUBTRACTED back
+    /// out when building the policy target (`prune_forced_playouts`) so the forced
+    /// exploration does not bias π. Default false = no-op (pure PUCT everywhere).
+    forced_playouts: bool,
 }
 
 impl<'a> Mcts<'a> {
@@ -653,6 +668,81 @@ fn puct_select(node: &Node) -> usize {
     best
 }
 
+/// Number of FORCED playouts a root child with prior `p` must receive before
+/// normal PUCT applies: `floor(sqrt(FORCED_K · p · n_root))`. KataGo (Wu 2019).
+#[inline]
+fn n_forced(p: f64, n_root: f64) -> f64 {
+    (FORCED_K * p.max(0.0) * n_root.max(0.0)).sqrt().floor()
+}
+
+/// KataGo policy-target PRUNING of forced playouts (Wu 2019). Given the raw root
+/// `edge_visits`, the root `priors`, and `n_root` total root visits, return a
+/// pruned visit vector for building the policy target π: the most-visited child is
+/// kept intact (it is the move the search actually prefers); every OTHER child has
+/// up to `n_forced(P,N) − 1` of its visits subtracted, but never below the visit
+/// count at which its PUCT value would match the best child's PUCT value — i.e. its
+/// "natural" (un-forced) visit level. Any child pruned to ≤0 is dropped to exactly
+/// 0. This removes the forced-exploration bias while preserving the genuinely
+/// PUCT-earned visits, so π reflects the search's real preference distribution.
+fn prune_forced_playouts(edge_visits: &[f64], priors: &[f64], n_root: f64) -> Vec<f64> {
+    let m = edge_visits.len();
+    if m == 0 {
+        return Vec::new();
+    }
+    // Best child = most-visited (the search's chosen move); kept un-pruned.
+    let mut best = 0usize;
+    let mut best_v = -1.0;
+    for (a, &v) in edge_visits.iter().enumerate() {
+        if v > best_v {
+            best_v = v;
+            best = a;
+        }
+    }
+    // KataGo's exact rule subtracts forced playouts until removing one more would
+    // raise a child's PUCT value above the best child's; that needs per-edge Q,
+    // which is not carried at this layer. We apply the documented UPPER BOUND on the
+    // subtraction instead — at most `n_forced − 1` visits per non-best child — which
+    // removes the forced-exploration bias (a child forced to exactly its quota is
+    // pruned to ≤1 visit) without ever pruning a PUCT-earned visit below that quota.
+    let _ = best_v;
+    let mut pruned: Vec<f64> = edge_visits.to_vec();
+    for a in 0..m {
+        if a == best {
+            continue;
+        }
+        let v = edge_visits[a];
+        if v <= 0.0 {
+            continue;
+        }
+        let nf = n_forced(*priors.get(a).unwrap_or(&0.0), n_root);
+        // Subtract up to (n_forced − 1) forced visits; never below 0.
+        let sub = (nf - 1.0).max(0.0).min(v);
+        let after = v - sub;
+        // KataGo drops a child whose post-prune visits are not strictly positive.
+        pruned[a] = if after > 0.0 { after } else { 0.0 };
+    }
+    pruned
+}
+
+/// ROOT edge selection WITH forced playouts (KataGo). Any child below its forced
+/// quota `n_forced(P(c), N_root)` is selected unconditionally (ties → lowest
+/// index); once every child has met its quota this is exactly `puct_select`. The
+/// forced quota only fires while a child has ≥1 visit-deficit, so the early sims
+/// guarantee each prior-weighted arm a minimum of exploration before PUCT can
+/// starve a low-prior decisive intent. Used only for DEEP (recorded) searches.
+fn puct_select_forced_root(node: &Node) -> usize {
+    let n_root = node.visits.max(0.0);
+    // Force the FIRST under-quota child (lowest index) that still owes visits.
+    for a in 0..node.cands.len() {
+        let quota = n_forced(node.priors[a], n_root);
+        if node.edge_visits[a] < quota {
+            return a;
+        }
+    }
+    // All quotas met → normal PUCT.
+    puct_select(node)
+}
+
 /// Advance every NON-root seat by one forced deterministic turn, then end the
 /// root player's turn. Mirrors `search.rs::advance_round_after_root_turn`, but
 /// the forced opponents are HARD-bot turns (a cheap, parity-free stand-in for the
@@ -705,7 +795,13 @@ fn simulate(tree: &mut Mcts, cfg: &TierConfig) -> f64 {
         if tree.nodes[node].terminal || !tree.nodes[node].expanded {
             break;
         }
-        let edge = puct_select(&tree.nodes[node]);
+        // KataGo forced playouts apply at the ROOT only (the policy target is built
+        // from root edge-visits); interior nodes always use pure PUCT.
+        let edge = if tree.forced_playouts && node == 0 {
+            puct_select_forced_root(&tree.nodes[node])
+        } else {
+            puct_select(&tree.nodes[node])
+        };
         visited.push((node, edge));
         match tree.nodes[node].children[edge] {
             Some(child) => node = child,
@@ -774,6 +870,9 @@ fn mcts_select(
         // completion fills the remaining (budget - 1). Unused when turn_search off.
         turn_budget: (cfg.budget - 1).max(0),
         turn_search_spend,
+        // Greedy bench/deploy MCTS is never recorded → no forced playouts (honest
+        // PUCT measure).
+        forced_playouts: false,
     };
     let mut root = tree.make_node(g);
     // Optional eval/bench prior-floor: when > 0, prop the starved build intents the
@@ -2118,6 +2217,19 @@ struct TrainCfg {
     /// resolve to a compatible SpatialNet the trainer falls back to "off" (a banner
     /// warning is printed and `kl_anchor` is effectively ignored).
     kl_anchor_net: PathBuf,
+    /// KataGo playout-cap randomization (#2) — fraction of LEARNER self-play
+    /// decisions that run the DEEP (forced-playout, `big_sims`) search and RECORD a
+    /// policy target; the remaining `1 − frac` run a fast (`sims`) PUCT search, play
+    /// the move, and record NOTHING. Decouples the EXPENSIVE policy-target search
+    /// from the cheap move-generation search (KataGo: most self-play moves use a low
+    /// cap, a minority use a high cap and are the only ones trained on). Default 0.0
+    /// = EXACT no-op (every learner decision deep+recorded at `sims`, plain PUCT —
+    /// bit-identical to the pre-lever path). Clamped to [0,1].
+    playout_cap_frac: f64,
+    /// KataGo playout-cap (#2) — sims used in the DEEP (recorded) search when
+    /// `playout_cap_frac > 0`. The fast non-recorded searches keep using `sims`.
+    /// Default 256. Ignored when `playout_cap_frac == 0`.
+    big_sims: usize,
 }
 impl Default for TrainCfg {
     fn default() -> Self {
@@ -2177,6 +2289,8 @@ impl Default for TrainCfg {
             w_cut: 0.0,
             kl_anchor: 0.0,
             kl_anchor_net: PathBuf::new(),
+            playout_cap_frac: 0.0,
+            big_sims: 256,
         }
     }
 }
@@ -2295,6 +2409,12 @@ fn sample_move(visits: &[f64], temp: f64, rng: &mut XorShift32) -> usize {
 /// sampled ∝ visit^(1/temp) while `round < temp_until_round` (else greedy). The
 /// training target `pi` is ALWAYS the raw visit distribution (never tempered).
 /// Returns `(chosen_index, pi)`.
+/// `forced`: KataGo playout-cap (#2). When true, this decision is the DEEP recorded
+/// search (caller passes `tc.big_sims` as `n_sims`) and runs WITH forced playouts;
+/// the returned `pi` is the FORCED-PLAYOUT-PRUNED visit distribution (a valid,
+/// unbiased recorded policy target). When false, this is a plain PUCT search whose
+/// `pi` is the raw visit distribution (used as-is when `--playout-cap-frac 0`, or
+/// discarded by the caller on a fast non-recorded decision).
 fn mcts_select_explore(
     net: &SpatialNet,
     g: &Game,
@@ -2304,6 +2424,7 @@ fn mcts_select_explore(
     round: i64,
     tc: &TrainCfg,
     rng: &mut XorShift32,
+    forced: bool,
 ) -> MctsResult {
     let mut tree = Mcts {
         nodes: Vec::new(),
@@ -2314,6 +2435,8 @@ fn mcts_select_explore(
         turn_search: tc.turn_search,
         turn_budget: (cfg.budget - 1).max(0),
         turn_search_spend: tc.turn_search_spend,
+        // Forced playouts only in the DEEP (recorded) playout-cap search.
+        forced_playouts: forced,
     };
     let mut root = tree.make_node(g);
     let n = root.cands.len();
@@ -2345,17 +2468,29 @@ fn mcts_select_explore(
     for _ in 0..n_sims {
         simulate(&mut tree, cfg);
     }
-    let ev = &tree.nodes[0].edge_visits;
-    let total: f64 = ev.iter().sum();
+    // Raw visit counts at the root (used for the PLAYED move; never tempered).
+    let ev: Vec<f64> = tree.nodes[0].edge_visits.clone();
+    // Build π for the recorded target. In a DEEP (forced) search, subtract the
+    // forced-playout visits per KataGo policy-target pruning so the forced
+    // exploration does not bias the target; then renormalise. In a fast search the
+    // pruned counts equal the raw counts (no forcing happened).
+    let pi_counts: Vec<f64> = if forced {
+        let priors = &tree.nodes[0].priors;
+        let n_root = tree.nodes[0].visits.max(0.0);
+        prune_forced_playouts(&ev, priors, n_root)
+    } else {
+        ev.clone()
+    };
+    let total: f64 = pi_counts.iter().sum();
     let pi: Vec<f64> = if total > 0.0 {
-        ev.iter().map(|&v| v / total).collect()
+        pi_counts.iter().map(|&v| v / total).collect()
     } else {
         let mut p = vec![0.0; n];
         p[0] = 1.0;
         p
     };
     let chosen = if tc.move_temp > 1e-9 && round < tc.temp_until_round {
-        sample_move(ev, tc.move_temp, rng)
+        sample_move(&ev, tc.move_temp, rng)
     } else {
         let mut c = 0usize;
         let mut best = -1.0f64;
@@ -3312,14 +3447,33 @@ fn play_one_game_explore(
             // learner seat (and the self-twin) uses the current `net`. Examples are
             // recorded ONLY for the learner seat.
             let infer_net: &SpatialNet = if learner_seat { net } else { opp_frozen.unwrap_or(net) };
-            let record = learner_seat;
             scaffold_ensure(&mut g, cur, cfg);
             loop {
                 let cands = candidates::enumerate(&g, cur, cfg);
                 if cands.len() <= 1 {
                     break;
                 }
-                let res = mcts_select_explore(infer_net, &g, cur, cfg, tc.sims, round, tc, rng);
+                // KataGo playout-cap randomization (#2). With `--playout-cap-frac p`
+                // (default 0), on ~p of LEARNER decisions run the DEEP search
+                // (`big_sims`, forced playouts) and RECORD its (pruned) policy target;
+                // on the rest run the normal fast search (`tc.sims`) and PLAY the move
+                // but record NOTHING. p=0 ⇒ every learner decision is deep+recorded =
+                // EXACT pre-lever behaviour. Frozen-opponent seats never record and
+                // always use the fast search.
+                let deep = if !learner_seat {
+                    false
+                } else if tc.playout_cap_frac <= 0.0 {
+                    true // p=0: behave exactly as before (deep, recorded, sims = tc.sims)
+                } else {
+                    rng.next_f64() < tc.playout_cap_frac
+                };
+                let record = learner_seat && deep;
+                // Forced playouts (+ policy-target pruning) ONLY in the deep search of
+                // an ACTIVE playout-cap run; at p=0 the recorded search is plain PUCT
+                // at `tc.sims` → bit-identical to the pre-lever path.
+                let forced = deep && tc.playout_cap_frac > 0.0;
+                let sims = if forced { tc.big_sims } else { tc.sims };
+                let res = mcts_select_explore(infer_net, &g, cur, cfg, sims, round, tc, rng, forced);
                 // Record a training example + observability tally ONLY for the learner
                 // seat (a frozen/HARD opponent seat is not learned from).
                 if record {
@@ -5339,6 +5493,18 @@ fn run_train(tc: &TrainCfg) {
             "cnn_train --train: --kl-anchor={:.2}, --kl-anchor-net={} (off — pure self-play RL)",
             tc.kl_anchor,
             if tc.kl_anchor_net.as_os_str().is_empty() { "<unset>".to_string() } else { tc.kl_anchor_net.display().to_string() }
+        );
+    }
+
+    if tc.playout_cap_frac > 0.0 {
+        println!(
+            "cnn_train --train: KataGo PLAYOUT-CAP — playout-cap-frac={:.2} (frac of LEARNER decisions run DEEP+recorded with FORCED playouts at big-sims; rest run fast at --sims={} and record nothing) | big-sims={} | forced-k={:.1} (policy target = forced-playout-pruned visit dist)",
+            tc.playout_cap_frac, tc.sims, tc.big_sims, FORCED_K
+        );
+    } else {
+        println!(
+            "cnn_train --train: KataGo PLAYOUT-CAP — playout-cap-frac=0.00 (OFF — every learner decision deep+recorded at --sims={}, plain PUCT = pre-lever no-op)",
+            tc.sims
         );
     }
 
@@ -7771,7 +7937,7 @@ fn run_diagnose(args: &[String]) {
     }
 
     // Run the actual cnn_train MCTS and read root edge visits.
-    let mut tree = Mcts { nodes: Vec::new(), net: &net, player: cur, cfg, bot: HardAi::hard(), turn_search: false, turn_budget: (cfg.budget - 1).max(0), turn_search_spend: false };
+    let mut tree = Mcts { nodes: Vec::new(), net: &net, player: cur, cfg, bot: HardAi::hard(), turn_search: false, turn_budget: (cfg.budget - 1).max(0), turn_search_spend: false, forced_playouts: false };
     let root = tree.make_node(&g);
     tree.nodes.push(root);
     for _ in 0..n_sims { simulate(&mut tree, &cfg); }
@@ -8300,6 +8466,14 @@ fn main() {
         }
         if let Some(v) = arg_val(&args, "--kl-anchor-net") {
             tc.kl_anchor_net = PathBuf::from(v);
+        }
+        // KataGo playout-cap randomization (#2). Both default to a no-op
+        // (frac 0.0 ⇒ every learner decision deep+recorded at --sims, plain PUCT).
+        if let Some(v) = arg_val(&args, "--playout-cap-frac") {
+            tc.playout_cap_frac = v.parse::<f64>().unwrap_or(tc.playout_cap_frac).clamp(0.0, 1.0);
+        }
+        if let Some(v) = arg_val(&args, "--big-sims") {
+            tc.big_sims = v.parse::<usize>().unwrap_or(tc.big_sims).max(1);
         }
         run_train(&tc);
         return;
@@ -8879,6 +9053,7 @@ mod tests {
                 turn_search: true,
                 turn_budget: (cfg.budget - 1).max(0),
                 turn_search_spend: false,
+                forced_playouts: false,
             };
             let mut g_full = g.clone();
             let _ = candidates::execute_action(&mut g_full, cur, &cfg, &first);
@@ -10355,6 +10530,7 @@ mod tests {
                     nodes: Vec::new(), net: &net, player: cur, cfg,
                     bot: HardAi::hard(), turn_search: true,
                     turn_budget: (cfg.budget - 1).max(0), turn_search_spend: spend,
+                    forced_playouts: false,
                 };
 
                 let mut g_break = g.clone();
@@ -10838,7 +11014,10 @@ mod tests {
     fn supervised_data_gen_records_all_decisions() {
         // Small board + tight cap → fast deterministic game.
         let cfg = TRAINING_CONFIG;
-        let exs = supervised_play_one_game(7777, &cfg, 14, 12, 80);
+        let exs = supervised_play_one_game(
+            7777, &cfg, 14, 12, 80,
+            LeagueBot::Hard, LeagueBot::Hard, 1.0, 1.0, 0, 0, 0,
+        );
         // At least a few turns must have produced examples.
         assert!(
             exs.len() >= 4,
