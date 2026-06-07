@@ -1,0 +1,21 @@
+{
+  "id": "sd3-az-002",
+  "arc": "sd3",
+  "type": "az",
+  "version": 2,
+  "created_utc": "2026-06-07T10:10:59.671Z",
+  "git_commit": "9f486df",
+  "parent": null,
+  "training_config": {
+    "lineage": "BC (sup-p3) -> DAgger (Pass-collapse fix, scaffold-encoded, beta-mix) -> KL-anchored RL fine-tune (gen 25)",
+    "seed": "checkpoints-cnn-dagger-r1best (Pass 0.9% greedy)",
+    "net_size": "small",
+    "rl_command": "see handoff.md 'After the gate'; KL-anchor 0.1, w-army 0.15, cap-potential 0.3, pfsp + script-opponents"
+  },
+  "benchmarks": {
+    "mcts_sims64_vs_hard": { "trueWin": 0.567, "rawWin": 0.633, "outpostsPerGame": 0.467, "peakSoldiers": 0.95, "games": 60 },
+    "policy_greedy_vs_hard": { "trueWin": 0.233, "outpostsPerGame": 0.217, "peakSoldiers": 0.617, "games": 60 }
+  },
+  "status": "experimental",
+  "notes": "First GENUINELY-measured competitive neural net (rawWin 0.633 vs HARD via deploy MCTS sims=64, ~= strong_army yardstick). All prior 'trueWin 0.55' numbers were the sims=1 net-INDEPENDENT candidate-0 artifact (see memory sims1-net-independence). Does NOT field a full army (peakSoldiers ~1, soldier-cap-1 lock = metal-economy wall): wants army (HireSoldier top intent) + builds some outposts but most games have 0 outposts so cap stays 1. Next: RL reward retune (w-army/cap-potential) +/- economy rebalance arc sd4."
+}

@@ -11,17 +11,30 @@ Pass-collapse fix. **Read this first.** This supersedes the prior "START DAgger"
 
 ## TL;DR — the one job
 
-DAgger is **built and working**. It broke the policy **Pass-collapse** (Pass 96%→27%; the net
-now *wants* an army — HireSoldier is the top intent). It does **not yet** reach the full army
-gate (peakSoldiers ≥1.5 / outposts/game ≥0.3 in honest greedy play). **Your job: push the
-DAgger seed to the full army gate, then RL-fine-tune it.**
+DAgger + RL produced the **first genuinely-measured competitive neural net**: `models/sd3/az/
+sd3-az-002` (= `rust-trainer/checkpoints-cnn-dagger-rl1/champion-best.json`), **MCTS sims=64 vs
+HARD: rawWin 0.633 / trueWin 0.567** — competitive with the `strong_army` yardstick (~0.52). DAgger
+broke the policy **Pass-collapse** (96%→0.9% greedy); the KL-anchored RL fine-tune then lifted the
+MCTS-deploy net to 0.633. **NOTE: every prior "0.55" was the sims=1 candidate-0 artifact, not a net
+— sd3-az-002 is the real baseline now.**
 
-The remaining ceiling is the long-standing one: get **Outposts built IN PLAY** (Outpost = +3
-soldier cap; without it the cap is ~1 so HireSoldier can't field an army). Levers (in order):
-1. **Multi-round DAgger with a strict ~300-step training budget per round** (over-convergence
-   re-creates the Pass attractor — see below). 
-2. An **anti-Pass margin loss** term to make the result step-count-robust.
-3. The **KL-anchored RL fine-tune** from this army-building seed (already built; commands below).
+**Still NOT at the full army gate** (peakSoldiers ≥1.5): ~41/60 games peak at *exactly 1 soldier*.
+The net WANTS an army (HireSoldier is its top intent) and builds *some* outposts, but outposts/game
+≈0.2 → most games have ZERO outposts → soldier cap stays 1, and on a ~1-mine economy it can't fund
+both outposts and soldiers. **This is the `metal-economy-root-cause` wall — the sd2→sd3 rebalance was
+incomplete.** The blocker is now FILLING the cap, not raising it.
+
+**Current job: break the cap-fill wall.** In progress: an RL reward-tuning run (`checkpoints-cnn-
+dagger-rl2`, init from sd3-az-002, `--w-army 0.4 --cap-potential 0.6`) to reward fielding soldiers
+enough to overcome upkeep. If that still caps at maxSoldiers≈1, the real fix is a further
+**metal/upkeep economy rebalance (arc sd3→sd4)** — game-rules change, re-tune league, re-export
+goldens, re-run DAgger. Levers, in order:
+1. **RL reward retune** (w-army / cap-potential) — cheap, stays in arc sd3 (CURRENT attempt).
+2. **Multi-round DAgger with a strict ~300-step budget per round** — BUT aggregation inflates the
+   step budget each round and re-creates the Pass attractor (round 2 → Pass 80%); you MUST scale
+   epochs DOWN per round to hold steps ~300. Round 1 alone from the prior best (15 epochs, ~295
+   steps) gave the best *greedy* net `checkpoints-cnn-dagger-r1best` (Pass 0.9%).
+3. **Economy rebalance arc sd3→sd4** — the structural fix if RL can't fund the army.
 
 ---
 
