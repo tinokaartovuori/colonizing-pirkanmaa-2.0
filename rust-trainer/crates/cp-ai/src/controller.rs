@@ -16,7 +16,9 @@ use crate::metrics as m;
 use crate::policy::{self, Rng};
 use crate::safety as s;
 use crate::tiers::TierConfig;
-use cp_sim::resources::{basic_worker_cost, expert_cost, village_build_cost};
+use cp_sim::resources::{
+    basic_worker_cost, expert_cost, mine_build_cost, village_build_cost, ResourceMap,
+};
 use cp_sim::{BuildingType, Game, PlayerId, TileId, TileType, UnitId, UnitType};
 
 use crate::mlp::Genome;
@@ -183,14 +185,26 @@ impl<'a> NeuralAiController<'a> {
         self.staff_income(g, player);
     }
 
-    /// Public wrapper running the full pre-loop safety scaffold (wood income then
-    /// staffing), in the exact order `plan_turn` does. ADDITIVE — used by the
-    /// distillation self-play to develop the economy faithfully before recording a
-    /// policy decision; does not touch the parity path.
+    /// Public wrapper running the full pre-loop safety scaffold (wood income, staffing,
+    /// then the MECHANICAL economy guarantees), in the exact order the deployed CNN turn
+    /// (`cnn_train.rs::cnn_plan_turn` / `scaffold_ensure`) runs. ADDITIVE — used by the
+    /// distillation self-play AND the CNN bench/validate path to develop the economy
+    /// faithfully before recording a policy decision; does NOT touch the MLP parity path
+    /// (`plan_turn` / `plan_turn_record` stay byte-identical to the TS controller, which
+    /// has no `ensure_metal_income` / `ensure_unit_cap` mirror — adding the mine build to
+    /// the parity path would diverge on any map where a seat owns an early Mountain).
+    ///
+    /// Order: secure WOOD income, staff producers, expand the unit CAP (villages) if it
+    /// blocks full staffing, then GUARANTEE the metal source as a SAFETY NET on whatever
+    /// resources remain, then staff (mans the new mine). The mine is sequenced AFTER the
+    /// cap/staff flow on purpose: building it first stole the early money/wood the
+    /// village→cap chain needs and collapsed the economy (mines 1.7→0.7) — it must be a
+    /// leftover-resource backstop, not a competitor for the early budget.
     pub fn ensure_income_pub(&self, g: &mut Game, player: PlayerId) {
         self.ensure_wood_income(g, player);
         self.staff_income(g, player);
         self.ensure_unit_cap(g, player);
+        self.ensure_metal_income(g, player);
         self.staff_income(g, player);
     }
 
@@ -762,20 +776,25 @@ impl<'a> NeuralAiController<'a> {
         // can't afford its wood, run a forest harvester to ACCUMULATE wood toward the
         // cost; the village is then built on a later turn once the buffer is there.
         if !s::affords(g, player, &village_build_cost(), self.cfg.reserve) {
-            self.accumulate_wood_for_village(g, player);
+            self.accumulate_wood_for(g, player, &village_build_cost());
             return;
         }
         self.build_village(g, player);
     }
 
     /// Ensure at least one forest harvester is running so wood accumulates toward a
-    /// Village's 200-wood cost. With no villages there is no wood upkeep, so the normal
+    /// wood-costed build (a Village's 200-wood cost, a Mine's 200-wood cost, a Bridge's
+    /// 300-wood cost). With no villages there is no wood upkeep, so the normal
     /// `ensure_wood_income` no-ops and wood never grows — this is the proactive harvest
-    /// that unblocks the very first cap-expanding Village. Prefers a free unit slot;
-    /// when capped (the common case in the trap), relocates an EXPENDABLE worker (idle /
-    /// surplus producer worker) onto a forest so the wood income turns positive without
-    /// permanently sacrificing producer output. One placement per call.
-    fn accumulate_wood_for_village(&self, g: &mut Game, player: PlayerId) {
+    /// that unblocks the very first wood-blocked build (cap-expanding Village OR the first
+    /// Mine — the metal-source bottleneck). Prefers a free unit slot; when capped (the
+    /// common case in the trap), relocates an EXPENDABLE worker (idle / surplus producer
+    /// worker) onto a forest so the wood income turns positive without permanently
+    /// sacrificing producer output. One placement per call.
+    ///
+    /// `_cost` is accepted so callers document WHAT they are saving toward; the harvest
+    /// itself is cost-agnostic (one running harvester grows wood toward any target).
+    fn accumulate_wood_for(&self, g: &mut Game, player: PlayerId, _cost: &ResourceMap) {
         // Already have a working forest harvester? Then wood is already growing — just
         // wait for the buffer; don't pull workers off producers needlessly.
         let have_harvester = m::owned_tiles(g, player).into_iter().any(|t| {
@@ -822,6 +841,103 @@ impl<'a> NeuralAiController<'a> {
                 g.ai_move_unit(unit, from, forest);
             }
         }
+    }
+
+    /// `ensureMetalIncome` — MECHANICAL metal-source guarantee: build a Mine on an owned
+    /// buildable Mountain when the player is below a baseline metal economy.
+    ///
+    /// Root cause this fixes (the #1 economy bottleneck): metal is the army resource, but
+    /// the ONLY metal source is the Mine, and nothing in the scaffold ever built one — the
+    /// learned policy treats the Mine candidate as a trap (200 wood up-front on a
+    /// wood-starved early economy, deferred payoff) so mines/game ≈ 0.5. With ~0.5 mines
+    /// the metal income is ~10-25/round, which can never fund the soldier-cap → army chain
+    /// (Outpost 100 metal + soldiers 30 metal each + upkeep). This mirrors `ensure_unit_cap`
+    /// exactly — a Village was made mechanical to guarantee the unit cap; here a Mine is
+    /// made mechanical to guarantee the metal source. The learned policy is still free to
+    /// build MORE mines (plants, etc.); this only guarantees the baseline.
+    ///
+    /// Gates (so it never floods on a money-poor / mountain-rich map and never bankrupts):
+    ///   - only when an owned, empty, Mine-buildable Mountain tile actually exists;
+    ///   - only when the player has ZERO mines — this is a SAFETY NET for the metal-starved
+    ///     tail of games, NOT a competitor to the learned policy (which already averages
+    ///     ~1.7 mines/game). Guaranteeing more than the first mine here stole the early
+    ///     budget from the village→cap→staff flow and COLLAPSED the economy in testing;
+    ///   - solvency: `affords` (reserve + 5 rounds of drain) AND a comfortable money
+    ///     cushion above the 200-money cost, so the mine never starves the (more
+    ///     fundamental) cap/staff flow that the caller runs first.
+    /// If WOOD is the blocker for the 200-wood cost (the early-economy trap), run a forest
+    /// harvester to accumulate wood and defer the build to a later turn — exactly the
+    /// village path. One mine per call; once it exists, hands off to the policy.
+    fn ensure_metal_income(&self, g: &mut Game, player: PlayerId) {
+        // Owned, empty, Mine-buildable Mountain tiles — the only metal-source sites.
+        let mountains: Vec<TileId> = m::owned_tiles(g, player)
+            .into_iter()
+            .filter(|&t| {
+                g.tiles[t.0].tile_type == TileType::Mountain
+                    && g.tiles[t.0].building.is_none()
+                    && g.buildable_buildings(t).contains(&"Mine")
+            })
+            .collect();
+        if mountains.is_empty() {
+            return; // no metal source available — nothing mechanical to do
+        }
+        // Current mine count (built; staffing is staff_income's job afterward).
+        let mines = m::owned_tiles(g, player)
+            .into_iter()
+            .filter(|&t| {
+                g.tiles[t.0].building.as_ref().map(|b| b.kind) == Some(BuildingType::Mine)
+            })
+            .count() as i64;
+        // SAFETY-NET, not a flood: guarantee only the FIRST metal source. The learned
+        // policy already builds ~1.7 mines/game on average; this exists purely so the
+        // games where it builds ZERO (the metal-starved tail) still get one. Once a mine
+        // exists, leave further mines to the policy — building more here stole the early
+        // money/wood the village→cap→staff flow needs and COLLAPSED the economy in
+        // testing (mines 1.7→0.7, villages 3.0→0.8). One mine, then hands off.
+        if mines >= 1 {
+            return;
+        }
+        let cost = mine_build_cost();
+        // Solvency: keep the strategic reserve + 5 rounds of drain buffered (the same
+        // `affords` gate the village path uses). A Mine has no per-round MONEY upkeep and
+        // is +20 money/worker once staffed, so the only risk is the one-time spend.
+        // Stricter than the village path: also require a comfortable money cushion so the
+        // mine's 200-money cost doesn't starve the (more fundamental) cap/staff flow that
+        // runs after this — the early-money crunch is what regressed the economy above.
+        if !s::affords(g, player, &cost, self.cfg.reserve) {
+            return;
+        }
+        let cost_money = -mine_build_cost().get(cp_sim::resources::BasicResource::Money).unwrap_or(0);
+        if m::money(g, player) < cost_money + self.cfg.reserve + 100 {
+            return; // not enough headroom — let the economy mature, retry next turn
+        }
+        // Wood is the early blocker (200 wood up-front, no wood income with 0 villages).
+        // Accumulate toward it via a forest harvester, then build on a later turn — the
+        // exact same trap-breaker the first cap-expanding Village uses.
+        if !s::has_wood_buffer(g, player, &cost) {
+            self.accumulate_wood_for(g, player, &cost);
+            return;
+        }
+        self.build_mine(g, player, mountains[0]);
+    }
+
+    /// Buy + place a Mine on an owned empty Mountain tile (chosen by `ensure_metal_income`),
+    /// mirroring `build_village` — solvency/wood gated by the caller, uses `cfg.reserve` so
+    /// it never dips into the strategic buffer. Acts on the current seat (== `player`).
+    fn build_mine(&self, g: &mut Game, player: PlayerId, spot: TileId) -> bool {
+        let cost = mine_build_cost();
+        if !s::affords(g, player, &cost, self.cfg.reserve) || !s::has_wood_buffer(g, player, &cost)
+        {
+            return false;
+        }
+        if g.tiles[spot.0].tile_type != TileType::Mountain
+            || g.tiles[spot.0].building.is_some()
+            || !g.buildable_buildings(spot).contains(&"Mine")
+        {
+            return false;
+        }
+        debug_assert_eq!(g.current_player(), player);
+        g.ai_build_building("Mine", spot)
     }
 
     /// Buy + place a Village on an empty owned grassland tile, mirroring the
