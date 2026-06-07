@@ -1,0 +1,13 @@
+{
+  "id": "sd3-az-003",
+  "arc": "sd3",
+  "type": "az",
+  "version": 3,
+  "created_utc": "2026-06-07T18:49:07.602Z",
+  "git_commit": "c614d15",
+  "parent": null,
+  "training_config": {},
+  "benchmarks": {},
+  "status": "experimental",
+  "notes": "DAgger army-seed + RL with village/unit-cap economy fix (uncommitted controller.rs). Peak gen35 capfix-rl2: MCTS trueWin 0.60 / rawWin 0.633 / maxSoldiers 1.30 / vsStrongArmy 0.58. Beats sd3-az-002. Experts still 0 (expert-priority fix pending = more upside)."
+}

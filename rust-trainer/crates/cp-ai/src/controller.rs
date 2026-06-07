@@ -16,7 +16,7 @@ use crate::metrics as m;
 use crate::policy::{self, Rng};
 use crate::safety as s;
 use crate::tiers::TierConfig;
-use cp_sim::resources::{basic_worker_cost, expert_cost};
+use cp_sim::resources::{basic_worker_cost, expert_cost, village_build_cost};
 use cp_sim::{BuildingType, Game, PlayerId, TileId, TileType, UnitId, UnitType};
 
 use crate::mlp::Genome;
@@ -113,8 +113,10 @@ impl<'a> NeuralAiController<'a> {
     }
 
     /// Public wrapper around the private `staff_income` scaffold, so the search
-    /// module can re-staff after replaying an edge action exactly as the
-    /// controller's loop does.
+    /// module can re-staff after replaying an edge action exactly as the controller's
+    /// loop does. (Cap-expansion runs once per turn via `ensure_income_pub`, NOT here:
+    /// running it per-action churned the economy — repeated farm-worker borrowing for
+    /// wood — and measurably hurt play, so it stays a turn-start step.)
     pub fn staff_income_pub(&self, g: &mut Game, player: PlayerId) {
         self.staff_income(g, player);
     }
@@ -125,6 +127,8 @@ impl<'a> NeuralAiController<'a> {
     /// policy decision; does not touch the parity path.
     pub fn ensure_income_pub(&self, g: &mut Game, player: PlayerId) {
         self.ensure_wood_income(g, player);
+        self.staff_income(g, player);
+        self.ensure_unit_cap(g, player);
         self.staff_income(g, player);
     }
 
@@ -216,8 +220,11 @@ impl<'a> NeuralAiController<'a> {
     ) {
         let mut budget = self.cfg.budget;
 
-        // 1. Safety scaffold.
+        // 1. Safety scaffold. Staff once so producer income is realised, THEN expand
+        //    the unit cap if it blocks full staffing, THEN staff again to fill it.
         self.ensure_wood_income(g, player);
+        self.staff_income(g, player);
+        self.ensure_unit_cap(g, player);
         self.staff_income(g, player);
 
         // 2. Learned decision loop.
@@ -297,7 +304,10 @@ impl<'a> NeuralAiController<'a> {
                 }
             }
             budget -= 1;
-            // Realise the obvious follow-up: staff anything left unstaffed.
+            // Realise the obvious follow-up: staff, expand the unit cap if it now
+            // blocks staffing, then staff the new slots.
+            self.staff_income(g, player);
+            self.ensure_unit_cap(g, player);
             self.staff_income(g, player);
         }
     }
@@ -321,6 +331,8 @@ impl<'a> NeuralAiController<'a> {
         };
         let mut budget = self.cfg.budget;
         self.ensure_wood_income(g, player);
+        self.staff_income(g, player);
+        self.ensure_unit_cap(g, player);
         self.staff_income(g, player);
         let round = g.get_rounds_played();
         while budget > 0 {
@@ -371,6 +383,8 @@ impl<'a> NeuralAiController<'a> {
                 }
             }
             budget -= 1;
+            self.staff_income(g, player);
+            self.ensure_unit_cap(g, player);
             self.staff_income(g, player);
         }
     }
@@ -562,6 +576,177 @@ impl<'a> NeuralAiController<'a> {
         }
     }
 
+    /// `ensureUnitCap` — MECHANICAL cap-expansion: build a Village when the shared
+    /// unit cap is the only thing blocking `staff_income` from fully staffing the
+    /// existing producers (2 workers + Expert per Mine, worker + Expert per plant).
+    ///
+    /// Root cause this fixes: `staff_income`'s coverage pass exhausts
+    /// `free_unit_amount` putting 1 worker on each producer, so the Expert / 2nd-worker
+    /// upgrade pass never fires (experts/game = 0, mines stuck at 20 metal). Nothing in
+    /// the controller ever expanded the cap, so the metal economy could never fund an
+    /// army. A Village (+3 unit slots) is the only cap source the AI controls; the
+    /// learned policy is free to ignore villages — this guarantees the economy fills.
+    ///
+    /// Gates (so it never bankrupts and never builds a useless drain): only when the
+    /// staffing DEFICIT (slots needed to fully staff producers, minus what the current
+    /// free cap covers) is positive — i.e. a new village's +3 slots would be USED;
+    /// only when net money stays solvent after the village's -10/round upkeep AND a few
+    /// rounds of unit salaries the new slots imply; and only when affordable on the
+    /// strategic reserve. One village per call, so the cap grows at most +3 per staffing
+    /// pass and tracks need.
+    fn ensure_unit_cap(&self, g: &mut Game, player: PlayerId) {
+        if !self.cfg.experts {
+            return; // No experts tier => no 3-unit producers to fund; cap rarely binds.
+        }
+        // The unit cap is cached; refresh so `free_unit_amount` reflects any village /
+        // tile change earlier this turn (the learned loop may have built one).
+        g.update_unit_amounts(player);
+        // Producer staffing deficit: how many MORE unit slots full staffing wants.
+        let mut deficit = 0i64;
+        let mut any_underfilled_tile_has_space = false;
+        for tid in m::owned_tiles(g, player) {
+            let kind = match g.tiles[tid.0].building.as_ref().map(|b| b.kind) {
+                Some(k) => k,
+                None => continue,
+            };
+            let workers = self.worker_count(g, tid);
+            let expert = m::has_type(g, tid, UnitType::Expert);
+            // Units this producer should hold at optimal output.
+            let optimal = match kind {
+                BuildingType::Mine => 3,                       // 2 workers + 1 expert = 80 metal
+                BuildingType::Nuclear | BuildingType::Hydro => 2, // 1 worker + 1 expert
+                BuildingType::Farm => 1,                       // 1 worker
+                _ => 0,
+            };
+            if optimal == 0 {
+                continue;
+            }
+            let current = workers + if expert { 1 } else { 0 };
+            let want = (optimal - current).max(0);
+            if want > 0 {
+                deficit += want;
+                if g.tiles[tid.0].has_space_for_units() {
+                    any_underfilled_tile_has_space = true;
+                }
+            }
+        }
+        // Only expand when the cap is what's blocking us: the existing free slots don't
+        // already cover the deficit, AND there's a producer tile with physical space to
+        // place the units the new slots would buy.
+        let free = g.free_unit_amount(player);
+        if deficit <= free || !any_underfilled_tile_has_space {
+            return;
+        }
+        // Solvency: a Village costs -10 money/round upkeep. Require net money to stay
+        // non-negative after that upkeep alone. We do NOT pre-charge the new workers'
+        // salaries here: the workers go on PRODUCERS (a fully-staffed Nuclear pays
+        // +160/worker, Hydro +80, Farm ~+44; a Mine pays metal not money) so they fund
+        // their own salary — pre-charging them re-creates the give-up bug this fixes.
+        // `affords` (in build_village) additionally buffers the strategic reserve + 5
+        // rounds of money drain, so this stays bankruptcy-safe.
+        if m::net_money_per_round(g, player) - 10.0 < 0.0 {
+            return;
+        }
+        // A Village costs 200 WOOD. With zero villages, wood upkeep is 0, so
+        // `ensure_wood_income` harvests NOTHING and wood sits at the ~100 starting level
+        // forever — the cap-expansion can never be afforded (the deepest layer of the
+        // starvation trap). When we genuinely want a village (real producer deficit) but
+        // can't afford its wood, run a forest harvester to ACCUMULATE wood toward the
+        // cost; the village is then built on a later turn once the buffer is there.
+        if !s::affords(g, player, &village_build_cost(), self.cfg.reserve) {
+            self.accumulate_wood_for_village(g, player);
+            return;
+        }
+        self.build_village(g, player);
+    }
+
+    /// Ensure at least one forest harvester is running so wood accumulates toward a
+    /// Village's 200-wood cost. With no villages there is no wood upkeep, so the normal
+    /// `ensure_wood_income` no-ops and wood never grows — this is the proactive harvest
+    /// that unblocks the very first cap-expanding Village. Prefers a free unit slot;
+    /// when capped (the common case in the trap), relocates an EXPENDABLE worker (idle /
+    /// surplus producer worker) onto a forest so the wood income turns positive without
+    /// permanently sacrificing producer output. One placement per call.
+    fn accumulate_wood_for_village(&self, g: &mut Game, player: PlayerId) {
+        // Already have a working forest harvester? Then wood is already growing — just
+        // wait for the buffer; don't pull workers off producers needlessly.
+        let have_harvester = m::owned_tiles(g, player).into_iter().any(|t| {
+            g.tiles[t.0].tile_type == TileType::Forest
+                && g.tiles[t.0].building.is_none()
+                && m::has_type(g, t, UnitType::BasicWorker)
+        });
+        if have_harvester {
+            return;
+        }
+        let forest = m::owned_tiles(g, player).into_iter().find(|&t| {
+            g.tiles[t.0].tile_type == TileType::Forest
+                && g.tiles[t.0].building.is_none()
+                && g.tiles[t.0].has_space_for_units()
+                && !m::has_type(g, t, UnitType::BasicWorker)
+        });
+        let forest = match forest {
+            Some(t) => t,
+            None => return, // no harvestable forest — fall back to whatever wood exists
+        };
+        if g.free_unit_amount(player) > 0
+            && s::affords(g, player, &basic_worker_cost(), s::STAFF_RESERVE)
+        {
+            self.add_worker(g, player, forest);
+            return;
+        }
+        // Capped with all producers minimally staffed (the trap): there is no "spare"
+        // worker. Temporarily borrow a Farm worker (least critical — farms feed money
+        // we have plenty of in the trap; metal-mine workers are NOT touched). The
+        // staff_income pass will re-fill the farm once the village raises the cap.
+        let borrow = self
+            .find_expendable_worker(g, player)
+            .or_else(|| {
+                m::owned_tiles(g, player).into_iter().find_map(|t| {
+                    if g.tiles[t.0].building.as_ref().map(|b| b.kind) == Some(BuildingType::Farm) {
+                        self.first_worker(g, t).map(|u| (u, t))
+                    } else {
+                        None
+                    }
+                })
+            });
+        if let Some((unit, from)) = borrow {
+            if from != forest {
+                g.ai_move_unit(unit, from, forest);
+            }
+        }
+    }
+
+    /// Buy + place a Village on an empty owned grassland tile, mirroring the
+    /// candidate-list `build_village` tile choice but WITHOUT the strategic income/wood
+    /// gates (those are for the learned policy; this is the mechanical cap-fill path,
+    /// already solvency-gated by `ensure_unit_cap`). Uses `cfg.reserve` so it never
+    /// dips into the strategic buffer. Acts on the current seat (== `player`).
+    fn build_village(&self, g: &mut Game, player: PlayerId) -> bool {
+        let cost = village_build_cost();
+        if !s::affords(g, player, &cost, self.cfg.reserve) || !s::has_wood_buffer(g, player, &cost)
+        {
+            return false;
+        }
+        // First empty owned grassland that can host a building.
+        let spot = m::owned_tiles(g, player).into_iter().find(|&t| {
+            g.tiles[t.0].tile_type == TileType::Grassland
+                && g.tiles[t.0].building.is_none()
+                && g.buildable_buildings(t).contains(&"Village")
+        });
+        let spot = match spot {
+            Some(t) => t,
+            None => return false,
+        };
+        debug_assert_eq!(g.current_player(), player);
+        let built = g.ai_build_building("Village", spot);
+        if built {
+            // The unit cap is cached (`free_unit_amount` reads `max_unit_amount`); refresh
+            // it so the immediately-following `staff_income` can spend the +3 new slots.
+            g.update_unit_amounts(player);
+        }
+        built
+    }
+
     /// `staffIncome` — staff every income building toward OPTIMAL output.
     ///
     /// Staffing a producer is a MECHANICAL action (the policy never has to "decide" to
@@ -594,26 +779,40 @@ impl<'a> NeuralAiController<'a> {
                 .collect()
         };
 
-        // --- Pass 1: minimum-viable staffing (each producer produces > 0) ----------
+        // --- Pass 0: MINES + PLANTS first, to OPTIMAL (metal/energy fund the army) ---
+        // Metal is the army bottleneck, so the scarce unit cap goes to mines/plants
+        // BEFORE farms (money is rarely the constraint — see the metal-economy root
+        // cause). Each mine -> 1 worker -> expert (doubles output) -> 2nd worker = 80
+        // metal/round; each plant -> worker + expert (else produces 0).
+        for tid in producers(g, &[BuildingType::Mine]) {
+            self.ensure_worker(g, player, tid); // 1st worker
+            if self.cfg.experts
+                && m::has_type(g, tid, UnitType::BasicWorker)
+                && !m::has_type(g, tid, UnitType::Expert)
+            {
+                self.add_expert_reserve(g, player, tid, s::STAFF_RESERVE); // expert: ×2
+            }
+            if self.worker_count(g, tid) < 2 && g.tiles[tid.0].has_space_for_units() {
+                self.add_worker(g, player, tid); // 2nd worker
+            }
+        }
+        for tid in producers(g, &[BuildingType::Nuclear, BuildingType::Hydro]) {
+            if self.cfg.experts && !m::has_type(g, tid, UnitType::Expert) {
+                self.add_expert_reserve(g, player, tid, s::STAFF_RESERVE);
+            }
+            if m::has_type(g, tid, UnitType::Expert)
+                && !m::has_type(g, tid, UnitType::BasicWorker)
+            {
+                self.add_worker(g, player, tid);
+            }
+        }
+
+        // --- Pass 1: minimum-viable staffing for the rest (each producer produces >0) -
         for tid in m::owned_tiles(g, player) {
             let ty = g.tiles[tid.0].building.as_ref().map(|b| b.kind);
             match ty {
                 Some(BuildingType::Farm) => {
                     if !m::has_type(g, tid, UnitType::BasicWorker) {
-                        self.add_worker(g, player, tid);
-                    }
-                }
-                Some(BuildingType::Mine) => {
-                    self.ensure_worker(g, player, tid);
-                }
-                Some(BuildingType::Nuclear) | Some(BuildingType::Hydro) => {
-                    // Both produce NOTHING without an Expert AND a worker.
-                    if self.cfg.experts && !m::has_type(g, tid, UnitType::Expert) {
-                        self.add_expert_reserve(g, player, tid, s::STAFF_RESERVE);
-                    }
-                    if m::has_type(g, tid, UnitType::Expert)
-                        && !m::has_type(g, tid, UnitType::BasicWorker)
-                    {
                         self.add_worker(g, player, tid);
                     }
                 }
@@ -624,23 +823,6 @@ impl<'a> NeuralAiController<'a> {
                         self.add_worker(g, player, tid);
                     }
                 }
-            }
-        }
-
-        // --- Pass 2: upgrade mines to optimal (2 workers + 1 expert = 80/round) -----
-        // Experts double a mine's output, so add experts before the 2nd worker.
-        if self.cfg.experts {
-            for tid in producers(g, &[BuildingType::Mine]) {
-                if m::has_type(g, tid, UnitType::BasicWorker)
-                    && !m::has_type(g, tid, UnitType::Expert)
-                {
-                    self.add_expert_reserve(g, player, tid, s::STAFF_RESERVE);
-                }
-            }
-        }
-        for tid in producers(g, &[BuildingType::Mine]) {
-            if self.worker_count(g, tid) < 2 && g.tiles[tid.0].has_space_for_units() {
-                self.add_worker(g, player, tid);
             }
         }
         // A 2nd hydro worker (hydro = 80 * workers, expert-gated) if cap/space allow.
@@ -745,5 +927,70 @@ mod staffing_tests {
             m::has_type(&g, nuke, UnitType::BasicWorker),
             "nuclear must have a BasicWorker (Nuclear needs worker AND expert to produce)"
         );
+    }
+
+    /// `ensure_unit_cap` must build Village(s) to expand the unit cap when it is the
+    /// only thing blocking full producer staffing, so the (already-correct)
+    /// `staff_income` can then place 2 workers + Expert on a mine. Regression guard for
+    /// the unit-cap-starvation root cause: with only the HQ (+3 cap) the coverage pass
+    /// exhausts the cap at 1 worker/producer, the Expert/2nd-worker upgrade never fires,
+    /// and metal stays at ~20 (1/4 of the 80 optimum).
+    #[test]
+    fn ensure_unit_cap_builds_villages_to_fully_staff() {
+        let mut g = Game::new(12, 12, &["P1", "P2"]);
+        g.generate_map(12, 12, 1);
+        let p1 = PlayerId(0);
+        let id = |x: i32, y: i32| TileId((x * 12 + y) as usize);
+
+        for x in 3..9 {
+            for y in 3..9 {
+                g.set_tile_owner(id(x, y), Some(p1));
+            }
+        }
+        // ONLY the HQ (+3 cap). No villages — the AI must build them itself.
+        g.place_building(id(5, 8), BuildingType::Headquarters, Some(p1));
+        let mine = id(5, 5);
+        let nuke = id(6, 6);
+        g.place_building(mine, BuildingType::Mine, Some(p1));
+        g.place_building(nuke, BuildingType::Nuclear, Some(p1));
+        g.update_unit_amounts(p1);
+        // Plenty of resources so only the unit cap (not affordability) limits us.
+        g.set_player_resources(p1, 1_000_000, 1_000_000, 1_000_000, 1_000_000);
+
+        let genome = Genome::zero(&DEFAULT_ARCH);
+        let ctrl = NeuralAiController::new(&genome, TRAINING_CONFIG);
+
+        // No village to start; cap is HQ-only (+3).
+        let villages0 = m::owned_tiles(&g, p1)
+            .into_iter()
+            .filter(|&t| g.tiles[t.0].building.as_ref().map(|b| b.kind) == Some(BuildingType::Village))
+            .count();
+        assert_eq!(villages0, 0, "precondition: no villages");
+
+        // Run the full scaffold loop several times (a real turn runs it repeatedly,
+        // in the staff -> cap -> staff order).
+        for _ in 0..6 {
+            ctrl.staff_income(&mut g, p1);
+            ctrl.ensure_unit_cap(&mut g, p1);
+            ctrl.staff_income(&mut g, p1);
+        }
+
+        let villages = m::owned_tiles(&g, p1)
+            .into_iter()
+            .filter(|&t| g.tiles[t.0].building.as_ref().map(|b| b.kind) == Some(BuildingType::Village))
+            .count();
+        assert!(villages >= 1, "ensure_unit_cap should build at least one Village, got {villages}");
+
+        // With the expanded cap the mine must reach optimal (2 workers + expert = 80).
+        assert_eq!(ctrl.worker_count(&g, mine), 2, "mine should reach 2 workers");
+        assert!(m::has_type(&g, mine, UnitType::Expert), "mine should get an Expert");
+        assert_eq!(
+            m::metal_income_per_round(&g, p1),
+            80.0,
+            "fully-staffed mine must yield 80 metal/round after cap expansion"
+        );
+        // Nuclear gets its worker + expert too.
+        assert!(m::has_type(&g, nuke, UnitType::Expert), "nuclear should get an Expert");
+        assert!(m::has_type(&g, nuke, UnitType::BasicWorker), "nuclear should get a worker");
     }
 }
