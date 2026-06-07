@@ -325,8 +325,8 @@ svg{display:block;width:100%}
 
 /* ---- bars ---- */
 .hbar{display:grid;grid-template-columns:120px 1fr 56px;gap:8px;align-items:center;margin:3px 0;font-size:12px}
-.hbar .track{background:var(--panel2);border:1px solid var(--line);border-radius:3px;height:16px;position:relative;overflow:hidden}
-.hbar .fill{height:100%;border-radius:0}
+.hbar .track{display:block;background:var(--panel2);border:1px solid var(--line);border-radius:3px;height:16px;position:relative;overflow:hidden}
+.hbar .fill{display:block;height:100%;border-radius:0}
 .hbar .ref{position:absolute;top:0;bottom:0;width:1px;background:var(--faint)}
 .hbar .n{text-align:right;color:var(--muted);font-size:11px}
 .hbar .nm{color:var(--ink);overflow:hidden;text-overflow:ellipsis}
@@ -877,7 +877,7 @@ function panelOpponents(){
 
 /* ===================== REPLAY (canvas viewer) ===================== */
 var R_SRC = localStorage.getItem('cp.dash.rsrc') || 'hard';
-var R_IDX=0, R_FRAME=0, R_PLAYING=true, R_FPS=6, R_KEY='', R_BATCH='', R_TIMER=null;
+var R_IDX=0, R_FRAME=0, R_PLAYING=true, R_FPS=48, R_KEY='', R_BATCH='', R_TIMER=null;
 var OPP_META = {/* filled from server-aligned constants */};
 var OPPS=[
   ['hard','replay','Hard CPU',false],['self','replaySelf','Self-play',false],
@@ -997,7 +997,7 @@ function panelReplay(){
   playBtn.onclick=function(){ R_PLAYING=!R_PLAYING; syncPlay(); };
   scrub.oninput=function(){ R_PLAYING=false; syncPlay(); R_FRAME=Number(scrub.value); var a=activeReplay();
     drawReplayFrame(document.getElementById('replayCanvas'),a,R_FRAME); document.getElementById('replaySide').innerHTML=replaySide(a,R_FRAME); };
-  speed.onclick=function(){ var steps=[3,6,12,24]; R_FPS=steps[(steps.indexOf(R_FPS)+1)%steps.length]; syncSpeed(); restartReplayTimer(); };
+  speed.onclick=function(){ var steps=[3,6,12,24,48]; var i=steps.indexOf(R_FPS); R_FPS=steps[(i<0?steps.length-1:i+1)%steps.length]; syncSpeed(); restartReplayTimer(); };
   var nextBtn=document.getElementById('replayNext'),gamePos=document.getElementById('replayGamePos');
   function syncPos(){ var nn=gamesFor(R_SRC).length||1; gamePos.textContent='peli '+(R_IDX+1)+'/'+nn+' · iter '+(r.iter!=null?r.iter:'?'); }
   nextBtn.onclick=function(){ var nn=gamesFor(R_SRC).length; if(nn<2){ syncPos(); return; } R_IDX=(R_IDX+1)%nn; R_KEY=''; panel.dataset.k=''; R_FRAME=0; R_PLAYING=true; panelReplay(); };
