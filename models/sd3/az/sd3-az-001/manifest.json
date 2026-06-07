@@ -1,0 +1,13 @@
+{
+  "id": "sd3-az-001",
+  "arc": "sd3",
+  "type": "az",
+  "version": 1,
+  "created_utc": "2026-06-07T03:22:21.287Z",
+  "git_commit": "8c9179e",
+  "parent": null,
+  "training_config": {},
+  "benchmarks": {},
+  "status": "experimental",
+  "notes": ""
+}
