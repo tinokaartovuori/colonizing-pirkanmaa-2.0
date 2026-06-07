@@ -388,10 +388,39 @@ impl<'a> NeuralAiController<'a> {
     }
 
     fn add_expert(&self, g: &mut Game, player: PlayerId, tid: TileId) -> bool {
-        if !s::affords(g, player, &expert_cost(), self.cfg.reserve) {
+        self.add_expert_reserve(g, player, tid, self.cfg.reserve)
+    }
+
+    /// Buy + place an Expert on `tid` while keeping at least `reserve` money buffered.
+    /// Staffing an income building is MECHANICAL, not strategic, so the staffing path
+    /// uses the low `STAFF_RESERVE` rather than the strategic `cfg.reserve` (otherwise
+    /// the 250-money Expert was almost never affordable early and the plants/mines ran
+    /// far below optimal output — the metal-economy starvation root cause).
+    fn add_expert_reserve(
+        &self,
+        g: &mut Game,
+        player: PlayerId,
+        tid: TileId,
+        reserve: i64,
+    ) -> bool {
+        if g.free_unit_amount(player) <= 0 {
+            return false;
+        }
+        if !g.tiles[tid.0].has_space_for_units() {
+            return false;
+        }
+        if !s::affords(g, player, &expert_cost(), reserve) {
             return false;
         }
         g.ai_buy_and_place_unit("Expert", tid)
+    }
+
+    /// Number of BasicWorkers currently on a tile.
+    fn worker_count(&self, g: &Game, tid: TileId) -> i64 {
+        g.tile_units(tid)
+            .iter()
+            .filter(|&&u| g.units[u.0].kind == UnitType::BasicWorker)
+            .count() as i64
     }
 
     // --- safety scaffold ----------------------------------------------------
@@ -533,8 +562,39 @@ impl<'a> NeuralAiController<'a> {
         }
     }
 
-    /// `staffIncome` — ensure each income building has the worker(s)/expert it needs.
+    /// `staffIncome` — staff every income building toward OPTIMAL output.
+    ///
+    /// Staffing a producer is a MECHANICAL action (the policy never has to "decide" to
+    /// add a 2nd mine worker), and the previous scaffold deliberately under-staffed:
+    /// it put only ONE worker on a mine (20 metal/round) when the optimum is 2 workers
+    /// + 1 Expert (`20 * 2 * 2 = 80`, a 4× metal loss), and it put an Expert but NO
+    /// worker on a Nuclear plant — which then produces NOTHING (the formula needs both
+    /// `workers > 0 && expert`). On a ~1-mine economy that starved the metal income so
+    /// the AI could never fund an army. This rewrite fully staffs producers, gated only
+    /// by the shared unit cap (`free_unit_amount`), per-tile space (≤3 units, enforced
+    /// inside `ai_buy_and_place_unit`), and the LOW `STAFF_RESERVE` (mechanical staffing
+    /// must not be starved by the strategic `cfg.reserve`).
+    ///
+    /// Two passes so a scarce unit cap is spent on coverage first, luxury second:
+    ///   1. minimum-viable — every producer gets the staffing it needs to produce >0
+    ///      (mine/farm: 1 worker; nuclear/hydro: 1 worker + 1 expert);
+    ///   2. upgrade — mines toward the 2-worker + 1-expert optimum, then a 2nd hydro
+    ///      worker (hydro = `80 * workers`).
     fn staff_income(&self, g: &mut Game, player: PlayerId) {
+        let producers = |g: &Game, kinds: &[BuildingType]| -> Vec<TileId> {
+            m::owned_tiles(g, player)
+                .into_iter()
+                .filter(|&t| {
+                    g.tiles[t.0]
+                        .building
+                        .as_ref()
+                        .map(|b| kinds.contains(&b.kind))
+                        .unwrap_or(false)
+                })
+                .collect()
+        };
+
+        // --- Pass 1: minimum-viable staffing (each producer produces > 0) ----------
         for tid in m::owned_tiles(g, player) {
             let ty = g.tiles[tid.0].building.as_ref().map(|b| b.kind);
             match ty {
@@ -546,14 +606,10 @@ impl<'a> NeuralAiController<'a> {
                 Some(BuildingType::Mine) => {
                     self.ensure_worker(g, player, tid);
                 }
-                Some(BuildingType::Nuclear) => {
+                Some(BuildingType::Nuclear) | Some(BuildingType::Hydro) => {
+                    // Both produce NOTHING without an Expert AND a worker.
                     if self.cfg.experts && !m::has_type(g, tid, UnitType::Expert) {
-                        self.add_expert(g, player, tid);
-                    }
-                }
-                Some(BuildingType::Hydro) => {
-                    if self.cfg.experts && !m::has_type(g, tid, UnitType::Expert) {
-                        self.add_expert(g, player, tid);
+                        self.add_expert_reserve(g, player, tid, s::STAFF_RESERVE);
                     }
                     if m::has_type(g, tid, UnitType::Expert)
                         && !m::has_type(g, tid, UnitType::BasicWorker)
@@ -568,6 +624,32 @@ impl<'a> NeuralAiController<'a> {
                         self.add_worker(g, player, tid);
                     }
                 }
+            }
+        }
+
+        // --- Pass 2: upgrade mines to optimal (2 workers + 1 expert = 80/round) -----
+        // Experts double a mine's output, so add experts before the 2nd worker.
+        if self.cfg.experts {
+            for tid in producers(g, &[BuildingType::Mine]) {
+                if m::has_type(g, tid, UnitType::BasicWorker)
+                    && !m::has_type(g, tid, UnitType::Expert)
+                {
+                    self.add_expert_reserve(g, player, tid, s::STAFF_RESERVE);
+                }
+            }
+        }
+        for tid in producers(g, &[BuildingType::Mine]) {
+            if self.worker_count(g, tid) < 2 && g.tiles[tid.0].has_space_for_units() {
+                self.add_worker(g, player, tid);
+            }
+        }
+        // A 2nd hydro worker (hydro = 80 * workers, expert-gated) if cap/space allow.
+        for tid in producers(g, &[BuildingType::Hydro]) {
+            if m::has_type(g, tid, UnitType::Expert)
+                && self.worker_count(g, tid) < 2
+                && g.tiles[tid.0].has_space_for_units()
+            {
+                self.add_worker(g, player, tid);
             }
         }
     }
@@ -590,5 +672,78 @@ impl<'a> NeuralAiController<'a> {
                 g.ai_move_unit(unit, from, tid);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod staffing_tests {
+    use super::*;
+    use crate::policy::DEFAULT_ARCH;
+    use crate::tiers::TRAINING_CONFIG;
+    use cp_sim::Game;
+
+    /// `staff_income` must staff a Mine to OPTIMAL (2 BasicWorkers + 1 Expert =
+    /// `20*2*2 = 80` metal/round) and a Nuclear to producing (worker + expert), given
+    /// enough unit cap, tile space, and money. Regression guard for the metal-economy
+    /// starvation root cause (the old scaffold put 1 worker on a mine = 20 metal, and
+    /// an Expert-but-no-worker on a Nuclear = 0 output).
+    #[test]
+    fn staff_income_fully_staffs_mine_and_nuclear() {
+        let mut g = Game::new(12, 12, &["P1", "P2"]);
+        g.generate_map(12, 12, 1);
+        let p1 = PlayerId(0);
+        let id = |x: i32, y: i32| TileId((x * 12 + y) as usize);
+
+        // Own a generous patch so the cap and `owned_tiles` are populated.
+        for x in 3..9 {
+            for y in 3..9 {
+                g.set_tile_owner(id(x, y), Some(p1));
+            }
+        }
+        // HQ (+3 unit cap) + two Villages (+3 each) => cap 9, enough for a full mine
+        // (3 units) + a full nuclear (2 units) + slack.
+        g.place_building(id(5, 8), BuildingType::Headquarters, Some(p1));
+        g.place_building(id(3, 3), BuildingType::Village, Some(p1));
+        g.place_building(id(4, 3), BuildingType::Village, Some(p1));
+        // The income buildings under test.
+        let mine = id(5, 5);
+        let nuke = id(6, 6);
+        g.place_building(mine, BuildingType::Mine, Some(p1));
+        g.place_building(nuke, BuildingType::Nuclear, Some(p1));
+        g.update_unit_amounts(p1);
+        // Plenty of money so affordability never blocks staffing.
+        g.set_player_resources(p1, 100_000, 100_000, 100_000, 100_000);
+
+        let genome = Genome::zero(&DEFAULT_ARCH);
+        let ctrl = NeuralAiController::new(&genome, TRAINING_CONFIG);
+        // Run twice (the per-iteration scaffold runs repeatedly in a real turn).
+        ctrl.staff_income(&mut g, p1);
+        ctrl.staff_income(&mut g, p1);
+
+        // Mine: 2 BasicWorkers + 1 Expert => 80 metal/round.
+        assert_eq!(
+            ctrl.worker_count(&g, mine),
+            2,
+            "mine should be staffed with 2 BasicWorkers"
+        );
+        assert!(
+            m::has_type(&g, mine, UnitType::Expert),
+            "mine should have an Expert (doubles output)"
+        );
+        assert_eq!(
+            m::metal_income_per_round(&g, p1),
+            80.0,
+            "fully-staffed mine must yield 80 metal/round, not 20"
+        );
+
+        // Nuclear: must have BOTH a worker and an expert (else it produces 0).
+        assert!(
+            m::has_type(&g, nuke, UnitType::Expert),
+            "nuclear must have an Expert"
+        );
+        assert!(
+            m::has_type(&g, nuke, UnitType::BasicWorker),
+            "nuclear must have a BasicWorker (Nuclear needs worker AND expert to produce)"
+        );
     }
 }
