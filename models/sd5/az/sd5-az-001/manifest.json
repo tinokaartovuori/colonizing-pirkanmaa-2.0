@@ -1,0 +1,13 @@
+{
+  "id": "sd5-az-001",
+  "arc": "sd5",
+  "type": "az",
+  "version": 1,
+  "created_utc": "2026-06-08T09:56:19.368Z",
+  "git_commit": "fde4c25",
+  "parent": null,
+  "training_config": {},
+  "benchmarks": {},
+  "status": "experimental",
+  "notes": ""
+}
