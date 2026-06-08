@@ -526,6 +526,139 @@ describe('Neural AI — spatial features (Phase 2)', () => {
   });
 });
 
+// --- Economy scaffold port (controller.ts ← Rust controller.rs) ---------------
+//
+// The browser deploy path must reproduce the Rust "economy scaffold" the champion
+// net was trained on: each turn, BEFORE the learned net decides, the controller
+// secures wood, staffs producers to OPTIMUM (Mine = 2 workers + 1 Expert = 80
+// metal/round, plants = worker + Expert), expands the unit CAP via Villages when
+// it blocks full staffing, and guarantees the first Mine. Without it the deployed
+// CPU plays on an under-developed economy it never saw in training. These tests
+// drive the real controller on a real seeded board (painting an owned patch with
+// the terrain it needs) and assert the scaffold develops the economy.
+
+import { HeadQuarters, Farm } from '../src/model/building';
+import { Mountain, Grassland, Forest } from '../src/model/tiles';
+
+interface ScaffoldBuilt {
+  om: ObjectManager; pm: PlayerManager; eh: GameEventHandler; p: PlayerBase;
+  nn: NeuralAiController; mountain: TileBase; grasslands: TileBase[]; hq: TileBase;
+}
+
+/**
+ * Build a board, paint an owned patch for the nn player containing an empty
+ * Mountain (Mine site), several empty Grasslands (HQ + Village sites), and a
+ * Forest (wood). Place the HQ (so unit cap starts at +3 like a real game), flush
+ * cash, and make the nn player the current seat. Returns null if the seed lacks
+ * the required terrain (caller scans seeds).
+ */
+function buildScaffoldScenario(width: number, height: number, seed: number): ScaffoldBuilt | null {
+  const gsm = GameSettingsManager.fromMapDimensions(width, height);
+  const om = new ObjectManager();
+  const pm = new PlayerManager([{ name: 'NN', difficulty: 'nn-hard' }, { name: 'H', difficulty: 'hard' }], om);
+  const menu = new CapturingMenu();
+  const eh = new GameEventHandler(om, pm, menu, gsm);
+  const scene = new StubScene();
+  eh.setGameScene(scene); om.setGameScene(scene); om.addDALS(eh, menu, gsm);
+  om.setHoverBorder(new MouseHoverBorder(new Coordinate(0, 0), 1, 1, eh, om));
+  new WorldGenerator().generateMap(width, height, seed, { objectManager: om, eventHandler: eh, gameSettings: gsm, scene });
+
+  const p = pm.getPlayers()[0];
+  const tiles = om.getTiles();
+  const mountain = tiles.find((t) => t instanceof Mountain && t.getOwner() === null && t.getBuilding() === null);
+  const grasslands = tiles.filter((t) => t instanceof Grassland && t.getOwner() === null && t.getBuilding() === null).slice(0, 6);
+  const forest = tiles.find((t) => t instanceof Forest && t.getOwner() === null && t.getBuilding() === null);
+  if (!mountain || grasslands.length < 4 || !forest) return null;
+
+  for (const t of [mountain, forest, ...grasslands]) t.setOwner(p);
+
+  // Place the HQ on the first grassland (engine-direct, like the Rust unit tests'
+  // place_building) so the unit cap starts at the real +3.
+  const hq = grasslands[0];
+  const hqBuilding = new HeadQuarters(eh, om, p);
+  hqBuilding.setParentTile(hq);
+  hq.addBuilding(hqBuilding);
+  // A Farm on a 2nd grassland adds producer-staffing demand (1 worker) so that
+  // Mine(3) + Farm(1) = 4 units exceeds the HQ-only cap (+3) — forcing ensureUnitCap
+  // to build a Village (mirrors the Rust Mine+Nuclear cap-pressure test).
+  const farmTile = grasslands[1];
+  const farmBuilding = new Farm(eh, om, p);
+  farmBuilding.setParentTile(farmTile);
+  farmTile.addBuilding(farmBuilding);
+  p.updateUnitAmounts();
+
+  // Flush resources so affordability never blocks the scaffold (we test BEHAVIOUR,
+  // not the affordability gates, which are covered by parity).
+  const r = p.getResources();
+  r.set(BasicResource.MONEY, 50000);
+  r.set(BasicResource.WOOD, 50000);
+  r.set(BasicResource.STONE, 50000);
+  r.set(BasicResource.METAL, 50000);
+
+  // Make the nn player the current seat (aiBuild* act on the current player).
+  let guard = 0;
+  while (pm.getCurrentPlayer() !== p && guard++ < 4) pm.changeTurn();
+  if (pm.getCurrentPlayer() !== p) return null;
+
+  // budget:0 → the learned decision LOOP is skipped, so ONLY the pre-loop economy
+  // scaffold runs. This isolates the ported scaffold (the unit under test) from the
+  // net's discretionary Expand, which otherwise contends for the same unit cap —
+  // exactly how the Rust `staffing_tests` exercise the scaffold helpers alone.
+  const scaffoldCfg: TierConfig = { ...TRAINING_CONFIG, budget: 0 };
+  const nn = new NeuralAiController(eh, om, pm, zeroGenome(NEURAL_WEIGHTS.arch), scaffoldCfg, rng(seed));
+  return { om, pm, eh, p, nn, mountain, grasslands: grasslands.slice(1), hq };
+}
+
+describe('Neural AI — economy scaffold port (deploy parity with Rust)', () => {
+  it('the scaffold builds a Mine, staffs it 2 workers + Expert (80 metal), and builds a Village for cap', () => {
+    let found: ScaffoldBuilt | null = null;
+    for (const seed of [7, 42, 99, 1, 123, 256, 3, 5, 11, 17, 23, 31, 50, 77, 88, 200, 314]) {
+      for (const [w, h] of [[16, 14], [20, 15], [14, 12]] as Array<[number, number]>) {
+        found = buildScaffoldScenario(w, h, seed);
+        if (found) break;
+      }
+      if (found) break;
+    }
+    expect(found, 'expected a seed with an owned Mountain + Grasslands + Forest').not.toBeNull();
+    const { nn, p, mountain } = found!;
+
+    // Drive several scaffold turns (the economy development is the deterministic
+    // scaffold's job, run before the net decides). Resources stay flush each turn
+    // so production/upkeep can't strand the scaffold mid-bootstrap.
+    const eh = found!.eh;
+    const r = p.getResources();
+    for (let i = 0; i < 6; i++) {
+      r.set(BasicResource.MONEY, 50000); r.set(BasicResource.WOOD, 50000);
+      r.set(BasicResource.STONE, 50000); r.set(BasicResource.METAL, 50000);
+      eh.setAiActive(true);
+      nn.playTurn(p);
+      eh.setAiActive(false);
+    }
+
+    // A Mine must exist on the owned Mountain (ensureMetalIncome backstop).
+    const mineTiles = ownedOf(p).filter((t) => t.getBuilding()?.getType() === 'Mine');
+    expect(mineTiles.length, 'scaffold should build at least one Mine').toBeGreaterThanOrEqual(1);
+    expect(mineTiles.some((t) => t === mountain)).toBe(true);
+
+    // That Mine must be staffed to OPTIMUM: 2 BasicWorkers + 1 Expert = 80 metal.
+    const mine = mineTiles[0];
+    const workers = mine.getUnits().filter((u) => u.getType() === 'BasicWorker').length;
+    const hasExpert = mine.getUnits().some((u) => u.getType() === 'Expert');
+    expect(workers, 'mine should reach 2 BasicWorkers').toBe(2);
+    expect(hasExpert, 'mine should have an Expert (doubles output)').toBe(true);
+
+    // A Village must have been built to raise the unit cap so the full mine + plant
+    // staffing fits (ensureUnitCap).
+    const villages = ownedOf(p).filter((t) => t.getBuilding()?.getType() === 'Village').length;
+    expect(villages, 'ensureUnitCap should build at least one Village').toBeGreaterThanOrEqual(1);
+  });
+});
+
+/** Owned tiles of a player (test-local mirror of metrics.ownedTiles). */
+function ownedOf(p: PlayerBase): TileBase[] {
+  return p.getObjects().filter((o): o is TileBase => o instanceof TileBase);
+}
+
 describe.runIf(TRAINED)('Neural AI — difficulty ladder (trained weights only)', () => {
   const SIZES: Array<[number, number]> = [[12, 12], [16, 14], [20, 15]];
   const SEEDS = 16;

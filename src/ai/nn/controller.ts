@@ -14,10 +14,12 @@
 //      action budget runs out. THIS is where strategy is learned.
 
 import { TileBase } from '../../model/tile';
-import { Forest, AbundantForest } from '../../model/tiles';
+import { Forest, AbundantForest, Mountain, Grassland } from '../../model/tiles';
 import { UnitBase } from '../../model/unit';
 import { PlayerBase } from '../../model/player';
-import { BASIC_WORKER_COST, EXPERT_COST } from '../../core/resources';
+import {
+  BASIC_WORKER_COST, EXPERT_COST, MINE_BUILD_COST, VILLAGE_BUILD_COST, ResourceMap,
+} from '../../core/resources';
 import type { GameEventHandler } from '../../managers/gameeventhandler';
 import type { ObjectManager } from '../../managers/objectmanager';
 import type { PlayerManager } from '../../managers/playermanager';
@@ -130,8 +132,18 @@ export class NeuralAiController {
   *planTurn(player: PlayerBase, trace?: DecisionSink): Generator<void> {
     this.budget = this.cfg.budget;
     try {
-      // 1. Safety scaffold — guarantees solvency before any discretionary play.
+      // 1. Economy scaffold — mirrors the Rust `ensure_income_pub` the champion
+      //    net was trained on. Secure WOOD income, staff producers (placing the
+      //    Expert + 2nd mine worker that the net learned to act ON TOP OF), expand
+      //    the unit CAP (villages) when it blocks full staffing, then GUARANTEE the
+      //    first metal source (mine) as a leftover-resource backstop, then re-staff
+      //    (mans the new mine). This is the EXACT pre-net state distribution the
+      //    champion saw in training — without it the browser CPU plays on an
+      //    unseen, under-developed economy (train/serve skew).
       yield* this.ensureWoodIncome(player);
+      yield* this.staffIncome(player);
+      yield* this.ensureUnitCap(player);
+      yield* this.ensureMetalIncome(player);
       yield* this.staffIncome(player);
 
       // 2. Learned decision loop.
@@ -187,7 +199,10 @@ export class NeuralAiController {
         }
         this.budget -= 1;
         yield;
-        // Realize the obvious follow-up: staff anything left unstaffed.
+        // Realize the obvious follow-up: staff, expand the unit cap if it now
+        // blocks staffing, then staff the new slots (mirrors the Rust loop tail).
+        yield* this.staffIncome(player);
+        yield* this.ensureUnitCap(player);
         yield* this.staffIncome(player);
       }
     } catch {
@@ -225,8 +240,22 @@ export class NeuralAiController {
     if (!S.affords(player, BASIC_WORKER_COST, S.STAFF_RESERVE)) return false;
     return this.eh.aiBuyAndPlaceUnit('BasicWorker', tile);
   }
-  private addExpert(player: PlayerBase, tile: TileBase): boolean {
-    if (!S.affords(player, EXPERT_COST, this.cfg.reserve)) return false;
+
+  /**
+   * Buy + place an Expert on `tile` keeping at least `reserve` money buffered.
+   * Mirrors the Rust `add_expert_reserve`: staffing a producer is MECHANICAL, so
+   * it uses INCOME-BUILD affordability (raw resources + a modest money FLOOR of
+   * `reserve + ~1 round of drain`) rather than the strategic 5-rounds-of-drain
+   * buffer of `affords` — a mine Expert returns METAL not money, so the 5-round
+   * buffer it can never earn back permanently blocked experts as the economy grew
+   * (the metal-economy starvation root cause). Staffing callers pass the low
+   * STAFF_RESERVE so the strategic `cfg.reserve` never starves mechanical staffing.
+   */
+  private addExpertReserve(player: PlayerBase, tile: TileBase, reserve: number): boolean {
+    if (player.getFreeUnitAmount() <= 0) return false;
+    if (!tile.hasSpaceForUnits()) return false;
+    const floor = reserve + Math.ceil(M.moneyDrainPerRound(player));
+    if (!S.affordsIncomeBuild(player, EXPERT_COST, floor)) return false;
     return this.eh.aiBuyAndPlaceUnit('Expert', tile);
   }
 
@@ -297,20 +326,63 @@ export class NeuralAiController {
     }
   }
 
-  /** Ensure each income building has the worker(s)/expert it needs to produce. */
+  private workerCount(tile: TileBase): number {
+    return tile.getUnits().filter((u) => u.getType() === 'BasicWorker').length;
+  }
+
+  /**
+   * `staffIncome` — staff every income building toward OPTIMAL output (the Rust
+   * `staff_income_inner(place_experts=true)` port). The previous TS scaffold
+   * under-staffed: it put ONE worker on a mine (20 metal) when the optimum is 2
+   * workers + 1 Expert (80 metal), and never placed a mine Expert — starving the
+   * metal economy so the AI could never fund an army. This rewrite fully staffs
+   * producers, gated by the shared unit cap (`getFreeUnitAmount`), per-tile space,
+   * and the LOW STAFF_RESERVE so mechanical staffing is never starved by the
+   * strategic `cfg.reserve`.
+   *
+   * Pass 0 (mines/plants first — metal is the army bottleneck): each Mine → 1
+   * worker → Expert (×2) → 2nd worker = 80 metal/round; each plant → worker +
+   * Expert (else produces 0). Pass 1: minimum-viable for farms / abundant forest.
+   * Pass 2: a 2nd hydro worker (hydro = 80 × workers).
+   */
   private *staffIncome(player: PlayerBase): Generator<void> {
+    const producers = (kinds: string[]): TileBase[] =>
+      M.ownedTiles(player).filter((t) => {
+        const k = t.getBuilding()?.getType();
+        return k !== undefined && kinds.includes(k);
+      });
+
+    // --- Pass 0: MINES + PLANTS to OPTIMAL (metal/energy fund the army) -------
+    for (const tile of producers(['Mine'])) {
+      yield* this.ensureWorker(player, tile); // 1st worker
+      if (this.cfg.experts && M.hasType(tile, 'BasicWorker') && !M.hasType(tile, 'Expert')) {
+        yield* this.doAction(() => this.addExpertReserve(player, tile, S.STAFF_RESERVE)); // ×2
+      }
+      if (this.workerCount(tile) < 2 && tile.hasSpaceForUnits()) {
+        yield* this.doAction(() => this.addWorker(player, tile)); // 2nd worker
+      }
+    }
+    for (const tile of producers(['Nuclear Power Plant', 'Hydroelectric Power Plant'])) {
+      if (this.cfg.experts && !M.hasType(tile, 'Expert')) {
+        yield* this.doAction(() => this.addExpertReserve(player, tile, S.STAFF_RESERVE));
+      }
+      if (M.hasType(tile, 'Expert') && !M.hasType(tile, 'BasicWorker')) {
+        yield* this.doAction(() => this.addWorker(player, tile));
+      }
+    }
+
+    // --- Pass 1: minimum-viable staffing for the rest (each producer >0) ------
     for (const tile of M.ownedTiles(player)) {
       const type = tile.getBuilding()?.getType();
       if (type === 'Farm') {
         if (!M.hasType(tile, 'BasicWorker')) yield* this.doAction(() => this.addWorker(player, tile));
-      } else if (type === 'Mine') {
-        yield* this.ensureWorker(player, tile);
-      } else if (type === 'Nuclear Power Plant') {
-        if (this.cfg.experts && !M.hasType(tile, 'Expert')) yield* this.doAction(() => this.addExpert(player, tile));
-      } else if (type === 'Hydroelectric Power Plant') {
-        if (this.cfg.experts && !M.hasType(tile, 'Expert')) yield* this.doAction(() => this.addExpert(player, tile));
-        if (M.hasType(tile, 'Expert') && !M.hasType(tile, 'BasicWorker')) yield* this.doAction(() => this.addWorker(player, tile));
       } else if (tile instanceof AbundantForest && !M.hasType(tile, 'BasicWorker')) {
+        yield* this.doAction(() => this.addWorker(player, tile));
+      }
+    }
+    // --- Pass 2: a 2nd hydro worker if cap/space allow (hydro = 80 × workers) -
+    for (const tile of producers(['Hydroelectric Power Plant'])) {
+      if (M.hasType(tile, 'Expert') && this.workerCount(tile) < 2 && tile.hasSpaceForUnits()) {
         yield* this.doAction(() => this.addWorker(player, tile));
       }
     }
@@ -325,5 +397,154 @@ export class NeuralAiController {
     }
     const spare = this.findIdleOnPlain(player) ?? this.findSpareWorker(player, tile);
     if (spare && spare.tile !== tile) yield* this.doAction(() => this.eh.aiMoveUnit(spare.unit, spare.tile, tile));
+  }
+
+  // --- economy scaffold: unit cap (villages) + metal source (mines) ----------
+
+  /**
+   * `ensureUnitCap` — MECHANICAL cap-expansion: build a Village when the shared
+   * unit cap is the only thing blocking `staffIncome` from fully staffing the
+   * existing producers (2 workers + Expert per Mine, worker + Expert per plant).
+   * Port of the Rust `ensure_unit_cap`.
+   *
+   * Root cause this fixes: `staffIncome`'s coverage pass exhausts the free unit
+   * cap putting 1 worker on each producer, so the Expert / 2nd-worker upgrade pass
+   * never fires (experts = 0, mines stuck at 20 metal). Nothing else expands the
+   * cap, so the metal economy could never fund an army. A Village (+3 unit slots)
+   * is the only cap source the AI controls; the learned policy may still ignore
+   * villages — this guarantees the economy fills.
+   */
+  private *ensureUnitCap(player: PlayerBase): Generator<void> {
+    if (!this.cfg.experts) return; // no experts tier => no 3-unit producers; cap rarely binds
+    // The unit cap is cached; refresh so getFreeUnitAmount reflects any village /
+    // tile change earlier this turn (the learned loop may have built one).
+    player.updateUnitAmounts();
+    let deficit = 0;
+    let anyUnderfilledTileHasSpace = false;
+    for (const tile of M.ownedTiles(player)) {
+      const kind = tile.getBuilding()?.getType();
+      const optimal =
+        kind === 'Mine' ? 3 // 2 workers + 1 expert = 80 metal
+        : (kind === 'Nuclear Power Plant' || kind === 'Hydroelectric Power Plant') ? 2 // 1 worker + 1 expert
+        : kind === 'Farm' ? 1 // 1 worker
+        : 0;
+      if (optimal === 0) continue;
+      const current = this.workerCount(tile) + (M.hasType(tile, 'Expert') ? 1 : 0);
+      const want = Math.max(0, optimal - current);
+      if (want > 0) {
+        deficit += want;
+        if (tile.hasSpaceForUnits()) anyUnderfilledTileHasSpace = true;
+      }
+    }
+    // Only expand when the cap is what's blocking us.
+    const free = player.getFreeUnitAmount();
+    if (deficit <= free || !anyUnderfilledTileHasSpace) return;
+    // Solvency: a Village costs -5 money/round upkeep (arc sd4). Require net money
+    // to stay non-negative after that upkeep alone. The new workers go on PRODUCERS
+    // (they fund their own salary) so we do NOT pre-charge their salaries here.
+    if (M.netMoneyPerRound(player) - 5 < 0) return;
+    // With 0 villages there is no wood upkeep, so ensureWoodIncome harvests nothing
+    // and wood sits at the starting level forever — the village's 200-wood cost can
+    // never be afforded (the deepest layer of the starvation trap). When we genuinely
+    // want a village but can't afford its wood, run a forest harvester to ACCUMULATE
+    // wood toward the cost; the village is built on a later turn once the buffer is there.
+    if (!S.affords(player, VILLAGE_BUILD_COST, this.cfg.reserve)) {
+      yield* this.accumulateWoodFor(player, VILLAGE_BUILD_COST);
+      return;
+    }
+    yield* this.doAction(() => this.buildVillage(player));
+  }
+
+  /**
+   * `ensureMetalIncome` — MECHANICAL metal-source guarantee: build a Mine on an
+   * owned buildable Mountain when the player has ZERO mines. Port of the Rust
+   * `ensure_metal_income` (gate = 0). A SAFETY NET for the metal-starved tail
+   * (games where the policy builds no mine), NOT a competitor — the policy still
+   * owns mine COUNT past the first. Sequenced AFTER the cap/staff flow so it never
+   * steals the early budget the village→cap chain needs.
+   */
+  private *ensureMetalIncome(player: PlayerBase): Generator<void> {
+    const mountains = M.ownedTiles(player).filter(
+      (t) => t instanceof Mountain && t.getBuilding() === null && t.getBuildableBuildings().includes('Mine'),
+    );
+    if (mountains.length === 0) return; // no metal source available
+    const mines = M.ownedTiles(player).filter((t) => t.getBuilding()?.getType() === 'Mine').length;
+    if (mines >= 1) return; // guarantee only the FIRST metal source; hand off to the policy
+    if (!S.affords(player, MINE_BUILD_COST, this.cfg.reserve)) return;
+    const costMoney = -(MINE_BUILD_COST.get(1 /* MONEY */) ?? 0);
+    if (M.money(player) < costMoney + this.cfg.reserve + 100) return; // headroom — retry next turn
+    // Wood is the early blocker (200 wood up-front, no wood income with 0 villages).
+    if (!S.hasWoodBuffer(player, MINE_BUILD_COST)) {
+      yield* this.accumulateWoodFor(player, MINE_BUILD_COST);
+      return;
+    }
+    yield* this.doAction(() => this.buildMine(player, mountains[0]));
+  }
+
+  /**
+   * Ensure at least one forest harvester runs so wood accumulates toward a
+   * wood-costed build. With no villages there is no wood upkeep, so the normal
+   * `ensureWoodIncome` no-ops and wood never grows — this proactive harvest
+   * unblocks the first wood-blocked build (cap-expanding Village OR the first Mine).
+   * Prefers a free unit slot; when capped, borrows an EXPENDABLE worker (idle /
+   * surplus producer / farm) onto a forest. One placement per call. Port of the
+   * Rust `accumulate_wood_for`.
+   */
+  private *accumulateWoodFor(player: PlayerBase, _cost: ResourceMap): Generator<void> {
+    const haveHarvester = M.ownedTiles(player).some(
+      (t) => t instanceof Forest && t.getBuilding() === null && M.hasType(t, 'BasicWorker'),
+    );
+    if (haveHarvester) return; // wood is already growing — just wait for the buffer
+    const forest = M.ownedTiles(player).find(
+      (t) => t instanceof Forest && t.getBuilding() === null && t.hasSpaceForUnits() && !M.hasType(t, 'BasicWorker'),
+    );
+    if (!forest) return; // no harvestable forest
+    if (player.getFreeUnitAmount() > 0 && S.affords(player, BASIC_WORKER_COST, S.STAFF_RESERVE)) {
+      yield* this.doAction(() => this.addWorker(player, forest));
+      return;
+    }
+    // Capped with all producers minimally staffed (the trap): borrow an expendable
+    // worker (idle / surplus producer), else least-critical farm worker. Mine
+    // workers are NOT touched. staffIncome re-fills the farm once the cap rises.
+    let borrow = this.findExpendableWorker(player);
+    if (!borrow) {
+      for (const t of M.ownedTiles(player)) {
+        if (t.getBuilding()?.getType() === 'Farm') {
+          const w = t.getUnits().find((u) => u.getType() === 'BasicWorker');
+          if (w) { borrow = { unit: w, tile: t }; break; }
+        }
+      }
+    }
+    if (borrow && borrow.tile !== forest) {
+      yield* this.doAction(() => this.eh.aiMoveUnit(borrow!.unit, borrow!.tile, forest));
+    }
+  }
+
+  /**
+   * Buy + place a Mine on an owned empty buildable Mountain. Solvency/wood gated by
+   * the caller; uses `cfg.reserve` so it never dips into the strategic buffer.
+   * Port of the Rust `build_mine`.
+   */
+  private buildMine(player: PlayerBase, spot: TileBase): boolean {
+    if (!S.affords(player, MINE_BUILD_COST, this.cfg.reserve) || !S.hasWoodBuffer(player, MINE_BUILD_COST)) return false;
+    if (!(spot instanceof Mountain) || spot.getBuilding() !== null || !spot.getBuildableBuildings().includes('Mine')) return false;
+    return this.eh.aiBuildBuilding('Mine', spot);
+  }
+
+  /**
+   * Buy + place a Village on the first empty owned buildable grassland (the
+   * mechanical cap-fill path — already solvency-gated by `ensureUnitCap`). Uses
+   * `cfg.reserve`; refreshes the cached unit cap so the following `staffIncome` can
+   * spend the +3 new slots. Port of the Rust `build_village`.
+   */
+  private buildVillage(player: PlayerBase): boolean {
+    if (!S.affords(player, VILLAGE_BUILD_COST, this.cfg.reserve) || !S.hasWoodBuffer(player, VILLAGE_BUILD_COST)) return false;
+    const spot = M.ownedTiles(player).find(
+      (t) => t instanceof Grassland && t.getBuilding() === null && t.getBuildableBuildings().includes('Village'),
+    );
+    if (!spot) return false;
+    const built = this.eh.aiBuildBuilding('Village', spot);
+    if (built) player.updateUnitAmounts(); // refresh the cached cap for the next staffIncome
+    return built;
   }
 }
