@@ -1,0 +1,13 @@
+{
+  "id": "sd4-az-001",
+  "arc": "sd4",
+  "type": "az",
+  "version": 1,
+  "created_utc": "2026-06-08T04:38:32.906Z",
+  "git_commit": "aa4dd02",
+  "parent": null,
+  "training_config": {},
+  "benchmarks": {},
+  "status": "experimental",
+  "notes": "First sd4 net (arc bump: Village money upkeep -10->-5 dissolves the army<->win tradeoff). PPO+GAE warm-started from sd3-az-004. Peak MCTS trueWin 0.725 / rawWin 0.76 / maxSoldiers ~1.4 — breaks the sd3 PPO ceiling (0.66). High-win benches coincide with high villages (4.6-4.9)+army. Parity 8/8 on re-exported goldens. League re-tune for sd4 pending."
+}
