@@ -23,11 +23,13 @@ models/
 - **id = `<arc>-<type>-<NNN>`** — e.g. `sd-az-001`, `sd-hardbot-001`.
   - **arc** = game-version code. Bump it whenever the GAME's rules change so models
     from different game versions never get compared as if equivalent. Current arc:
-    **`sd4`** = the Strange-Device game version WITH the unit-cap economy rebalance
-    (2026-06-08; Village money upkeep −10 → −5 to relieve the army↔win-rate tradeoff;
-    see CLAUDE.md "unit-cap economy rebalance"). The **next registered model MUST use
-    `--arc sd4`.** Prior arcs are NOT comparable across the arc boundary — do not
-    benchmark across arcs as equivalent, and do not rename: `sd3` = military-economy
+    **`sd5`** = the Strange-Device game version WITH the Strange-Device rebalance
+    (2026-06-08; device tile holds 1 defender (was 0), soldier-cap penalty halving → fixed
+    −2, countdown base 18→12 / per-tile 0.12→0.10 — making the Device a genuine alternate
+    win path; see CLAUDE.md "Strange-Device rebalance"). The **next registered model MUST
+    use `--arc sd5`.** Prior arcs are NOT comparable across the arc boundary — do not
+    benchmark across arcs as equivalent, and do not rename: `sd4` = unit-cap economy
+    rebalance (Village money upkeep −10 → −5, 2026-06-08); `sd3` = military-economy
     rebalance (Outpost metal upkeep −15 → −5, soldier metal cost −50 → −30, 2026-06-06);
     `sd2` = Outpost-cost rebalance (650/300w/300s/300m → 500/200w/200s/100m + NN
     outpost tile-gate 12→8, 2026-06-05); `sd` = the original Strange-Device version.

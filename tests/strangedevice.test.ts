@@ -1,8 +1,9 @@
 // Strange Device mechanic — the new, draw-eliminating win condition (see
 // STRANGE-DEVICE-DESIGN.md). Drives the real engine headlessly (no Phaser/DOM) the
 // same way gameplay.test.ts does, and locks down: countdown scaling, the one-per-game
-// uniqueness, the soldier-cap halving + forced disband, the win on countdown, and the
-// destroy-on-capture (slot reopens, cap restored).
+// uniqueness, the soldier-cap −2 penalty (arc sd5; was a halving) + forced disband, the
+// 1-defender garrison (arc sd5; was 0), the win on countdown, and the destroy-on-capture
+// (slot reopens, cap restored).
 
 import { describe, it, expect } from 'vitest';
 import { GameSettingsManager } from '../src/managers/gamesettings';
@@ -78,9 +79,9 @@ const deviceOf = (om: ObjectManager): StrangeDevice | null => {
 
 describe('Strange Device — countdown scaling', () => {
   it('scales with map size (bigger map = longer countdown)', () => {
-    expect(strangeDeviceCountdown(100)).toBe(30); // 10x10
-    expect(strangeDeviceCountdown(144)).toBe(35); // 12x12
-    expect(strangeDeviceCountdown(256)).toBe(49); // 16x16
+    expect(strangeDeviceCountdown(100)).toBe(22); // 10x10  (arc sd5: 12 + 0.10*100)
+    expect(strangeDeviceCountdown(144)).toBe(26); // 12x12  (12 + 0.10*144 = 26.4 → 26)
+    expect(strangeDeviceCountdown(256)).toBe(38); // 16x16  (12 + 0.10*256 = 37.6 → 38)
     expect(strangeDeviceCountdown(256)).toBeGreaterThan(strangeDeviceCountdown(100));
   });
 
@@ -112,42 +113,76 @@ describe('Strange Device — uniqueness', () => {
   });
 });
 
-describe('Strange Device — soldier-cap halving + forced disband', () => {
-  it('halves the cap on build and disbands soldiers now over it', () => {
+describe('Strange Device — soldier-cap −2 penalty + forced disband (arc sd5)', () => {
+  it('applies a fixed −2 cap on build and disbands soldiers now over it', () => {
     const { om, pm, eh } = newGame(12, 12, 7);
     const [p1] = placeBothHqs(om, eh, pm);
     grant(p1);
     // HQ alone = soldier cap 1. Field that one soldier on one tile, then build the
-    // Device on a DIFFERENT empty tile (the Device tile can never hold units).
+    // Device on a DIFFERENT empty tile.
     expect(p1.getMaxSoldierAmount()).toBe(1);
     const spots = emptyGrass(p1);
     expect(eh.aiBuyAndPlaceUnit('Soldier', spots[1])).toBe(true);
     expect(p1.getCurrentSoldierAmount()).toBe(1);
-    // Build the Device → cap floor(1/2)=0, and the standing soldier is disbanded at once.
+    // Build the Device → cap max(0, 1−2)=0, and the standing soldier is disbanded at once.
     expect(eh.aiBuildBuilding('Strange Device', spots[0])).toBe(true);
     expect(p1.ownsStrangeDevice()).toBe(true);
     expect(p1.getMaxSoldierAmount()).toBe(0);
     expect(p1.getCurrentSoldierAmount()).toBe(0);
   });
+
+  it('on a larger cap the penalty is a flat −2 (not a halving)', () => {
+    const { om, pm, eh } = newGame(12, 12, 7);
+    const [p1] = placeBothHqs(om, eh, pm);
+    grant(p1);
+    // Build two Outposts (each +3 soldier cap) → HQ(1) + 6 = cap 7. With a flat −2 the
+    // device leaves cap 5 (a halving would have left floor(7/2)=3 — the sd5 difference).
+    const spots = emptyGrass(p1);
+    expect(eh.aiBuildBuilding('Outpost', spots[1])).toBe(true);
+    expect(eh.aiBuildBuilding('Outpost', spots[2])).toBe(true);
+    expect(p1.getMaxSoldierAmount()).toBe(7);
+    expect(eh.aiBuildBuilding('Strange Device', spots[0])).toBe(true);
+    expect(p1.getMaxSoldierAmount()).toBe(5);
+  });
 });
 
-describe('Strange Device — tile holds no units (stays crackable)', () => {
-  it('refuses to build on an occupied tile, and the Device tile has no room for defenders', () => {
+describe('Strange Device — tile holds at most one defender (arc sd5; stays crackable)', () => {
+  it('refuses to build on an occupied tile, then holds exactly one defender', () => {
     const { om, pm, eh } = newGame(12, 12, 7);
     const [p1] = placeBothHqs(om, eh, pm);
     grant(p1);
     expect(p1.getMaxSoldierAmount()).toBe(1); // refresh the (lazily-computed) cap
     const spots = emptyGrass(p1);
-    // A tile with a soldier on it cannot host a Device (else you could pre-stack
-    // defenders and make it impossible to conquer at tile cap 3).
+    // A tile with a soldier on it cannot host a Device (guardrail: else you could
+    // pre-stack defenders and build on top).
     expect(eh.aiBuyAndPlaceUnit('Soldier', spots[1])).toBe(true);
     expect(eh.aiBuildBuilding('Strange Device', spots[1])).toBe(false);
     expect(om.hasStrangeDevice()).toBe(false);
-    // Built on an empty tile, the Device tile holds no defenders — but an attacker can
-    // still stage a conquering unit on it, so it stays crackable.
+    // Built on an empty tile, the Device tile has room for ONE defender (arc sd5), and an
+    // attacker can stage a conquering unit on it, so it stays crackable.
     expect(eh.aiBuildBuilding('Strange Device', spots[0])).toBe(true);
-    expect(spots[0].hasSpaceForUnits()).toBe(false);
+    expect(spots[0].hasSpaceForUnits()).toBe(true);
     expect(spots[0].hasSpaceForConqueringUnits()).toBe(true);
+  });
+
+  it('garrisons exactly one soldier, then refuses a second', () => {
+    const { om, pm, eh } = newGame(12, 12, 7);
+    const [p1] = placeBothHqs(om, eh, pm);
+    grant(p1);
+    const spots = emptyGrass(p1);
+    // Two Outposts so the −2 device penalty still leaves cap room for the 1 defender.
+    expect(eh.aiBuildBuilding('Outpost', spots[1])).toBe(true);
+    expect(eh.aiBuildBuilding('Outpost', spots[2])).toBe(true);
+    const deviceTile = spots[0];
+    expect(eh.aiBuildBuilding('Strange Device', deviceTile)).toBe(true);
+    expect(deviceTile.hasSpaceForUnits()).toBe(true);
+    // Place the one allowed defender on the device tile.
+    expect(eh.aiBuyAndPlaceUnit('Soldier', deviceTile)).toBe(true);
+    expect(deviceTile.getUnitCount()).toBe(1);
+    expect(deviceTile.hasSpaceForUnits()).toBe(false); // full at one defender
+    // A second defender is refused.
+    expect(eh.aiBuyAndPlaceUnit('Soldier', deviceTile)).toBe(false);
+    expect(deviceTile.getUnitCount()).toBe(1);
   });
 });
 
@@ -204,7 +239,7 @@ describe('Strange Device — destroyed when its tile is lost', () => {
     grant(p1);
     const tile = emptyGrass(p1)[0];
     eh.aiBuildBuilding('Strange Device', tile);
-    expect(p1.getMaxSoldierAmount()).toBe(0); // halved while owned
+    expect(p1.getMaxSoldierAmount()).toBe(0); // max(0, 1−2) while owned (arc sd5)
     // Simulate the tile being taken (what conquest does: the tile changes owner).
     tile.setOwner(p2);
     eh.endTurn(); // the mismatch (tile owner != Device builder) destroys the Device

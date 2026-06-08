@@ -189,10 +189,9 @@ impl<'a> NeuralAiController<'a> {
     /// then the MECHANICAL economy guarantees), in the exact order the deployed CNN turn
     /// (`cnn_train.rs::cnn_plan_turn` / `scaffold_ensure`) runs. ADDITIVE — used by the
     /// distillation self-play AND the CNN bench/validate path to develop the economy
-    /// faithfully before recording a policy decision; does NOT touch the MLP parity path
-    /// (`plan_turn` / `plan_turn_record` stay byte-identical to the TS controller, which
-    /// has no `ensure_metal_income` / `ensure_unit_cap` mirror — adding the mine build to
-    /// the parity path would diverge on any map where a seat owns an early Mountain).
+    /// faithfully before recording a policy decision. As of the TS army-economy-scaffold
+    /// deploy, `plan_turn` runs the IDENTICAL 5-step order (incl. `ensure_metal_income`),
+    /// so this wrapper and the MLP parity path now share the same scaffold sequence.
     ///
     /// Order: secure WOOD income, staff producers, expand the unit CAP (villages) if it
     /// blocks full staffing, then GUARANTEE the metal source as a SAFETY NET on whatever
@@ -343,10 +342,16 @@ impl<'a> NeuralAiController<'a> {
         let mut budget = self.cfg.budget;
 
         // 1. Safety scaffold. Staff once so producer income is realised, THEN expand
-        //    the unit cap if it blocks full staffing, THEN staff again to fill it.
+        //    the unit cap if it blocks full staffing, THEN guarantee the first metal
+        //    source (mine) as a leftover-resource backstop, THEN staff again to fill it.
+        //    Mirrors the TS `planTurn` scaffold exactly (parity-locked: the TS controller
+        //    gained `ensureMetalIncome` in the "port the full Rust army-economy scaffold
+        //    into controller.ts" deploy, so `plan_turn` must run it too or it diverges on
+        //    any map where a seat owns an early Mountain — see trace-2 seed 2).
         self.ensure_wood_income(g, player);
         self.staff_income(g, player);
         self.ensure_unit_cap(g, player);
+        self.ensure_metal_income(g, player);
         self.staff_income(g, player);
 
         // 2. Learned decision loop.

@@ -161,11 +161,13 @@ export class PlayerBase {
     }
     if (newMaxUnitAmount >= UNIT_LIMITS) newMaxUnitAmount = UNIT_LIMITS;
     if (newMaxSoldierAmount >= UNIT_LIMITS) newMaxSoldierAmount = UNIT_LIMITS;
-    // Owning a standing Strange Device halves the soldier cap (floored): the cost of
-    // racing the Device's countdown is being left defensively exposed. The forced
-    // disband of any now-excess soldiers happens on build (GameEventHandler) and at
-    // every endTurn via eliminateExcessUnits().
-    if (this.ownsStrangeDevice()) newMaxSoldierAmount = Math.floor(newMaxSoldierAmount / 2);
+    // Owning a standing Strange Device applies a FIXED −2 soldier-cap penalty (arc sd5
+    // rebalance, floored at 0): the cost of racing the Device's countdown is being left
+    // defensively exposed, but a flat −2 (down from the old halving) lets the builder
+    // still field a real ring of defenders. The forced disband of any now-excess
+    // soldiers happens on build (GameEventHandler) and at every endTurn via
+    // eliminateExcessUnits().
+    if (this.ownsStrangeDevice()) newMaxSoldierAmount = Math.max(0, newMaxSoldierAmount - 2);
     this.maxUnitAmount_ = newMaxUnitAmount;
     this.maxSoldierAmount_ = newMaxSoldierAmount;
   }

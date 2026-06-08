@@ -107,6 +107,40 @@ correctness contract, which the tests lock down:
   re-export goldens, keep parity 8/8, and bump the arc. NOTE: the scripted league
   (`hard_ai.rs` `AiParams` presets — reserve / max_outposts / etc.) was tuned for sd3 and
   must be RE-TUNED against this new economy in a separate later phase.
+- **Deliberate balance divergence (Strange-Device rebalance, 2026-06-08 — arc bump
+  `sd4` → `sd5`):** the Strange Device was a strictly-dominated win path — the AI rationally
+  NEVER built it — so three knobs were cut to make it a genuine ALTERNATE win condition
+  (~comparable EV to conquest, NOT dominant). Confirmed from source, the standing Device:
+  held **0 defenders** (the device tile rejected all owner units), so any lone raider cracked
+  it with 1 soldier; **HALVED** the owner's soldier cap for the whole countdown; and resolved
+  ~50 rounds later than a conquest race. The three rule edits: (1) **the device tile may now
+  garrison up to 1 defender** (was 0) — `Tile::has_space_for_units` / `TileBase.hasSpaceForUnits`
+  return `1 + unit_count <= 1` on a device tile (and the `tile_add_unit` / `addUnit` guard +
+  the build-on-empty-tile guardrail are kept), so cracking now needs 2 attackers, not 1.
+  (2) **the soldier-cap penalty softens from a halving to a fixed −2** (floored at 0) —
+  `update_unit_amounts` / `updateUnitAmounts`: `max_soldier /= 2` → `(max_soldier − 2).max(0)`
+  / `Math.max(0, x − 2)`, so the builder can still field a real defensive ring. (3) **the
+  countdown is trimmed** so the device can land before a conquest race closes the game —
+  `STRANGE_DEVICE_COUNTDOWN_BASE 18 → 12` and `STRANGE_DEVICE_COUNTDOWN_PER_TILE 0.12 → 0.10`
+  in `resources.rs` / `src/core/resources.ts`. UNCHANGED guardrails preventing dominance
+  (do NOT touch without re-deriving the EV balance): `strange_device_build_cost()` (1300/200/200,
+  a tuned bankruptcy lever), the one-Device-per-game rule, the build-on-empty-tile rule, and
+  the destroy-on-capture rule. For these three knobs `reference/` is **no longer** the source
+  of truth. Parity-locked mirror set (the generic AI gates already read these through the
+  engine, so they auto-track): the `has_space_for_units` / `hasSpaceForUnits` 1-defender rule
+  (`model.rs` ⇄ `src/model/tile.ts`), the `tile_add_unit` / `addUnit` device guard
+  (`managers.rs` ⇄ `src/model/tile.ts`), the cap `−2` penalty (`managers.rs`
+  `update_unit_amounts` ⇄ `src/model/player.ts`), and the two countdown constants
+  (`resources.rs` ⇄ `src/core/resources.ts`). The AI's `crack_device` / `crackDevice`
+  enumerator (`candidates.rs` ⇄ `src/ai/nn/candidates.ts`) is generic (`needed = defenders + 1`,
+  capped at 3) and correctly enumerates against a 1-defender device with no edit. SEPARATELY,
+  this session also restored a pre-existing parity break: the TS army-economy-scaffold deploy
+  had added `ensureMetalIncome` to `controller.ts`'s `planTurn` without mirroring it into the
+  Rust `plan_turn` scaffold (or re-exporting goldens), which diverged on any seed where a seat
+  owns an early Mountain (e.g. seed 2); `ensure_metal_income` is now in the Rust `plan_turn`
+  5-step scaffold to match. This is parity-affecting: any retune must edit BOTH the Rust and TS
+  mirror, re-export goldens, keep parity 8/8, and bump the arc. NOTE: the scripted league
+  (`hard_ai.rs` `AiParams` presets) must be RE-TUNED against the new Device EV in a later phase.
 
 ## Architecture
 
@@ -162,7 +196,8 @@ NOT scatter `champion.json`s around `rust-trainer/` or elsewhere; register them.
   `models/CHAMPION.json`. Full spec in `models/README.md`.
 - **id = `<arc>-<type>-<NNN>`** (e.g. `sd-az-001`). `arc` = game-version code —
   **bump it on any game-rules change** so models from different game versions are
-  never compared as equivalent (current arc `sd` = the Strange-Device version).
+  never compared as equivalent (current arc `sd5` = the Strange-Device-rebalance version;
+  lineage `sd` → `sd2` → `sd3` → `sd4` → `sd5`).
   `type` ∈ `az` / `hardbot` / `ga`. `NNN` = per-(arc,type) incremental.
 - Manage with `npm run models -- <list|show|register|promote>`. `register
   <weights.json> --arc <a> --type <t>` imports a model, assigns the id, stamps the

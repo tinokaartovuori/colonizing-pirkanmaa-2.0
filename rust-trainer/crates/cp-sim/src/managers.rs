@@ -461,8 +461,18 @@ impl Game {
     pub fn tile_add_unit(&mut self, tid: TileId, uid: UnitId) {
         let is_conq = self.units[uid.0].is_conquering;
         let max = self.tiles[tid.0].max_units;
+        let is_device = matches!(
+            &self.tiles[tid.0].building,
+            Some(b) if b.kind == BuildingType::StrangeDevice
+        );
         if !is_conq {
-            if self.tiles[tid.0].unit_count() as i64 + 1 > max {
+            // A Strange Device tile holds at most ONE defender (arc sd5; see
+            // Tile::has_space_for_units), else the normal MAX_UNITS room check.
+            if is_device {
+                if self.tiles[tid.0].unit_count() as i64 + 1 > 1 {
+                    panic!("Cannot place more than one unit on a Strange Device tile!");
+                }
+            } else if self.tiles[tid.0].unit_count() as i64 + 1 > max {
                 panic!("Tile has no more room for Units!");
             }
             self.units[uid.0].location = Some(tid);
@@ -643,13 +653,15 @@ impl Game {
         if max_soldier >= resources::UNIT_LIMITS {
             max_soldier = resources::UNIT_LIMITS;
         }
-        // Owning a standing Strange Device halves the soldier cap (floored): the cost
-        // of racing the Device's countdown is being left defensively exposed. Forced
-        // disband of now-excess soldiers happens on build (ai_build_building) and at
-        // every end_turn via eliminate_excess_units. Conditional — fires only when a
-        // device exists, so device-free games keep the original cap byte-for-byte.
+        // Owning a standing Strange Device applies a FIXED −2 soldier-cap penalty (arc
+        // sd5 rebalance, floored at 0): the cost of racing the Device's countdown is
+        // being left defensively exposed, but a flat −2 (down from the old halving) lets
+        // the builder still field a real ring of defenders. Forced disband of now-excess
+        // soldiers happens on build (ai_build_building) and at every end_turn via
+        // eliminate_excess_units. Conditional — fires only when a device exists, so
+        // device-free games keep the original cap byte-for-byte.
         if self.player_owns_strange_device(player) {
-            max_soldier /= 2; // i64 division floors for non-negatives == Math.floor
+            max_soldier = (max_soldier - 2).max(0);
         }
         self.players[player.0].max_unit_amount = max_unit;
         self.players[player.0].max_soldier_amount = max_soldier;
@@ -1248,9 +1260,9 @@ impl Game {
             if self.has_strange_device() {
                 return false;
             }
-            // The Device tile can never hold defenders (Tile::has_space_for_units), so
-            // it must be built on an EMPTY tile — else you could pre-stack soldiers then
-            // build on top and make it impossible to conquer.
+            // The Device must be built on an EMPTY tile (guardrail kept across arc sd5)
+            // — else you could pre-stack soldiers then build on top. After it stands it
+            // may garrison at most 1 defender (Tile::has_space_for_units, arc sd5).
             if !self.tiles[tid.0].units.is_empty() {
                 return false;
             }

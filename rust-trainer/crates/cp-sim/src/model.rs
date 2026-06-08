@@ -338,11 +338,13 @@ impl Tile {
 
     /// `hasSpaceForUnits`.
     pub fn has_space_for_units(&self) -> bool {
-        // A Strange Device tile holds NO defending units (else the owner could garrison
-        // it to the cap and make it impossible to conquer). Conquering units may still
-        // stage (has_space_for_conquering_units is unchanged), so it stays crackable.
+        // A Strange Device tile holds at most ONE defending soldier (arc sd5 rebalance):
+        // a single defender raises the crack requirement from 1 to 2 attackers so a lone
+        // raider can no longer one-shot it, but the cap stays well below the normal 3 so
+        // the device never becomes impossible to crack. Conquering units may still stage
+        // (has_space_for_conquering_units is unchanged), so it remains crackable.
         if matches!(&self.building, Some(b) if b.kind == BuildingType::StrangeDevice) {
-            return false;
+            return 1 + self.unit_count() as i64 <= 1;
         }
         1 + self.unit_count() as i64 <= self.max_units
     }

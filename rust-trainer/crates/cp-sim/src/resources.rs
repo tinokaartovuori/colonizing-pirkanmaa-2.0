@@ -307,13 +307,13 @@ pub fn strange_device_build_cost() -> ResourceMap {
     // STRANGE_DEVICE_BUILD_COST in src/core/resources.ts.
     rmap(&[(Money, -1300), (Stone, -200), (Metal, -200)])
 }
-pub const STRANGE_DEVICE_COUNTDOWN_BASE: i64 = 18;
-pub const STRANGE_DEVICE_COUNTDOWN_PER_TILE: f64 = 0.12;
+pub const STRANGE_DEVICE_COUNTDOWN_BASE: i64 = 12;
+pub const STRANGE_DEVICE_COUNTDOWN_PER_TILE: f64 = 0.10;
 /// `strangeDeviceCountdown(tileCount)` — rounds before a standing Device wins.
 /// `round(BASE + PER_TILE × tileCount)`. JS `Math.round` rounds half toward +∞;
 /// Rust `f64::round` rounds half away from zero. They agree for the always-positive
-/// values here (≥ 18), so `.round()` is the faithful port — do not "fix" it unless
-/// BASE/PER_TILE ever go negative.
+/// values here (≥ 12, arc sd5), so `.round()` is the faithful port — do not "fix" it
+/// unless BASE/PER_TILE ever go negative.
 pub fn strange_device_countdown(tile_count: i64) -> i64 {
     (STRANGE_DEVICE_COUNTDOWN_BASE as f64 + STRANGE_DEVICE_COUNTDOWN_PER_TILE * tile_count as f64)
         .round() as i64

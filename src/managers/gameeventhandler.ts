@@ -754,9 +754,9 @@ export class GameEventHandler implements IGameEventHandler {
       // One Strange Device per game — refuse a second wherever the build is triggered
       // from (the menu's buildable list hides it, but the direct build paths don't).
       if (this.objectManager_.hasStrangeDevice()) return null;
-      // The Device tile can never hold defenders (TileBase.hasSpaceForUnits), so it
-      // must be built on an EMPTY tile — otherwise you could pre-stack soldiers and
-      // then build on top, making the Device impossible to conquer (cap 3).
+      // The Device must be built on an EMPTY tile (guardrail kept across arc sd5) —
+      // otherwise you could pre-stack soldiers and then build on top. After it stands it
+      // may garrison at most 1 defender (TileBase.hasSpaceForUnits, arc sd5).
       if (tile.getUnitCount() > 0) return null;
       const device = new StrangeDevice(this, this.objectManager_, current);
       // Countdown scales with map size (bigger map = longer to mass an army + cross it).

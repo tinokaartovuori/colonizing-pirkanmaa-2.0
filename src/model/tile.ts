@@ -59,12 +59,13 @@ export abstract class TileBase extends GameObject {
     if (unit.getType() === 'Soldier') unit.setImageFiles(ImageVectors.SOLDIER);
 
     if (!unit.isConqueringUnit()) {
-      // A Strange Device tile never holds defenders (see hasSpaceForUnits) — refuse
-      // any owner unit so it stays crackable.
+      // A Strange Device tile holds at most ONE defender (arc sd5; see hasSpaceForUnits)
+      // — refuse owner units beyond the first so it stays crackable by 2 attackers.
       if (this.getBuilding()?.getType() === 'Strange Device') {
-        throw new Error('Cannot place units on a Strange Device tile!');
-      }
-      if (this.getUnitCount() + 1 > this.MAX_UNITS) {
+        if (this.getUnitCount() + 1 > 1) {
+          throw new Error('Cannot place more than one unit on a Strange Device tile!');
+        }
+      } else if (this.getUnitCount() + 1 > this.MAX_UNITS) {
         throw new Error('Tile has no more room for Units!');
       }
       unit.setLocationTile(this);
@@ -274,12 +275,12 @@ export abstract class TileBase extends GameObject {
   }
 
   hasSpaceForUnits(): boolean {
-    // The Strange Device tile holds NO defending units: otherwise the owner could
-    // garrison it to the cap (3) and make it impossible to conquer, defeating the
-    // whole mechanic. Conquering (attacking) units may still stage here
-    // (hasSpaceForConqueringUnits is unchanged), so with zero defenders a single
-    // attacker can crack it.
-    if (this.getBuilding()?.getType() === 'Strange Device') return false;
+    // The Strange Device tile holds at most ONE defending soldier (arc sd5 rebalance):
+    // a single defender raises the crack requirement from 1 to 2 attackers so a lone
+    // raider can no longer one-shot it, but the cap stays well below the normal 3 so the
+    // device never becomes impossible to crack. Conquering (attacking) units may still
+    // stage here (hasSpaceForConqueringUnits is unchanged), so it remains crackable.
+    if (this.getBuilding()?.getType() === 'Strange Device') return 1 + this.getUnitCount() <= 1;
     return 1 + this.getUnitCount() <= this.MAX_UNITS;
   }
   hasSpaceForConqueringUnits(): boolean {

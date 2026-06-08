@@ -259,10 +259,12 @@ export const STRANGE_DEVICE_BUILD_COST: ResourceMap = rmap({
 // Countdown (in the owner's end-of-turns ≈ rounds) before a standing Device wins.
 // Scales with map size: on a bigger map it takes longer to mass an army and cross the
 // map to crack the Device, so the countdown must be longer to stay a genuine threat
-// rather than an instant win. round(BASE + PER_TILE × tileCount): 10x10→30, 12x12→35,
-// 14x12→38, 16x16→49. Tunable.
-export const STRANGE_DEVICE_COUNTDOWN_BASE = 18;
-export const STRANGE_DEVICE_COUNTDOWN_PER_TILE = 0.12;
+// rather than an instant win. round(BASE + PER_TILE × tileCount): 10x10→22, 12x12→26,
+// 14x12→29, 16x16→38. Trimmed for arc sd5 (was 18 + 0.12) so the device can land before
+// a conquest race closes the game — a real alternate win path, not always-too-slow.
+// Tunable.
+export const STRANGE_DEVICE_COUNTDOWN_BASE = 12;
+export const STRANGE_DEVICE_COUNTDOWN_PER_TILE = 0.1;
 export function strangeDeviceCountdown(tileCount: number): number {
   return Math.round(STRANGE_DEVICE_COUNTDOWN_BASE + STRANGE_DEVICE_COUNTDOWN_PER_TILE * tileCount);
 }
