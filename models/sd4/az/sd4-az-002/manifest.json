@@ -1,0 +1,13 @@
+{
+  "id": "sd4-az-002",
+  "arc": "sd4",
+  "type": "az",
+  "version": 2,
+  "created_utc": "2026-06-08T05:47:19.910Z",
+  "git_commit": "2c5c70f",
+  "parent": null,
+  "training_config": {},
+  "benchmarks": {},
+  "status": "experimental",
+  "notes": "= sd3-az-004 weights (PPO champion), the BEST net on the sd4 economy by clean 160-game fixed-seed eval: trueWin 0.700 / rawWin 0.713 / peakSoldiers 1.587 (CLEARS the 1.5 army gate). The sd4 economy (Village upkeep -10->-5) lets this net field a real army + win more (0.66 on sd3 -> 0.70 on sd4). NOTE: supersedes sd4-az-001 (0.637 clean) — that net came from a noisy 80-game champion-best selection that picked a lucky-bench net which actually DEGRADED the base; PPO-on-sd4-as-run hurt. Next: PPO-on-sd4 with high-N (160) champion-selection to beat 0.700."
+}
