@@ -381,13 +381,14 @@ function buildVillage(ctx: AiCtx): Candidate | null {
   if (!spot) return null;
   // Sustainability gates (mirror the heuristic's anti-bleed conditions).
   if (!M.ownedTiles(p).some((t) => t instanceof Forest && (t.getBuilding() === null || M.hasType(t, 'BasicWorker')))) return null;
-  if (M.netMoneyPerRound(p) - 15 < 0) return null;
+  // -10 = new village money upkeep (-5, arc sd4) + 5 buffer. Was -15 at -10 upkeep.
+  if (M.netMoneyPerRound(p) - 10 < 0) return null;
   const postUpkeep = M.woodUpkeep(p) + 10;
   if (M.wood(p) - 100 < Math.max(100, postUpkeep * 5)) return null;
   if (!S.affords(p, VILLAGE_BUILD_COST, ctx.cfg.reserve)) return null;
   return {
     intent: Intent.BuildVillage,
-    local: localVec({ p, cost: VILLAGE_BUILD_COST, netDelta: -10, targetValue: 4, unitCapGain: 3 }),
+    local: localVec({ p, cost: VILLAGE_BUILD_COST, netDelta: -5, targetValue: 4, unitCapGain: 3 }),
     label: 'BuildVillage',
     execute: () => ctx.eh.aiBuildBuilding('Village', spot),
   };

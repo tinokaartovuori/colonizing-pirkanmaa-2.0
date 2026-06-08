@@ -47,7 +47,7 @@ export function moneyDrainPerRound(p: PlayerBase): number {
   let upkeep = 0;
   for (const t of ownedTiles(p)) {
     const type = t.getBuilding()?.getType();
-    if (type === 'Village') upkeep += 10;
+    if (type === 'Village') upkeep += 5; // arc sd4 unit-cap rebalance (was 10)
     if (type === 'Outpost') upkeep += 50;
   }
   return salaryPerRound(p) + upkeep;
@@ -65,7 +65,7 @@ export function netMoneyPerRound(p: PlayerBase): number {
     else if (type === 'Nuclear Power Plant' && workers > 0 && expert) income += 160 * workers;
     else if (type === 'Hydroelectric Power Plant' && workers > 0 && expert) income += 80 * workers;
     else if (tile instanceof AbundantForest && workers > 0) income += 15;
-    if (type === 'Village') income -= 10;
+    if (type === 'Village') income -= 5; // arc sd4 unit-cap rebalance (was 10)
     if (type === 'Outpost') income -= 50;
   }
   return income - salaryPerRound(p);

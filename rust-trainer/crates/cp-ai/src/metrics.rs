@@ -89,7 +89,9 @@ pub fn money_drain_per_round(g: &Game, p: PlayerId) -> f64 {
     let mut upkeep = 0.0f64;
     for t in owned_tiles(g, p) {
         match building_type(g, t) {
-            Some(BuildingType::Village) => upkeep += 10.0,
+            // Village money upkeep -5 (arc sd4 unit-cap rebalance; mirrors
+            // village_production() money in cp-sim resources.rs).
+            Some(BuildingType::Village) => upkeep += 5.0,
             Some(BuildingType::Outpost) => upkeep += 50.0,
             _ => {}
         }
@@ -122,7 +124,7 @@ pub fn net_money_per_round(g: &Game, p: PlayerId) -> f64 {
             }
         }
         if ty == Some(BuildingType::Village) {
-            income -= 10.0;
+            income -= 5.0; // arc sd4 unit-cap rebalance (was -10)
         }
         if ty == Some(BuildingType::Outpost) {
             income -= 50.0;

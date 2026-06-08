@@ -271,11 +271,26 @@ pub fn bridge_production() -> ResourceMap {
 }
 
 // Building - Village (Neighborhood)
+// MONEY upkeep REBALANCED -10 → -5 (arc sd3 → sd4, 2026-06-08, "unit-cap economy"
+// pass). Unit cap = HQ(+3) + Σ Village(+3) + Mikontalo(+2); the ONLY scalable source
+// of cap is the Village, at -10 money/round each. Funding BOTH a ~3-4 soldier army AND
+// winning expansion needs cap to staff mines (2 workers + expert = 80 metal) + farms +
+// experts simultaneously — typically 3 Villages beyond HQ, i.e. -30 money/round of pure
+// cap overhead at -10. That overhead made army and winning expansion a genuine tradeoff
+// (every PPO/AZ champion capped ~0.62-0.66 trueWin; see CLAUDE.md "unit-cap economy
+// rebalance"). At -5 the same 3-Village cap costs -15/round — ~one staffed farm's net
+// income (≈+39) restored toward expansion, enough to carry the army's Outpost upkeep
+// (-50) + a couple soldier salaries while still expanding. The -10 wood/-10 stone upkeep,
+// the build cost, and VILLAGE_UNIT_VALUE are left UNCHANGED so a Village stays a real
+// commitment and the cap-per-Village stays put; only the binding money drain is halved.
+// Mirrors VILLAGE_PRODUCTION in src/core/resources.ts (parity-locked — edit both,
+// re-export goldens, keep parity 8/8) and the village net-money model in
+// metrics.rs/metrics.ts + the build_village netDelta in candidates.rs/candidates.ts.
 pub fn village_build_cost() -> ResourceMap {
     rmap(&[(Money, -200), (Wood, -200), (Stone, -100), (Metal, -25)])
 }
 pub fn village_production() -> ResourceMap {
-    rmap(&[(Money, -10), (Wood, -10), (Stone, -10)])
+    rmap(&[(Money, -5), (Wood, -10), (Stone, -10)])
 }
 pub const VILLAGE_UNIT_VALUE: i64 = 3;
 
@@ -430,5 +445,12 @@ mod tests {
         assert_eq!(soldier_cost().get(Metal), Some(-30));
         assert_eq!(soldier_cost().get(Money), Some(-200));
         assert_eq!(soldier_salary().get(Money), Some(-30));
+        // Unit-cap economy rebalance (arc sd3 → sd4): Village MONEY upkeep -10 → -5 to
+        // relieve the army↔win-rate tradeoff. Wood/stone upkeep and cap-per-Village
+        // stay put. Mirrored in src/core/resources.ts (parity-locked).
+        assert_eq!(village_production().get(Money), Some(-5));
+        assert_eq!(village_production().get(Wood), Some(-10));
+        assert_eq!(village_production().get(Stone), Some(-10));
+        assert_eq!(VILLAGE_UNIT_VALUE, 3);
     }
 }

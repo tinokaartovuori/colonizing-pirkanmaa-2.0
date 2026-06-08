@@ -272,14 +272,14 @@ export class AiController {
   }
 
   /** Total money leaving the treasury each round: wages PLUS building upkeep (Villages
-   *  −10, Outposts −50). The cash buffer must cover this — counting only wages used to
+   *  −5 (arc sd4; was −10), Outposts −50). The cash buffer must cover this — counting only wages used to
    *  under-reserve, so the lumpy farm-payout cycle could dip a village-heavy economy
    *  into the red. */
   private moneyDrainPerRound(p: PlayerBase): number {
     let upkeep = 0;
     for (const t of this.ownedTiles(p)) {
       const type = t.getBuilding()?.getType();
-      if (type === 'Village') upkeep += 10;
+      if (type === 'Village') upkeep += 5; // arc sd4 unit-cap rebalance (was 10)
       if (type === 'Outpost') upkeep += 50;
     }
     return this.salaryPerRound(p) + upkeep;
@@ -308,7 +308,7 @@ export class AiController {
       else if (type === 'Nuclear Power Plant' && workers > 0 && hasExpert) income += 160 * workers;
       else if (type === 'Hydroelectric Power Plant' && workers > 0 && hasExpert) income += 80 * workers;
       else if (tile instanceof AbundantForest && workers > 0) income += 15;
-      if (type === 'Village') income -= 10;
+      if (type === 'Village') income -= 5; // arc sd4 unit-cap rebalance (was 10)
       if (type === 'Outpost') income -= 50;
     }
     return income - this.salaryPerRound(p);
@@ -882,7 +882,7 @@ export class AiController {
     if (villages >= Math.min(5, 1 + harvesters * 3)) return;
     // Must own a forest to sustain the wood upkeep (or already harvest one).
     if (!this.ownedTiles(player).some((t) => t instanceof Forest && (t.getBuilding() === null || this.hasType(t, 'BasicWorker')))) return;
-    // A Village costs 10 money/round upkeep AND triggers a spending cascade — its +3
+    // A Village costs 5 money/round upkeep (arc sd4; was 10) AND triggers a spending cascade — its +3
     // cap slots get filled with workers (≈150 cash + 15/round wages). Require enough
     // money-income headroom to absorb all of that, or the young economy bleeds out
     // a few rounds after a too-eager village (the r34 deaths).

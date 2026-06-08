@@ -520,7 +520,8 @@ fn build_village(g: &Game, p: PlayerId, cfg: &TierConfig) -> Option<Candidate> {
     if !has_forest {
         return None;
     }
-    if m::net_money_per_round(g, p) - 15.0 < 0.0 {
+    // -10 = new village money upkeep (-5, arc sd4) + 5 buffer. Was -15 at -10 upkeep.
+    if m::net_money_per_round(g, p) - 10.0 < 0.0 {
         return None;
     }
     let post_upkeep = m::wood_upkeep(g, p) + 10.0;
@@ -536,7 +537,7 @@ fn build_village(g: &Game, p: PlayerId, cfg: &TierConfig) -> Option<Candidate> {
         p,
         &Local {
             cost: Some(cost),
-            net_delta: -10.0,
+            net_delta: -5.0, // arc sd4 unit-cap rebalance (was -10)
             target_value: 4.0,
             unit_cap_gain: 3.0,
             ..Default::default()

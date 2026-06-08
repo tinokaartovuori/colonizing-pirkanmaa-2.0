@@ -211,6 +211,21 @@ export const BRIDGE_PRODUCTION: ResourceMap = rmap({
 });
 
 // Building - Village (Neighborhood)
+// MONEY upkeep REBALANCED -10 → -5 (arc sd3 → sd4, 2026-06-08, "unit-cap economy" pass).
+// Unit cap = HQ(+3) + Σ Village(+3) + Mikontalo(+2); the ONLY scalable source of cap is
+// the Village, at -10 money/round each. Funding BOTH a ~3-4 soldier army AND winning
+// expansion needs cap to staff mines (2 workers + expert = 80 metal) + farms + experts
+// simultaneously — typically 3 Villages beyond HQ, i.e. -30 money/round of pure cap
+// overhead at -10. That overhead made army and winning expansion a genuine tradeoff
+// (every PPO/AZ champion capped ~0.62-0.66 trueWin; see CLAUDE.md "unit-cap economy
+// rebalance"). At -5 the same 3-Village cap costs -15/round — ~one staffed farm's net
+// income (≈+39) restored toward expansion, enough to carry the army's Outpost upkeep
+// (-50) + a couple soldier salaries while still expanding. The -10 wood/-10 stone upkeep,
+// the build cost, and VILLAGE_UNIT_VALUE are left UNCHANGED so a Village stays a real
+// commitment and the cap-per-Village stays put; only the binding money drain is halved.
+// Mirrors village_production() in rust-trainer/crates/cp-sim/src/resources.rs
+// (parity-locked) and the village net-money model in metrics.ts/metrics.rs + the
+// buildVillage netDelta in candidates.ts/candidates.rs.
 export const VILLAGE_BUILD_COST: ResourceMap = rmap({
   [BasicResource.MONEY]: -200,
   [BasicResource.WOOD]: -200,
@@ -218,7 +233,7 @@ export const VILLAGE_BUILD_COST: ResourceMap = rmap({
   [BasicResource.METAL]: -25,
 });
 export const VILLAGE_PRODUCTION: ResourceMap = rmap({
-  [BasicResource.MONEY]: -10,
+  [BasicResource.MONEY]: -5,
   [BasicResource.WOOD]: -10,
   [BasicResource.STONE]: -10,
 });

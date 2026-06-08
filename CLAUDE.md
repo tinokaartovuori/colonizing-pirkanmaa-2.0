@@ -79,6 +79,34 @@ correctness contract, which the tests lock down:
   all metal gates, re-export goldens, keep parity 8/8, and bump the arc. NOTE: the scripted
   league (`hard_ai.rs` `AiParams` presets — reserve / max_outposts / etc.) must be RE-TUNED
   against this new economy in a separate later phase.
+- **Deliberate balance divergence (unit-cap economy rebalance, 2026-06-08 — arc bump
+  `sd3` → `sd4`):** ONE money-only knob was cut to relieve the army↔win-rate TRADEOFF that
+  capped every PPO/AZ champion at ~0.62-0.66 trueWin. PPO+GAE had already broken the
+  AZ-MCTS credit-assignment wall, but building the army (more workers/villages/experts to
+  staff mines to the 80-metal optimum) still DRAINED the money needed to win by expansion —
+  army and win-rate were a genuine tradeoff. Root cause: unit cap = HQ(+3) + Σ Village(+3) +
+  Mikontalo(+2), so the ONLY scalable cap source is the Village, at −10 money/round each;
+  funding BOTH a ~3-4 soldier army AND winning expansion needs cap to staff mines + farms +
+  experts at once (typically 3 Villages beyond HQ = −30 money/round of pure cap overhead).
+  **Village per-round MONEY upkeep −10 → −5** (`VILLAGE_PRODUCTION` / `village_production`):
+  the same 3-Village cap now costs −15/round, ≈ one staffed farm's net income (≈+39) restored
+  toward expansion — enough to carry the army's Outpost upkeep (−50) + a couple soldier
+  salaries while still expanding. The Village −10 WOOD / −10 STONE upkeep, build cost
+  (200/200/100/25), and `VILLAGE_UNIT_VALUE` (3) are all left UNCHANGED so a Village stays a
+  real commitment and cap-per-Village is unchanged — only the binding money drain is halved;
+  for this knob `reference/` is **no longer** the source of truth. Parity-locked mirrors that
+  MUST move with the knob (else the AI economy model diverges from the rule): the village
+  money term in `net_money_per_round` / `netMoneyPerRound` AND `money_drain_per_round` /
+  `moneyDrainPerRound` (`−10 → −5`) in BOTH `metrics.rs` and `src/ai/nn/metrics.ts`, the
+  `build_village` / `buildVillage` `netDelta −10 → −5` and the sustainability gate
+  `net_money − 15 → − 10` in BOTH `candidates.rs` and `src/ai/nn/candidates.ts`, the HardAi's
+  internal economy estimates in `hard_ai.rs` (net-money/drain `−10 → −5` and the
+  `affordable_after_commit(..., 10 → 5, 4)` village gate), and the legacy in-browser AI's
+  `netMoneyPerRound` / `moneyDrainPerRound` in `src/managers/ai.ts`. This is parity-affecting:
+  any retune must edit BOTH the Rust and TS mirror plus all village-money model copies,
+  re-export goldens, keep parity 8/8, and bump the arc. NOTE: the scripted league
+  (`hard_ai.rs` `AiParams` presets — reserve / max_outposts / etc.) was tuned for sd3 and
+  must be RE-TUNED against this new economy in a separate later phase.
 
 ## Architecture
 

@@ -1078,7 +1078,7 @@ impl HardAi {
         let mut upkeep = 0.0;
         for t in self.owned_tiles(g, p) {
             match self.building_of(g, t) {
-                Some(BuildingType::Village) => upkeep += 10.0,
+                Some(BuildingType::Village) => upkeep += 5.0, // arc sd4 (was 10)
                 Some(BuildingType::Outpost) => upkeep += 50.0,
                 _ => {}
             }
@@ -1120,7 +1120,7 @@ impl HardAi {
                 }
             }
             if ty == Some(BuildingType::Village) {
-                income -= 10.0;
+                income -= 5.0; // arc sd4 unit-cap rebalance (was -10)
             }
             if ty == Some(BuildingType::Outpost) {
                 income -= 50.0;
@@ -2368,12 +2368,12 @@ impl HardAi {
             self.affords(g, player, &village_cost, self.params.reserve)
         };
         if cash_ok && self.budget > 0 {
-            // SELF-BANKRUPTCY GATE: a Village adds +10 money/round (plus wood/
-            // stone upkeep, which the pre-existing wood-buffer / stone-income
+            // SELF-BANKRUPTCY GATE: a Village adds -5 money/round (arc sd4; was -10)
+            // (plus wood/stone upkeep, which the pre-existing wood-buffer / stone-income
             // checks above already handle). 4-round buffer: Villages pay off
             // indirectly via the unit-cap → income chain, same as Outposts.
             let village_money = -village_cost.get(BasicResource::Money).unwrap_or(0);
-            if !self.affordable_after_commit(g, player, village_money, 10, 4) {
+            if !self.affordable_after_commit(g, player, village_money, 5, 4) {
                 return;
             }
             let ok = g.ai_build_building("Village", spot);
