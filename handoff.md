@@ -1,183 +1,181 @@
-# Handoff — DAgger works; push it to the full army gate (Colonizing Pirkanmaa AI)
+# Handoff — strength ceiling reached + champion deployed (Colonizing Pirkanmaa AI)
 
-_Last updated 2026-06-07 after the DAgger build + a major measurement-bug discovery + the
-Pass-collapse fix. **Read this first.** This supersedes the prior "START DAgger" handoff._
+_Last updated 2026-06-08, end of the "deploy + device + ceiling" session. **Read this first.**
+Supersedes the prior "DAgger" handoff._
 
-> Deployed game = TS/Phaser (`src/`). The **Rust trainer** (`rust-trainer/`) trains the
-> AlphaZero net that is redeployed into the TS game. Parity Rust⇄TS is bit-exact, locked by
-> `cargo run -p cp-train --bin parity --release` (must be **8/8**). Arc is now **sd3**.
-
----
-
-## TL;DR — the one job
-
-DAgger + RL produced the **first genuinely-measured competitive neural net**: `models/sd3/az/
-sd3-az-002` (= `rust-trainer/checkpoints-cnn-dagger-rl1/champion-best.json`), **MCTS sims=64 vs
-HARD: rawWin 0.633 / trueWin 0.567** — competitive with the `strong_army` yardstick (~0.52). DAgger
-broke the policy **Pass-collapse** (96%→0.9% greedy); the KL-anchored RL fine-tune then lifted the
-MCTS-deploy net to 0.633. **NOTE: every prior "0.55" was the sims=1 candidate-0 artifact, not a net
-— sd3-az-002 is the real baseline now.**
-
-**Still NOT at the full army gate** (peakSoldiers ≥1.5): ~41/60 games peak at *exactly 1 soldier*.
-The net WANTS an army (HireSoldier is its top intent) and builds *some* outposts, but outposts/game
-≈0.2 → most games have ZERO outposts → soldier cap stays 1, and on a ~1-mine economy it can't fund
-both outposts and soldiers. **This is the `metal-economy-root-cause` wall — the sd2→sd3 rebalance was
-incomplete.** The blocker is now FILLING the cap, not raising it.
-
-**Current job: break the cap-fill wall.** In progress: an RL reward-tuning run (`checkpoints-cnn-
-dagger-rl2`, init from sd3-az-002, `--w-army 0.4 --cap-potential 0.6`) to reward fielding soldiers
-enough to overcome upkeep. If that still caps at maxSoldiers≈1, the real fix is a further
-**metal/upkeep economy rebalance (arc sd3→sd4)** — game-rules change, re-tune league, re-export
-goldens, re-run DAgger. Levers, in order:
-1. **RL reward retune** (w-army / cap-potential) — cheap, stays in arc sd3 (CURRENT attempt).
-2. **Multi-round DAgger with a strict ~300-step budget per round** — BUT aggregation inflates the
-   step budget each round and re-creates the Pass attractor (round 2 → Pass 80%); you MUST scale
-   epochs DOWN per round to hold steps ~300. Round 1 alone from the prior best (15 epochs, ~295
-   steps) gave the best *greedy* net `checkpoints-cnn-dagger-r1best` (Pass 0.9%).
-3. **Economy rebalance arc sd3→sd4** — the structural fix if RL can't fund the army.
+> Deployed game = TS/Phaser (`src/`). The **Rust trainer** (`rust-trainer/`) trains the CNN net
+> that is redeployed into the TS game. Parity Rust⇄TS is bit-exact, locked by
+> `cargo run -p cp-train --bin parity --release` (must be **8/8**). Arc is now **sd5**.
+> Branch: `dagger-passcollapse-fix` (not yet merged to main).
 
 ---
 
-## ⚠️ Two findings that rewrite the prior handoff (do not skip)
+## TL;DR — where we are
 
-### 1. `mcts_select(sims=1)` is NET-INDEPENDENT — never validate with it
-The prior handoff said "validate greedy = sims=1". **Wrong.** With `n_sims=1` the PUCT root has
-0 edge-visits, so the U-term `prior·√(Σvisits)/(1+N)` is 0 for *every* edge → `chosen` always
-falls to candidate 0, **regardless of the net's weights**. Proof: two differently-trained nets
-gave bit-identical sims=1 benches. The real deploy uses **sims=64** (`TrainCfg::default`).
-→ **Every "trueWin 0.55" number in the project history was the candidate-0 policy, not a net.**
+**The project goal is essentially met and the strength frontier is mapped.** The champion is
+**`models/sd5/az/sd5-az-001`** (= `sd4-az-002` weights = `sd3-az-004` weights — the same PPO net
+re-registered across economy arcs; the net architecture is arc-independent).
 
-**Validate the policy head honestly with:**
-```bash
-cnn_train --validate-net --greedy --init <net.json> --bench-games 80 --cap 150 --threads 16
-```
-`--greedy` = pure policy-head argmax (`net_greedy_choice`: `forward_board_scalars` →
-`score_candidate_into` argmax, no MCTS, no value head). MCTS at sims=64 Pass-collapses while the
-value head is weak, so it measures the value head, not the policy — `--greedy` is the gate.
+- **Strength:** trueWin vs HARD **0.65–0.72**, peak army **~1.6** (army gate ≥1.5 cleared),
+  villages ~4.8, mines ~2.4/game, metal income ~108. Plays the full
+  **wood→mine→expert→outpost→soldier** chain. (Exact number depends on the bench's HARD-league
+  strength: ~0.70 vs the old league, ~0.65 vs the re-tuned sharper league. Both honest.)
+- **Deployed in-browser:** YES — the CNN champion actually plays in the TS game now (this was the
+  big deliverable; before this session the browser shipped only ancient models + a stale MLP).
+- **The ~0.70 plateau is a REAL ceiling for the current paradigm** (PPO + this net + this opponent),
+  proven three ways this session. Not an anchor artifact, not a capacity ceiling. Beating it needs a
+  genuinely new method, not another knob.
 
-### 2. The real wall was a Pass-collapse from a TRAIN/SERVE INPUT SKEW (now FIXED)
-Measured honestly, the BC seed (`checkpoints-cnn-sup-p3/champion-supervised.json`) played
-**Pass 96%**. Root cause (proven via `--diag-train`/`--diag-pass` in cnn_train.rs): the BC and
-DAgger β-turn examples were encoded from states staffed by the **expert's** `staff_buildings`
-(captured at `record_turn` phase-start, `hard_ai.rs:891`), but at play the **NN safety scaffold**
-(`scaffold_ensure`/`scaffold_staff`, mirroring `NeuralAiController`) staffs workers differently →
-the net trained on one input manifold, was evaluated on another. On its EXACT training states the
-net Passes 4.8% (it fit fine); on its own play states it Passes 92.6%. Secondary cause:
-over-convergence to a global Pass attractor (~680 steps → 94% Pass; ~260 steps → 33%; **sweet
-spot ≈300 steps**). The value head was NOT the culprit.
-
-**Fix (all training-only, parity 8/8):**
-- `make_example_for_scaffolded` + the β-turn recorder now **scaffold-encode** states to match the
-  deploy pipeline (the core fix).
-- `--rollout-eps` (ε-random) + force-progress in `dagger_rollout_turn`: a collapsed net still
-  generates diverse on-policy states for the expert to relabel (breaks the chicken-and-egg).
-- **Policy-only training** path (`train_grad_policy_only_scalars`/`train_grad_cached_policy_only`
-  in `spatial_net.rs` — additive, **forward inference UNCHANGED**, parity-neutral; default-on,
-  re-enable value with `--dagger-train-value`) — removes value-head trunk interference for the
-  noisy imitation z.
-
-**Result (honest policy-greedy, 80 games vs HARD):**
-| metric | BC seed | DAgger-fixed |
-|---|---|---|
-| Pass % | 96% | **27%** |
-| top intent | Pass | **HireSoldier 33%** |
-| outposts/game | 0.00 | 0.20 |
-| peakSoldiers/game | 0.00 | 0.75 |
-| trueWin | 0.04 | 0.19 |
-
-Best nets: `rust-trainer/checkpoints-cnn-dagger-win/champion-dagger.json` and
-`checkpoints-cnn-dagger-best/champion-dagger.json`.
+**Nothing is currently running.** No training, no agents. Dashboard is up (see Operational).
 
 ---
 
-## How DAgger is wired (cnn_train.rs `--dagger` mode)
-Per round: (1) roll the current net out **net-greedy** (`dagger_rollout_turn`, with ε-exploration)
-vs a league mix, with the **β-mix** (`dagger_play_one_game`) where the strong-army expert drives a
-champ turn with prob β_i = `beta0·decay^(i-1)`; record every champ decision-state **scaffold-encoded**
-and labelled by the expert (`expert_label` = `strong_army.record_turn`'s first intent) with
-army-chain **boosts** (`push_boosted`: outpost/mine/hire ×N); (2) aggregate into D (optionally
-seeded + boosted from the BC `dataset.json`); (3) retrain a fresh net (`train_dagger_net`,
-policy-only by default); (4) **policy-greedy bench** vs HARD (`bench_net_greedy`).
+## What this session accomplished (the arc)
 
-A known-good command (tune toward the gate; keep ~300 steps/round → games×epochs/(D/batch)):
-```bash
-cd rust-trainer && ./target/release/cnn_train --dagger \
-  --init checkpoints-cnn-sup-p3/champion-supervised.json \
-  --seed-dataset checkpoints-cnn-sup-p3/dataset.json \
-  --dagger-rounds 5 --dagger-games 300 --dagger-bench-games 60 \
-  --dagger-beta0 0.6 --dagger-beta-decay 0.6 \
-  --outpost-boost 8 --mine-boost 3 --hire-boost 1 \
-  --pass-keep 0.10 --attack-keep 0.35 --rollout-eps 0.1 \
-  --epochs 6 --batch 128 --lr 0.01 --cap 150 \
-  --net-size small --threads 16 --out checkpoints-cnn-dagger-<name>
-```
-Full flag list: `cnn_train --dagger --help`.
+1. **Closed the deploy-debt (the headline win).** The 0.70 bench number was previously unshippable.
+   Now the champion plays in-browser:
+   - `b4c384f` — ported the Rust army-economy **scaffold** into `src/ai/nn/controller.ts`
+     (mine builder staffing 2 workers + 1 expert = 80 metal, village/unit-cap builder, expert
+     placement, wood accumulation). Fixes the train/serve manifold skew that would otherwise
+     Pass-collapse a deployed net.
+   - `f17d981` — built **`src/ai/nn/spatial_net.ts`** from scratch (there was NO CNN forward in TS
+     before): Conv2d/Dense/GlobalAvgPool/tanh, 27-plane extractor, `scoreCandidate`,
+     `selectSpatialIndex` (greedy). Forward parity Rust⇄TS to **10 decimals** (via a `cnn_fwd_parity`
+     bin). Bundled the champion in `src/ai/nn/models_spatial.ts`, routed `model:sd4-az-002` through
+     the CNN controller, surfaced as the headline "CPU (Neural Champion)" in `startdialog.ts`.
+   - `971528b` — ported the **value head** (`valueFrom` + the 12 value_scalars, parity ≥6 dec) and a
+     **spatial PUCT MCTS** (`src/ai/nn/spatial_search.ts`, c_puct=1.5, action=most-visited). Deploy
+     runs **sims=32** (sims=64 is ~2.5s/decision in single-threaded JS — too slow; 32 is ~1s and
+     beats greedy). Raising to 64 needs a perf refactor — see Open Levers.
 
-## After the gate: the KL-anchored RL fine-tune (ALREADY BUILT)
-Once the DAgger seed validates as an army-builder (`--validate-net --greedy`: outposts/game ≥0.3
-AND peakSoldiers ≥1.5), RL-fine-tune anchored to it:
-```bash
-cd rust-trainer && RAYON_NUM_THREADS=16 ./target/release/cnn_train --train \
-  --turn-search --turn-search-spend --net-size small \
-  --init       checkpoints-cnn-dagger-<name>/champion-dagger.json \
-  --kl-anchor 0.1 --kl-anchor-net checkpoints-cnn-dagger-<name>/champion-dagger.json \
-  --income-lead-potential 0.3 --tile-potential 0.3 --w-cut 0.15 \
-  --record-opp-value --device-potential 0.2 --device-credit 0.15 \
-  --device-crack-credit 0.2 --hq-crack-credit 0.2 \
-  --cap-potential 0.3 --w-army 0.15 --bankruptcy-discount 0.5 \
-  --pfsp --script-opponents --script-frac 0.7 --tie-penalty 0.4 \
-  --stall-rounds 80 --shape-gamma 0.99 --shape-weight 0.3 \
-  --cap 150 --games 24 --bench-games 60 --threads 16 \
-  --vs-hard-frac 0.3 --lr 0.003 --epochs 2 \
-  --iters 200 --bench-every 5 --replay-every 25 \
-  --out checkpoints-cnn-dagger-rl1
-```
-No `--kl-decay` flag exists. Watch **outpostsPerGame + maxSoldiersPerGame RISE**. Register a
-baseline-beater: `npm run models -- register <champion-best.json> --arc sd3 --type az`.
+2. **sd4 league re-tune** (`64a7904`) — the sd3-tuned cash reserves were over-banked on the cheaper
+   sd4 economy; cut them. STRONG_ARMY yardstick 2/4→3/4 PASS (vs-HARD 49→61%). This sharpened the
+   bench opponents, which is why the honest champion number reads ~0.65 vs ~0.70.
+
+3. **Strange Device rebalance → arc sd4→sd5** (`fde4c25`). Diagnosed (from source) that the Device
+   was **balance-dominated**: device tile held **0 defenders** (1 raider cracks it), owning it
+   **halved** the soldier cap, and it won ~50 rounds later than conquest. The rebalance made it a
+   real choice: **1 defender allowed** (crack needs 2), **cap penalty ÷2 → −2**, **countdown
+   18→12 / 0.12→0.10** (win ~round 45–50). Build cost 1300 unchanged. Parity-affecting; goldens
+   re-exported, parity 8/8. **Also fixed a latent pre-existing parity break** (the scaffold port had
+   added `ensureMetalIncome` to TS `planTurn` but not Rust `plan_turn` → stale goldens).
+
+4. **Device-as-win-path: tested and CONCLUDED.** Even with the viable sd5 device + a *fixed*
+   reward-relevant incentive (Lever-C `device-credit` was a **silent no-op in `--ppo` mode** — only
+   AZ had it; fixed in `697ebe2`) + 33% device-rush opponents, the AI's device-win share plateaued
+   ~5% and a device-trained net benched **worse** (0.60 vs champion 0.65, army 1.2 vs 1.6). Verdict:
+   **the device is viable-but-inferior; conquest genuinely dominates this map.** The AI correctly
+   treats the device as a minority/situational option. This is correct play, not a bug. (Memory:
+   `device-win-lever.md`.)
+
+5. **Plateau diagnosed as a REAL ceiling** (memory `anchor-not-capacity.md`):
+   - A decision agent argued the plateau was an **anchor/auto-revert artifact** (every PPO run was
+     KL-tethered to the champion + an unconditional auto-revert that halves lr on any dip).
+   - Tested directly: added `--ppo-no-revert` (`e51f70d`), ran free exploration (anchor 0, no
+     revert, entropy 0.03). Result: trueWin **monotonically DECLINED 66→49** with lr healthy. So the
+     anchor was a **stabilizer holding the net at its peak**, NOT a cap below a higher one.
+   - Therefore: **NOT an anchor artifact, NOT a capacity ceiling** (the net represents the good
+     policy fine — it IS the champion; free optimization just can't *hold* it). It's a
+     PPO-optimization/opponent ceiling. **Capacity-scaling is NO-GO** (a bigger net hits the same
+     instability + huge parity/retrain cost).
+
+6. **Dashboard fixed + verified.** A user-facing PPO instrumentation gap: `--ppo` runs wrote a
+   reduced metric set (no per-game economy fields, no replay files), so the dashboard's economy panel
+   showed 0 mines/experts and the replay viewer was empty — even though the AI builds them.
+   `865bd9f` refactored the AZ bench-row + replay writers into shared fns called by BOTH `--train`
+   and `--ppo`, so future PPO runs emit the full 61-key metric set + 11 replay files. (A verify agent
+   confirmed the dashboard renders its source correctly — no display bug.)
 
 ---
 
-## Build / gates / run
+## Hard-won findings (don't re-derive these)
+
+- **PPO+GAE broke the project-long ~0.55 AZ-MCTS plateau** (earlier arc) → ~0.66, then the sd4
+  economy rebalance → 0.70. PPO is the proven paradigm. `--ppo` mode in `cnn_train.rs`, spec in
+  `rust-trainer/PPO-SPEC.md`.
+- **Raw-strength PPO is EXHAUSTED at ~0.65–0.72.** League-PPO, device-PPO, and free-exploration all
+  cap/decline here. KL-anchor + auto-revert are load-bearing for *stability*, not crutches.
+- **`--device-potential` is Ng-1999 potential shaping = provably policy-INVARIANT** — it cannot make
+  a dominated strategy chosen. Use the **non-potential** Lever-C `--device-credit`/`--device-crack-credit`
+  if you ever push the device again (but the device is concluded inferior).
+- **Bench variance is large:** 80-game ±0.1, 160-game ±0.06. **Use ≥160-game fixed-seed benches for
+  champion selection** — noisy 80-game selection has repeatedly picked lucky-but-worse nets.
+- **`--validate-net` is the honest policy-strength bench** (net-greedy/MCTS over candidates).
+  sims=1 MCTS is net-INDEPENDENT (always candidate 0) — never trust it.
+- The device is viable-but-inferior; **bridges are fully covered** (BuildBridge intent + planes; the
+  champion builds ~1/game — no lever there).
+
+---
+
+## Operational notes (READ before touching the trainer)
+
+- **SIGBUS hazard:** `cargo build` overwrites `target/release/cnn_train` and **kills any live run**
+  using it (replaced-ELF SIGBUS). If a run is live: build with `CARGO_TARGET_DIR=target-agent`, OR
+  launch runs from a **copied binary** (`cp target/release/cnn_train /tmp/cnn_train-X`). All this
+  session's runs used copied binaries. Right now nothing is live, so builds are safe.
+- **Leave ~4 cores free:** the trainer hardcodes 16 threads (20-core box). One ~16-thread run at a
+  time.
+- **Parity gate:** after ANY change near the sim/candidate/planes/spatial-forward, run
+  `cargo run -p cp-train --bin parity --release` → must be **8/8**. Parity-FREE (safe to edit
+  without golden re-export): `cnn_train.rs`, `hard_ai.rs`, `controller.rs/.ts`, `spatial_search.ts`,
+  `spatial_net.ts` (its *forward* is parity-locked; added backward/value fns are free).
+  Parity-AFFECTING (need Rust⇄TS mirror + `npx vite-node training/export-golden.ts` + 8/8 +
+  arc bump): `resources.*`, `model.*`, `managers.*`, `candidates.*`, `planes.rs`, spatial forward.
+- **Dashboard:** `setsid npx vite-node training/serve-dashboard.ts -- --dir <run-dir> --port 5199`
+  (the `for p in $(pgrep…); kill` one-liner trips exit 144 under the harness — kill and start in
+  separate calls; `setsid … < /dev/null &` works). Currently serving
+  `rust-trainer/checkpoints-cnn-champ-view` (a populated champion bench: economy panel + 11 replays).
+- **Known pre-existing test failures** (NOT from this session — confirm via `git stash`): vitest
+  `nnai` "structure" arch mismatch, `restore` seed-19, `spatial-mcts-strength`; cargo
+  `spatial_net::forward_backward_equivalence_golden`. Don't chase these.
+
+---
+
+## Open levers / next steps (in rough EV order)
+
+1. **Set the model pointers + merge.** `models/CHAMPION.json` is empty `{}` — the champion/deploy
+   pointers were never written. Set them to `sd5-az-001` (`npm run models -- promote …` / per
+   `models/README.md`). Then consider merging `dagger-passcollapse-fix` → `main` (16 commits;
+   deploy + sd5 + dashboard fix all live there).
+2. **Deploy at full strength (bounded, zero training risk):** the in-browser MCTS runs sims=32
+   because each sim re-rolls the opponent's full HARD turns (`advanceAfterRoot`) for the whole path
+   on every expansion. **Cache that rollout per node** → sims=64 becomes latency-viable → the
+   *shipped* AI matches the 0.70 bench. (A measurement agent stalled on the slow in-engine bench but
+   pinpointed this bottleneck. First confirm 64>32 strength, then optimize.)
+3. **To beat 0.72 you need a NEW method, not a knob.** Candidates, all uncertain:
+   - AZ-style **MCTS policy-improvement** training now that the value head works (caveat: AZ-MCTS
+     historically capped *lower* than PPO ~0.55 — the value head being good is the new variable).
+   - A different opponent/curriculum, or accept ~0.70 vs a strong scripted bot as a fine ceiling.
+   - Capacity-scaling is **NO-GO** unless free-exploration is re-run and the net *caps* (not
+     declines) ≤0.70 — this session it *declined*, which implicates optimization stability, not size.
+4. **Re-tune the league for sd5** if you train again — the sd4 reserve re-tune is mostly fine
+   (economy unchanged by sd5) but `DEVICE_RUSH_PARAMS` could be sharpened for the new device rules.
+
+---
+
+## Key files & commits (this session, branch `dagger-passcollapse-fix`)
+
+- Deploy: `src/ai/nn/{spatial_net.ts, spatial_search.ts, controller.ts, models_spatial.ts,
+  candidates.ts (+target field), index.ts}`, `src/ui/startdialog.ts`. Commits `b4c384f`, `f17d981`,
+  `971528b`.
+- sd5 rules: `rust-trainer/crates/cp-sim/src/{resources.rs, model.rs, managers.rs}` ⇄
+  `src/core/resources.ts`, `src/model/{tile.ts, player.ts}`. Commit `fde4c25`. Arc doc in `CLAUDE.md`
+  + `models/README.md`.
+- PPO instrumentation/levers: `rust-trainer/crates/cp-train/src/bin/cnn_train.rs` —
+  `write_bench_history_row` + `write_replays` shared fns, `--ppo-no-revert`, Lever-C wired into PPO,
+  DeviceRush oversampling. Commits `ab869a8`, `697ebe2`, `e51f70d`, `865bd9f`.
+- Champion: `models/sd5/az/sd5-az-001/` (commit `55b9f50`). Registry `models/registry.jsonl`.
+- Memory (the durable record): `~/.claude/.../memory/` — `champion-deployed.md`, `device-win-lever.md`,
+  `anchor-not-capacity.md`, `ppo-broke-plateau.md`, plus the index `MEMORY.md`.
+
+---
+
+## One-command sanity checks for the next session
+
 ```bash
-# Prereqs: Rust stable + Node 22 (.nvmrc). From repo root:
-npm install
-cd rust-trainer && cargo build -p cp-ai -p cp-train --release && cd ..
-
-# Gates after ANY change:
-cd rust-trainer && cargo run -p cp-train --bin parity --release   # MUST be 8/8 (DAgger is parity-free)
-cargo test -p cp-ai --release                                     # ~74 pass; the ONLY allowed
-  # failure is spatial_net::tests::forward_backward_equivalence_golden (pre-existing SIMD drift)
-cd .. && npx tsc --noEmit                                         # exit 0
+cd rust-trainer && cargo run -p cp-train --bin parity --release            # must be 8/8
+cd rust-trainer && cp target/release/cnn_train /tmp/cnn_train-chk && \
+  /tmp/cnn_train-chk --validate-net --init ../models/sd5/az/sd5-az-001/weights.json \
+  --games 80 --seed 4242 --sims 64                                          # ~0.65 trueWin, army ~1.6
+npm run build                                                               # tsc + vite, champion bundles in
 ```
-
-## Operational gotchas (learned the hard way)
-- **NEVER `pkill -f`/`pgrep -f` with a pattern in the SAME shell command** — it self-matches and
-  SIGTERMs the shell (exit 144). Kill training by PID via `ps -C cnn_train -o pid --no-headers`;
-  kill the dashboard by port `lsof -ti:8787 | xargs kill`.
-- **Keep only ONE 16-thread run live** (machine ~20 cores, **31 GB RAM**; the 1.7 GB BC dataset
-  parses to ~3.4 GB, training clones per-batch so memory is fine — but don't load it twice).
-- **Validate with `--validate-net --greedy`, never sims=1.** sims=1 is net-independent.
-- `spatial_net::tests::forward_backward_equivalence_golden` can fail as pre-existing SIMD/target-cpu
-  numeric drift — unrelated to logic; re-stamp if it's only drift.
-- `src/ai/nn/weights.ts` is a stale placeholder; its TS arch test fails until a retrained champion
-  is exported to TS (deploy step, separate from training).
-
-## Key files
-- DAgger + diagnostics + honest bench: `rust-trainer/crates/cp-train/src/bin/cnn_train.rs`
-  (`run_dagger`, `dagger_play_one_game`, `dagger_rollout_turn`, `net_greedy_choice`,
-  `bench_net_greedy`, `make_example_for_scaffolded`, `--diag-train`/`--diag-pass`,
-  `--validate-net --greedy`). Expert hook: `hard_ai.rs::record_turn`.
-- Policy-only training: `rust-trainer/crates/cp-ai/src/spatial_net.rs` (additive, parity-neutral).
-- Parity-LOCKED (don't break): candidates.rs⇄candidates.ts, resources.rs⇄resources.ts, planes.rs,
-  spatial_net.rs **architecture/forward** (the new training fns are fine).
-- BC seed + dataset: `rust-trainer/checkpoints-cnn-sup-p3/{champion-supervised.json, dataset.json}`.
-- Best DAgger nets: `rust-trainer/checkpoints-cnn-dagger-win/`, `checkpoints-cnn-dagger-best/`.
-- Prior-best (pre-fix, sims=1-measured): `checkpoints-cnn-foundation0-prep6/champion-best.json`
-  = `models/sd3/az/sd3-az-001` (its 0.55 was the candidate-0 artifact — treat with suspicion).
-
-## Fallbacks / strategic notes
-- **If multi-round DAgger caps below the army gate**: add the anti-Pass margin loss, then escalate
-  to the KL-anchored RL fine-tune (above). If RL caps at the teacher (~0.52), the reserved lever is
-  **PPO+GAE** for long-horizon credit on the Outpost→army payoff.
-- **Strongest deployable opponent TODAY**: `HardAi::strong_army()` (beats HARD ~52%, parity-locked
-  TS mirror) is shippable now. The neural effort is to *exceed* the scripts (research goal).
