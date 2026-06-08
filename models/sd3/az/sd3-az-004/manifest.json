@@ -1,0 +1,13 @@
+{
+  "id": "sd3-az-004",
+  "arc": "sd3",
+  "type": "az",
+  "version": 4,
+  "created_utc": "2026-06-08T01:07:44.840Z",
+  "git_commit": "d9f4aab",
+  "parent": null,
+  "training_config": {},
+  "benchmarks": {},
+  "status": "experimental",
+  "notes": "PPO+GAE warm-started from sd3-az-003 (the long-horizon-credit lever). Peak gen15: MCTS trueWin 0.6625 / rawWin 0.70 / maxSoldiers 1.34 / outposts 0.83 / villages 4.1. Broke the long ~0.55-0.60 AZ plateau — CONFIRMS credit-assignment was the root cause, NOT the economy (arc-sd4 rebalance shelved). Stable, no collapse (KL-anchor 0.3 + clip + auto-revert)."
+}
