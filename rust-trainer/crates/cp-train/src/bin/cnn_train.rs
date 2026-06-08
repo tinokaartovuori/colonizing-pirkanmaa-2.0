@@ -2411,6 +2411,11 @@ struct PpoCfg {
     shape_weight: f64,
     /// Value branch OFF for the first N iters (PPO-SPEC §8 optional warmup). Default 0.
     policy_only_warmup: usize,
+    /// Training-only collapse-guard switch (parity-free). When true the auto-revert
+    /// block (reload champion-best + halve lr on a >0.05 trueWin drop) is SKIPPED —
+    /// it only logs "no-revert: would have reverted". Anchor-decay still applies.
+    /// Default false → current behavior unchanged. Used by the free-exploration test.
+    no_revert: bool,
 }
 
 impl Default for PpoCfg {
@@ -2445,6 +2450,7 @@ impl Default for PpoCfg {
             temp: 1.0,
             shape_weight: 0.0,
             policy_only_warmup: 0,
+            no_revert: false,
         }
     }
 }
@@ -6175,6 +6181,7 @@ fn run_ppo(pcfg: &PpoCfg) {
             temp: pcfg.temp,
             shape_weight: pcfg.shape_weight,
             policy_only_warmup: pcfg.policy_only_warmup,
+            no_revert: pcfg.no_revert,
         };
         if n_steps >= tc.batch {
             'epochs: for ep in 0..pcfg.ppo_epochs {
@@ -6298,7 +6305,10 @@ fn run_ppo(pcfg: &PpoCfg) {
                 // rose (or matched) the best true-win: relax the anchor pull.
                 kl_coef = (kl_coef * 0.9).max(0.05);
             } else if true_win < best_true_win - 0.05 {
-                if let Ok(s) = std::fs::read_to_string(tc.out.join("champion-best.json")) {
+                if pcfg.no_revert {
+                    // Free-exploration test: collapse-guard DISABLED — log only.
+                    println!("iter {iter}: no-revert: would have reverted (trueWin {:.3} < best {:.3}); auto-revert is OFF", true_win, best_true_win);
+                } else if let Ok(s) = std::fs::read_to_string(tc.out.join("champion-best.json")) {
                     if let Ok(n) = serde_json::from_str::<SpatialNet>(&s) {
                         println!("iter {iter}: AUTO-REVERT — trueWin {:.3} dropped >0.05 below best {:.3}; reloading champion-best + halving lr", true_win, best_true_win);
                         net = n;
@@ -9436,6 +9446,7 @@ fn main() {
         if let Some(v) = arg_val(&args, "--ppo-temp") { pc.temp = v.parse::<f64>().unwrap_or(pc.temp).max(1e-3); }
         if let Some(v) = arg_val(&args, "--ppo-shape-weight") { pc.shape_weight = v.parse::<f64>().unwrap_or(pc.shape_weight).max(0.0); }
         if let Some(v) = arg_val(&args, "--ppo-policy-only-warmup") { pc.policy_only_warmup = v.parse::<usize>().unwrap_or(pc.policy_only_warmup); }
+        if args.iter().any(|a| a == "--ppo-no-revert") { pc.no_revert = true; }
         run_ppo(&pc);
         return;
     }
