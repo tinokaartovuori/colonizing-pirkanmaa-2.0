@@ -5960,6 +5960,11 @@ fn run_ppo(pcfg: &PpoCfg) {
     let mut sp_rng = XorShift32::new((tc.seed as u32) ^ 0x5EED_1234);
     let mut train_rng = XorShift32::new((tc.seed as u32) ^ 0xBEEF);
     let mut best_win = -1.0f64;
+    // Track the best TRUE-win separately: champion-best.json + the anchor-decay /
+    // auto-revert collapse-guard (§5) must compare like-with-like (true_win vs
+    // best_true_win). Comparing true_win against a raw-win `best_win` made the guard
+    // fire on EVERY bench (raw win is structurally > true win), halving lr to ~0.
+    let mut best_true_win = -1.0f64;
     // Mutable KL-anchor coef + lr that the collapse-guard decay (§5) adjusts.
     let mut kl_coef = pcfg.kl_anchor;
     let mut cur_lr = tc.lr;
@@ -6197,6 +6202,11 @@ fn run_ppo(pcfg: &PpoCfg) {
             let mut tag = "";
             if br.win > best_win {
                 best_win = br.win;
+            }
+            // champion-best.json = best TRUE-win net (the honest gate we register on),
+            // not best raw-win.
+            if true_win > best_true_win {
+                best_true_win = true_win;
                 let _ = std::fs::write(tc.out.join("champion-best.json"), &json);
                 tag = " *BEST*";
             }
@@ -6215,14 +6225,13 @@ fn run_ppo(pcfg: &PpoCfg) {
             // If true_win rose vs best: relax the anchor (kl_coef *= 0.9, floor 0.05).
             // If it dropped >0.05 below the best bench: AUTO-REVERT to champion-best
             // + halve lr (and restore the anchor coef). Target-KL stays on throughout.
-            if true_win > best_win {
-                // (best_win tracks br.win above; we use true_win as the quality signal
-                //  for anchor decay per the spec.)
+            if true_win >= best_true_win {
+                // rose (or matched) the best true-win: relax the anchor pull.
                 kl_coef = (kl_coef * 0.9).max(0.05);
-            } else if true_win < best_win - 0.05 {
+            } else if true_win < best_true_win - 0.05 {
                 if let Ok(s) = std::fs::read_to_string(tc.out.join("champion-best.json")) {
                     if let Ok(n) = serde_json::from_str::<SpatialNet>(&s) {
-                        println!("iter {iter}: AUTO-REVERT — trueWin {:.3} dropped >0.05 below best {:.3}; reloading champion-best + halving lr", true_win, best_win);
+                        println!("iter {iter}: AUTO-REVERT — trueWin {:.3} dropped >0.05 below best {:.3}; reloading champion-best + halving lr", true_win, best_true_win);
                         net = n;
                         cur_lr *= 0.5;
                         kl_coef = pcfg.kl_anchor; // restore the anchor pull
