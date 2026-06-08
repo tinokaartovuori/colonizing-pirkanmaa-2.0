@@ -310,6 +310,10 @@ struct PpoStep {
     /// Φ(s) of the acting seat at this state (for optional `--ppo-shape-weight`
     /// terminal-only shaping; ignored when shape-weight = 0).
     phi: f64,
+    /// Whether the LEARNER owned a STANDING Strange Device at this decision (PPO
+    /// Lever-C device-DEFEND credit: a HireSoldier while owning a device). Captured
+    /// at record time. `false` for every step when no device-credit is requested.
+    owned_standing_device: bool,
 }
 
 /// Generalized Advantage Estimation, GAE(λ) (PPO-SPEC §2). Pure helper over ONE
@@ -4365,6 +4369,10 @@ fn play_one_game_ppo(
                         tc.soldier_cap_potential, tc.income_lead_potential, tc.cap_potential,
                         tc.idle_flow_penalty, tc.w_army, tc.w_cut, tc.w_expert, tc.w_soldier_forward,
                     );
+                    let owned_standing_device = g
+                        .find_strange_device_tile()
+                        .map(|dt| g.tiles[dt.0].owner == Some(cur))
+                        .unwrap_or(false);
                     steps.push(PpoStep {
                         planes,
                         h,
@@ -4380,6 +4388,7 @@ fn play_one_game_ppo(
                         vtarg: 0.0,
                         chosen_intent: chosen_cand.intent,
                         phi,
+                        owned_standing_device,
                     });
                     let ii = chosen_cand.intent as usize;
                     if ii < NUM_INTENTS {
@@ -4462,6 +4471,52 @@ fn play_one_game_ppo(
     for (i, st) in steps.iter_mut().enumerate() {
         st.adv = adv[i];
         st.vtarg = vtarg[i];
+    }
+
+    // PPO Lever-C — ACTION-LEVEL DEVICE CREDIT (mirrors the MCTS-path post-hoc
+    // credit in `play_one_game_explore`, but applied to the GAE ADVANTAGE since the
+    // PPO loss is advantage-weighted). In a game the learner WON by Device, add
+    // `+device_credit` to the advantage of its device-COMMIT (BuildStrangeDevice) and
+    // device-DEFEND (HireSoldier while owning a standing device) decisions; in a game
+    // the learner owned a standing device but LOST by Device (opponent), subtract
+    // `device_credit` from its PASSIVE decisions (neither committing nor defending),
+    // so it learns not to throw a winnable device race. Each is a REWARD-RELEVANT
+    // (policy-changing) reweight — NOT a potential. `device_credit = 0` → no-op.
+    let learner_won_by_device = device_decided && winner_pid == Some(PlayerId(0));
+    let learner_lost_by_device = device_decided && winner_pid.is_some() && winner_pid != Some(PlayerId(0));
+    if tc.device_credit > 0.0 {
+        let c = tc.device_credit;
+        for st in steps.iter_mut() {
+            let is_device_commit = st.chosen_intent == candidates::Intent::BuildStrangeDevice;
+            let is_device_defend = st.owned_standing_device
+                && st.chosen_intent == candidates::Intent::HireSoldier;
+            if learner_won_by_device && (is_device_commit || is_device_defend) {
+                st.adv += c;
+            } else if learner_lost_by_device
+                && st.owned_standing_device
+                && !is_device_commit
+                && !is_device_defend
+            {
+                st.adv -= c;
+            }
+        }
+    }
+
+    // PPO Plan-B `--device-crack-credit` (mirrors the MCTS-path cracker credit): for
+    // any learner CrackDevice decision in a game the learner WON by Conquest or
+    // Device, add `device_crack_credit · |adv|` to that decision's advantage so
+    // cracking an enemy device stops being dead weight. `0` → no-op.
+    if tc.device_crack_credit > 0.0 {
+        let c = tc.device_crack_credit;
+        let crack_win = winner_pid == Some(PlayerId(0))
+            && matches!(g.last_win_cause(), Some(WinCause::Conquest) | Some(WinCause::Device));
+        if crack_win {
+            for st in steps.iter_mut() {
+                if st.chosen_intent == candidates::Intent::CrackDevice {
+                    st.adv += c * st.adv.abs();
+                }
+            }
+        }
     }
 
     let outcome = PpoOutcome {
@@ -5953,6 +6008,12 @@ fn run_ppo(pcfg: &PpoCfg) {
         pcfg.kl_anchor, pcfg.temp, pcfg.shape_weight, pcfg.policy_only_warmup,
         tc.bench_every, tc.bench_games, tc.script_opponents, tc.script_frac, tc.pfsp, tc.cap, tc.width, tc.height
     );
+    println!(
+        "cnn_train --ppo: LEVER-C device-credit={:.3} (advantage bump on device-commit/defend; 0=no-op) \
+         device-crack-credit={:.3} (advantage bump on winning CrackDevice; 0=no-op) device-bonus={:.3} \
+         device-potential={:.3} (Φ; should be 0 for this run)",
+        tc.device_credit, tc.device_crack_credit, tc.device_bonus, tc.device_potential
+    );
 
     let log_path = tc.out.join("log.jsonl");
     let bench_hist = tc.out.join("benchmark-history.jsonl");
@@ -5992,18 +6053,20 @@ fn run_ppo(pcfg: &PpoCfg) {
                 let script_pick: Option<ScriptKind> = if tc.script_opponents && tc.script_frac > 0.0 {
                     let mut s_rng = XorShift32::new(seed ^ 0x5C1B_7E5C);
                     if s_rng.next_f64() < tc.script_frac {
-                        // DEVICE-CONTEST RUN: oversample DeviceRush (≈40% of script
-                        // picks, vs the uniform 25%) so the learner regularly faces a
-                        // device-rusher and must learn to contest/out-race devices —
-                        // the whole point of the --device-potential run. The remaining
-                        // 60% is split evenly across Rusher / Fortress / StrongArmy.
-                        // Training-signal-only (opponent sampling); parity-free.
+                        // DEVICE-CURRICULUM RUN (sd5, 2026-06-08): heavily oversample
+                        // DeviceRush (≈78% of script picks) so DeviceRush lands at
+                        // ~33% of ALL training games (with vs_hard_frac 0.5 /
+                        // script_frac 0.85: 0.5·0.85·0.78 ≈ 0.33). The learner must
+                        // now regularly out-race OR crack a (post-sd5-rebalance,
+                        // genuinely viable) device, making device-contest win-necessary.
+                        // The remaining ~22% is split evenly across Rusher / Fortress /
+                        // StrongArmy. Training-signal-only (opponent sampling); parity-free.
                         let r = s_rng.next_f64();
-                        let pick = if r < 0.40 {
+                        let pick = if r < 0.78 {
                             ScriptKind::DeviceRush
-                        } else if r < 0.60 {
+                        } else if r < 0.85 {
                             ScriptKind::Rusher
-                        } else if r < 0.80 {
+                        } else if r < 0.93 {
                             ScriptKind::Fortress
                         } else {
                             ScriptKind::StrongArmy
@@ -9102,6 +9165,22 @@ fn run_validate_net(args: &[String]) {
     println!("  soldier stack bins   : [1]={} [2]={} [3]={}",
         br.stack_bins[0], br.stack_bins[1], br.stack_bins[2]);
 
+    // DEVICE METRICS (champion seat). deviceBuildRate = champ built a standing
+    // device / games. deviceSurvival = champ device-WINS / champ device-built (the
+    // champion's true conversion of a built device into a win). device-win share =
+    // champ device-wins / games. crackDevice = champion's attempts/successes.
+    let champ_build_rate = br.champ_device_built as f64 / n;
+    let champ_dev_win_share = br.champ_device_won as f64 / n;
+    let champ_dev_survival = if br.champ_device_built > 0 {
+        format!("{:.4}", br.champ_device_won as f64 / br.champ_device_built as f64)
+    } else { "n/a (0 built)".to_string() };
+    println!("  --- DEVICE (champion seat) ---");
+    println!("  deviceBuildRate      : {:.4}  (champ built {} of {} games)", champ_build_rate, br.champ_device_built, br.n);
+    println!("  device-win share     : {:.4}  (champ device-wins {})", champ_dev_win_share, br.champ_device_won);
+    println!("  deviceSurvival       : {}  (champ device-wins / champ device-built)", champ_dev_survival);
+    println!("  CrackDevice          : attempts {} / successes {}", br.crack_device_attempts, br.crack_device_successes);
+    println!("  HARD device          : built {} / wins {} / denied {}", br.hard_device_built, br.hard_device_won, br.hard_device_denied);
+
     // In-PLAY intent histogram (what the net actually chooses during the games).
     let total_dec = br.decisions.max(1) as f64;
     println!("\n  --- in-play intent histogram ({} decisions over {} games) ---", br.decisions, br.n);
@@ -9322,6 +9401,14 @@ fn main() {
             pc.base.script_frac = v.parse::<f64>().unwrap_or(pc.base.script_frac).clamp(0.0, 1.0);
         }
         if let Some(v) = arg_val(&args, "--device-bonus") { pc.base.device_bonus = v.parse().unwrap_or(pc.base.device_bonus); }
+        // PPO Lever-C: action-level device-credit / crack-credit (applied to GAE
+        // advantage in `play_one_game_ppo`). Default 0 = no-op.
+        if let Some(v) = arg_val(&args, "--device-credit") {
+            pc.base.device_credit = v.parse::<f64>().unwrap_or(pc.base.device_credit).max(0.0);
+        }
+        if let Some(v) = arg_val(&args, "--device-crack-credit") {
+            pc.base.device_crack_credit = v.parse::<f64>().unwrap_or(pc.base.device_crack_credit).max(0.0);
+        }
         if let Some(v) = arg_val(&args, "--tie-penalty") { pc.base.tie_penalty = v.parse().unwrap_or(pc.base.tie_penalty); }
         if let Some(v) = arg_val(&args, "--stall-rounds") { pc.base.stall_rounds = v.parse().unwrap_or(pc.base.stall_rounds); }
         if let Some(v) = arg_val(&args, "--kl-anchor-net") { pc.base.kl_anchor_net = PathBuf::from(v); }
