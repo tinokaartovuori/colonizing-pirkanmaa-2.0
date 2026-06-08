@@ -5992,13 +5992,19 @@ fn run_ppo(pcfg: &PpoCfg) {
                 let script_pick: Option<ScriptKind> = if tc.script_opponents && tc.script_frac > 0.0 {
                     let mut s_rng = XorShift32::new(seed ^ 0x5C1B_7E5C);
                     if s_rng.next_f64() < tc.script_frac {
-                        let r = s_rng.next_f64() * 4.0;
-                        let pick = if r < 1.0 {
-                            ScriptKind::Rusher
-                        } else if r < 2.0 {
-                            ScriptKind::Fortress
-                        } else if r < 3.0 {
+                        // DEVICE-CONTEST RUN: oversample DeviceRush (≈40% of script
+                        // picks, vs the uniform 25%) so the learner regularly faces a
+                        // device-rusher and must learn to contest/out-race devices —
+                        // the whole point of the --device-potential run. The remaining
+                        // 60% is split evenly across Rusher / Fortress / StrongArmy.
+                        // Training-signal-only (opponent sampling); parity-free.
+                        let r = s_rng.next_f64();
+                        let pick = if r < 0.40 {
                             ScriptKind::DeviceRush
+                        } else if r < 0.60 {
+                            ScriptKind::Rusher
+                        } else if r < 0.80 {
+                            ScriptKind::Fortress
                         } else {
                             ScriptKind::StrongArmy
                         };
