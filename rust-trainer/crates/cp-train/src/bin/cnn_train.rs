@@ -5933,6 +5933,233 @@ fn write_spatial_json_to(
 }
 
 // ---------------------------------------------------------------------------
+// Shared dashboard artifact writers (used by BOTH `run_train` and `run_ppo`)
+// ---------------------------------------------------------------------------
+//
+// These were extracted from `run_train`'s inline bench/replay blocks so the PPO
+// path emits the IDENTICAL benchmark-history rows + replay_*.json files (so the
+// dashboard's economy panel + replay viewer light up for PPO runs too). They are
+// training-instrumentation only — PARITY-FREE.
+
+/// Write ONE full benchmark-history row (the complete metric superset the
+/// dashboard reads: economy/mine-staffing/soldier/device/league fields). Called
+/// by both `run_train` and `run_ppo` so the two emit byte-identical rows for a
+/// given `(br, lb_opt)`.
+fn write_bench_history_row(
+    bench_hist: &PathBuf,
+    iter: usize,
+    br: &BenchResult,
+    lb_opt: &Option<LeagueBench>,
+) {
+    let seat = |w: usize, m: usize| if m > 0 { format!("{:.4}", w as f64 / m as f64) } else { "null".to_string() };
+    // CHAMPION-only device metrics (the honest conversion):
+    //   deviceBuildRate = champ_device_built / games
+    //   deviceSurvival  = champ_device_won  / champ_device_built (champ's true conversion)
+    // The old owner-agnostic numbers conflated HARD's devices (e.g. (1+10)/15
+    // = 0.733 "survival" was mostly HARD), so they are dropped from the
+    // headline keys and exposed under `*Any*` for continuity.
+    let champ_surv = if br.champ_device_built > 0 {
+        format!("{:.4}", br.champ_device_won as f64 / br.champ_device_built as f64)
+    } else { "null".to_string() };
+    let hard_surv = if br.hard_device_built > 0 {
+        format!("{:.4}", br.hard_device_won as f64 / br.hard_device_built as f64)
+    } else { "null".to_string() };
+    let any_surv = if br.device_games > 0 { format!("{:.4}", br.device_wins as f64 / br.device_games as f64) } else { "null".to_string() };
+    let rmean = |i: usize| if br.rounds_cnt[i] > 0 { format!("{:.1}", br.rounds_sum[i] / br.rounds_cnt[i] as f64) } else { "null".to_string() };
+    let intents_json = bench_intents_json(br);
+    // --- Step-0 HONEST + behavioral telemetry (always computed; old history
+    // lines lacking these fields are guarded with defaults on the dashboard).
+    let bank_share = match br.bankruptcy_win_share() { Some(v) => format!("{:.4}", v), None => "null".to_string() };
+    let device_denial = if br.hard_device_built > 0 {
+        format!("{:.4}", br.hard_device_denied as f64 / br.hard_device_built as f64)
+    } else { "null".to_string() };
+    // Per-game peak-soldier distribution: [0, 1, 2, 3, 4+] game-counts.
+    let b = &br.champ_max_soldiers_bins;
+    let champ_soldier_bins = format!(
+        "{{\"0\":{},\"1\":{},\"2\":{},\"3\":{},\"4+\":{}}}",
+        b[0], b[1], b[2], b[3], b[4]
+    );
+    // --- M1–M9 behavioral diagnostic JSON ----------------------------------
+    let null_or_pct = |num: u64, den: u64| if den > 0 {
+        format!("{:.4}", num as f64 / den as f64)
+    } else { "null".to_string() };
+    let null_or_f64 = |num: f64, den: u64| if den > 0 {
+        format!("{:.4}", num / den as f64)
+    } else { "null".to_string() };
+    // M1 — unit efficiency (worker+expert prod / (prod+idle)) over all bench games.
+    let unit_total = br.unit_prod_rounds_sum + br.unit_idle_rounds_sum;
+    let unit_eff = null_or_pct(br.unit_prod_rounds_sum, unit_total);
+    // M2 — soldier-position split (attack / defend / idle shares).
+    let sol_total = br.sol_attack_rounds_sum + br.sol_defend_rounds_sum + br.sol_idle_rounds_sum;
+    let sol_atk = null_or_pct(br.sol_attack_rounds_sum, sol_total);
+    let sol_def = null_or_pct(br.sol_defend_rounds_sum, sol_total);
+    let sol_idle = null_or_pct(br.sol_idle_rounds_sum, sol_total);
+    // M3 / M4 — win-rate-by-builds histogram (bins 0/1/2/3+).
+    let vg = &br.villages_built_games; let vw = &br.villages_built_wins;
+    let og = &br.outposts_built_games; let ow = &br.outposts_built_wins;
+    let win_by_villages = format!(
+        "{{\"0\":{{\"games\":{},\"wins\":{}}},\"1\":{{\"games\":{},\"wins\":{}}},\
+         \"2\":{{\"games\":{},\"wins\":{}}},\"3+\":{{\"games\":{},\"wins\":{}}}}}",
+        vg[0], vw[0], vg[1], vw[1], vg[2], vw[2], vg[3], vw[3]);
+    let win_by_outposts = format!(
+        "{{\"0\":{{\"games\":{},\"wins\":{}}},\"1\":{{\"games\":{},\"wins\":{}}},\
+         \"2\":{{\"games\":{},\"wins\":{}}},\"3+\":{{\"games\":{},\"wins\":{}}}}}",
+        og[0], ow[0], og[1], ow[1], og[2], ow[2], og[3], ow[3]);
+    // M6 — peak champ-soldier STACK bins (1 / 2 / 3) over bench games (omits 0).
+    let sb = &br.stack_bins;
+    let stack_bins_json = format!(
+        "{{\"1\":{},\"2\":{},\"3\":{}}}", sb[0], sb[1], sb[2]);
+    // Per-MINE staffing (worker-count distribution + the Expert lever).
+    let mwb = &br.mine_worker_bins;
+    let mine_worker_bins_json = format!(
+        "{{\"1\":{},\"2\":{},\"3\":{}}}", mwb[0], mwb[1], mwb[2]);
+    // M7 — experts hired per game (champ side; already in `extra`).
+    let experts_per_game = br.extra.hire_expert as f64 / br.n as f64;
+    // M8 — average frontier ratio (averaged across games that had ≥1 round).
+    let frontier_ratio = null_or_f64(br.frontier_ratio_sum, br.frontier_ratio_games as u64);
+    // M9 — average game length split by champion outcome.
+    let win_rounds = if br.champ_win_rounds_n > 0 {
+        format!("{:.2}", br.champ_win_rounds_sum as f64 / br.champ_win_rounds_n as f64)
+    } else { "null".to_string() };
+    let loss_rounds = if br.champ_loss_rounds_n > 0 {
+        format!("{:.2}", br.champ_loss_rounds_sum as f64 / br.champ_loss_rounds_n as f64)
+    } else { "null".to_string() };
+    // PILLAR 6 — per-opponent league win-rates.
+    let lb_field = |w: Option<f64>| match w { Some(v) => format!("{:.4}", v), None => "null".to_string() };
+    let (lb_rusher, lb_fortress, lb_devrush, lb_strong, lb_hard, lb_per) = match lb_opt {
+        Some(lb) => (lb_field(Some(lb.rusher)), lb_field(Some(lb.fortress)),
+                     lb_field(Some(lb.device_rush)), lb_field(Some(lb.strong_army)),
+                     lb_field(Some(lb.hard)), lb.per as i64),
+        None => ("null".into(), "null".into(), "null".into(), "null".into(), "null".into(), 0i64),
+    };
+    append_line(bench_hist, &format!(
+        "{{\"gen\":{},\"winRate\":{:.4},\"lossRate\":{:.4},\"timeoutRate\":{:.4},\"tileFrac\":{:.4},\
+         \"nGames\":{},\"winSeat0\":{},\"winSeat1\":{},\
+         \"champWins\":{},\"hardWins\":{},\"trueTie\":{},\
+         \"trueWinVsHard\":{:.4},\"bankruptcyWinShare\":{},\
+         \"villagesPerGame\":{:.4},\"outpostsPerGame\":{:.4},\"maxSoldiersPerGame\":{:.4},\
+         \"champSoldierBins\":{},\
+         \"deviceDenialRate\":{},\"hardDeviceBuilt\":{},\"hardDeviceDenied\":{},\
+         \"deviceBuildRate\":{:.4},\"deviceSurvival\":{},\
+         \"hardDeviceBuildRate\":{:.4},\"hardDeviceSurvival\":{},\
+         \"anyDeviceBuildRate\":{:.4},\"anyDeviceSurvival\":{},\
+         \"roundsByCause\":{{\"device\":{},\"domination\":{},\"conquest\":{},\"bankruptcy\":{},\"tiebreak\":{}}},\
+         \"unitEfficiency\":{},\
+         \"unitUsefulRounds\":{},\"unitUselessRounds\":{},\
+         \"soldierAttack\":{},\"soldierDefend\":{},\"soldierIdle\":{},\
+         \"soldierUsefulRounds\":{},\"soldierUselessRounds\":{},\
+         \"winByVillagesBuilt\":{},\"winByOutpostsBuilt\":{},\
+         \"stackBins\":{},\
+         \"mineWorkerBins\":{},\"minesWithExpert\":{},\"mineCount\":{},\
+         \"plantsWithExpert\":{},\"plantCount\":{},\
+         \"standingExpertsPerGame\":{:.4},\
+         \"expertsHiredPerGame\":{:.4},\
+         \"frontierRatio\":{},\
+         \"roundsByOutcome\":{{\"win\":{},\"loss\":{}}},\
+         \"bridgesPerGame\":{:.4},\
+         \"benchVsRusher\":{},\"benchVsFortress\":{},\"benchVsDeviceRush\":{},\
+         \"benchVsStrongArmy\":{},\"benchVsHard\":{},\"benchPerOpp\":{},\
+         \"crackDeviceAttempts\":{},\"crackDeviceSuccesses\":{},\
+         \"crackHQAttempts\":{},\"crackHQSuccesses\":{},\
+         \"intents\":{},\"decisions\":{},\"ts\":\"{}\"}}",
+        iter, br.win, br.loss, br.timeout, br.tile_frac,
+        br.n, seat(br.wins_seat0, br.n_seat0), seat(br.wins_seat1, br.n_seat1),
+        br.champ_cause.json(), br.hard_cause.json(), br.true_tie,
+        br.true_win_vs_hard(), bank_share,
+        br.champ_villages_sum as f64 / br.n as f64,
+        br.champ_outposts_sum as f64 / br.n as f64,
+        br.champ_max_soldiers_sum as f64 / br.n as f64,
+        champ_soldier_bins,
+        device_denial, br.hard_device_built, br.hard_device_denied,
+        br.champ_device_built as f64 / br.n as f64, champ_surv,
+        br.hard_device_built as f64 / br.n as f64, hard_surv,
+        br.device_games as f64 / br.n as f64, any_surv,
+        rmean(0), rmean(1), rmean(2), rmean(3), rmean(4),
+        unit_eff,
+        br.unit_useful_rounds_sum, br.unit_useless_rounds_sum,
+        sol_atk, sol_def, sol_idle,
+        br.sol_attack_rounds_sum + br.sol_defend_rounds_sum,
+        br.sol_idle_rounds_sum,
+        win_by_villages, win_by_outposts,
+        stack_bins_json,
+        mine_worker_bins_json, br.mine_with_expert_sum, br.mine_total_sum,
+        br.plant_with_expert_sum, br.plant_total_sum,
+        br.champ_experts_sum as f64 / br.n as f64,
+        experts_per_game,
+        frontier_ratio,
+        win_rounds, loss_rounds,
+        br.champ_bridges_sum as f64 / br.n as f64,
+        lb_rusher, lb_fortress, lb_devrush, lb_strong, lb_hard, lb_per,
+        br.crack_device_attempts, br.crack_device_successes,
+        br.crack_hq_attempts, br.crack_hq_successes,
+        intents_json, br.decisions, now_iso()));
+}
+
+/// Generate + write the dashboard replay files for the current `net`:
+/// `replay.json` (champ-vs-HARD), `replay_selfplay.json`, and one
+/// `replay_vs_<tag>.json` per scripted opponent. Heavy MCTS observability pass;
+/// runs all games in ONE rayon `into_par_iter` so wall time is the slowest game,
+/// not the sum. Per-game seeds use the SAME formulas as the original inline
+/// `run_train` block so captures are unchanged for `--train`. Called by both
+/// `run_train` and `run_ppo`.
+fn write_replays(net: &SpatialNet, cfg: &TierConfig, tc: &TrainCfg, iter: usize) {
+    let rstart = Instant::now();
+    let rg = tc.replay_games as u32;
+    let mut tagged: Vec<(u32, String)> = (0..(2 * rg))
+        .into_par_iter()
+        .map(|k| {
+            if k < rg {
+                let gi = k;
+                let hseed = (tc.seed as u32) ^ (iter as u32).wrapping_mul(0x9E37_79B1) ^ 0x9E_F00D ^ gi.wrapping_mul(0x2545_F491);
+                (k, record_replay(net, cfg, tc, iter, hseed, false))
+            } else {
+                let gi = k - rg;
+                let sseed = (tc.seed as u32) ^ (iter as u32).wrapping_mul(0x85EB_CA77) ^ 0x5E1F ^ gi.wrapping_mul(0x9E37_79B1);
+                (k, record_replay(net, cfg, tc, iter, sseed, true))
+            }
+        })
+        .collect();
+    tagged.sort_by_key(|(k, _)| *k);
+    let hard_arr: Vec<String> = tagged.iter().filter(|(k, _)| *k < rg).map(|(_, s)| s.clone()).collect();
+    let self_arr: Vec<String> = tagged.iter().filter(|(k, _)| *k >= rg).map(|(_, s)| s.clone()).collect();
+    let _ = std::fs::write(tc.out.join("replay.json"), format!("[{}]", hard_arr.join(",")));
+    let _ = std::fs::write(tc.out.join("replay_selfplay.json"), format!("[{}]", self_arr.join(",")));
+    // SCRIPTED-OPPONENT REPLAYS — one array file per scripted opponent, each with
+    // `replay_games` distinct-seed heavy MCTS games. Same dedicated seed mixer as
+    // the original inline block (independent of the hard/self seeds above).
+    let pairs: Vec<(ScriptKind, usize)> = SCRIPT_REPLAY_KINDS
+        .iter()
+        .flat_map(|&k| (0..tc.replay_games).map(move |g| (k, g)))
+        .collect();
+    let script_games: Vec<(ScriptKind, String)> = pairs
+        .into_par_iter()
+        .map(|(kind, gi)| {
+            let kix = kind as u32;
+            let gx = gi as u32;
+            let pseed = (tc.seed as u32)
+                ^ (iter as u32).wrapping_mul(0xC2B2_AE35)
+                ^ 0x5C12_DA01
+                ^ kix.wrapping_mul(0x27D4_EB2F)
+                ^ gx.wrapping_mul(0x165667B1);
+            (kind, record_replay_script(net, cfg, tc, iter, pseed, kind))
+        })
+        .collect();
+    for &kind in &SCRIPT_REPLAY_KINDS {
+        let games: Vec<&str> = script_games
+            .iter()
+            .filter(|(k, _)| *k == kind)
+            .map(|(_, j)| j.as_str())
+            .collect();
+        let path = tc.out.join(format!("replay_vs_{}.json", script_mode_tag(kind)));
+        let _ = std::fs::write(path, format!("[{}]", games.join(",")));
+    }
+    println!(
+        "iter {iter}: replay capture {}+{}+{}×{} games (merged parallel) in {:.1}s",
+        tc.replay_games, tc.replay_games, SCRIPT_REPLAY_KINDS.len(), tc.replay_games, rstart.elapsed().as_secs_f64()
+    );
+}
+
+// ---------------------------------------------------------------------------
 // PPO + GAE(λ) training loop (PPO-SPEC §7)
 // ---------------------------------------------------------------------------
 //
@@ -6236,8 +6463,13 @@ fn run_ppo(pcfg: &PpoCfg) {
             stopped_epoch.map(|e| e as i64).unwrap_or(-1), steps_done, train_value,
             iter_intents_json));
 
-        // --- periodic bench + checkpoint (same JSON schema as run_train). --------
+        // --- periodic bench + replays + checkpoint (FULL run_train schema). ------
+        // PPO emits the SAME benchmark-history metric superset + the SAME replay
+        // files as the AZ path (via the shared `write_bench_history_row` /
+        // `write_replays`) so the dashboard's economy panel (mines / experts /
+        // mine-staffing) + replay viewer light up for PPO runs too.
         let do_bench = iter % tc.bench_every == 0 || iter + 1 == tc.iters;
+        let do_replay = iter % tc.replay_every == 0 || iter + 1 == tc.iters;
         if do_bench {
             let br = bench_vs_hard(&net, &cfg, tc, tc.bench_games, tc.seed as u32 ^ 0xBE0);
             let per = (tc.bench_games / 5).max(8);
@@ -6245,27 +6477,16 @@ fn run_ppo(pcfg: &PpoCfg) {
             let champ_surv = if br.champ_device_built > 0 {
                 format!("{:.4}", br.champ_device_won as f64 / br.champ_device_built as f64)
             } else { "null".to_string() };
-            let intents_json = bench_intents_json(&br);
-            let lb_field = |v: f64| format!("{:.4}", v);
-            // Headline + behavioral keys the dashboard gates on (PPO-SPEC §7: same
-            // schema). Emitted as a superset-compatible bench-history line.
-            append_line(&bench_hist, &format!(
-                "{{\"gen\":{},\"winRate\":{:.4},\"lossRate\":{:.4},\"timeoutRate\":{:.4},\"tileFrac\":{:.4},\
-                 \"nGames\":{},\"trueWinVsHard\":{:.4},\
-                 \"villagesPerGame\":{:.4},\"outpostsPerGame\":{:.4},\"maxSoldiersPerGame\":{:.4},\
-                 \"deviceBuildRate\":{:.4},\"deviceSurvival\":{},\
-                 \"benchVsRusher\":{},\"benchVsFortress\":{},\"benchVsDeviceRush\":{},\
-                 \"benchVsStrongArmy\":{},\"benchVsHard\":{},\"benchPerOpp\":{},\
-                 \"intents\":{},\"decisions\":{},\"ts\":\"{}\"}}",
-                iter, br.win, br.loss, br.timeout, br.tile_frac,
-                br.n, br.true_win_vs_hard(),
-                br.champ_villages_sum as f64 / br.n as f64,
-                br.champ_outposts_sum as f64 / br.n as f64,
-                br.champ_max_soldiers_sum as f64 / br.n as f64,
-                br.champ_device_built as f64 / br.n as f64, champ_surv,
-                lb_field(lb.rusher), lb_field(lb.fortress), lb_field(lb.device_rush),
-                lb_field(lb.strong_army), lb_field(lb.hard), lb.per as i64,
-                intents_json, br.decisions, now_iso()));
+            // FULL benchmark-history row — identical schema to run_train (economy /
+            // mine-staffing / soldier / device / league fields the dashboard reads).
+            write_bench_history_row(&bench_hist, iter, &br, &Some(lb));
+
+            // Replay files (replay.json / replay_selfplay.json / replay_vs_<opp>.json)
+            // so the dashboard's live replay viewer shows PPO games. Gated on
+            // `replay_every` like the AZ path.
+            if do_replay {
+                write_replays(&net, &cfg, tc, iter);
+            }
 
             // spatial.json heatmap (dashboard).
             let sp_seed = (tc.seed as u32) ^ (iter as u32).wrapping_mul(0x27D4_EB2F) ^ 0x5A7;
@@ -6908,241 +7129,29 @@ fn run_train(tc: &TrainCfg) {
             },
             || {
                 if do_replay {
-                    // Heavy observability pass: `replay_games` champ-vs-hard +
-                    // `replay_games` self-play games, all independent (read `&net`
-                    // immutably). Merged into ONE `into_par_iter` over 2*rg games so
-                    // they share the pool with the bench — no more two sequential
-                    // 3-game batches that pinned at most `replay_games` cores.
-                    // games[0..rg) = champ-vs-hard (vs_self=false), games[rg..2rg) =
-                    // self-play (vs_self=true). Per-game seeds use the ORIGINAL
-                    // per-source formulas (keyed on the local index gi) so the
-                    // captured games are identical to the old code for any given
-                    // replay_games count.
-                    let rg = tc.replay_games as u32;
-                    let mut tagged: Vec<(u32, String)> = (0..(2 * rg))
-                        .into_par_iter()
-                        .map(|k| {
-                            if k < rg {
-                                let gi = k;
-                                let hseed = (tc.seed as u32) ^ (iter as u32).wrapping_mul(0x9E37_79B1) ^ 0x9E_F00D ^ gi.wrapping_mul(0x2545_F491);
-                                (k, record_replay(&net, &cfg, tc, iter, hseed, false))
-                            } else {
-                                let gi = k - rg;
-                                let sseed = (tc.seed as u32) ^ (iter as u32).wrapping_mul(0x85EB_CA77) ^ 0x5E1F ^ gi.wrapping_mul(0x9E37_79B1);
-                                (k, record_replay(&net, &cfg, tc, iter, sseed, true))
-                            }
-                        })
-                        .collect();
-                    // `into_par_iter` does not guarantee output order → sort by the
-                    // (k) key to restore deterministic file layout, then partition.
-                    tagged.sort_by_key(|(k, _)| *k);
-                    let hard_arr: Vec<String> = tagged.iter().filter(|(k, _)| *k < rg).map(|(_, s)| s.clone()).collect();
-                    let self_arr: Vec<String> = tagged.iter().filter(|(k, _)| *k >= rg).map(|(_, s)| s.clone()).collect();
-                    let _ = std::fs::write(tc.out.join("replay.json"), format!("[{}]", hard_arr.join(",")));
-                    let _ = std::fs::write(tc.out.join("replay_selfplay.json"), format!("[{}]", self_arr.join(",")));
-                    // SCRIPTED-OPPONENT REPLAYS (additive observability — the trainer
-                    // already plays these strategies every iter as part of the Lever-C
-                    // curriculum, this just makes them VISIBLE in the dashboard's live
-                    // replay viewer alongside vs-HARD / self-play). ONE heavy MCTS game
-                    // per script per replay tick; runs in the same rayon pool so wall
-                    // time is the slowest game, not the sum. Per-game seeds use a
-                    // dedicated mixer (independent of the hard/self seeds above) so a
-                    // future tweak to `replay_games` does not silently shift them.
-                    // Capture replay_games (default 5) games per scripted opponent so the
-                    // dashboard's per-opponent replay viewer shows a small distribution, not
-                    // a single anecdote. Per-game seed mixes the game index in too so the 5
-                    // games are distinct seeds.
-                    let pairs: Vec<(ScriptKind, usize)> = SCRIPT_REPLAY_KINDS
-                        .iter()
-                        .flat_map(|&k| (0..tc.replay_games).map(move |g| (k, g)))
-                        .collect();
-                    let script_games: Vec<(ScriptKind, String)> = pairs
-                        .into_par_iter()
-                        .map(|(kind, gi)| {
-                            let kix = kind as u32;
-                            let gx = gi as u32;
-                            let pseed = (tc.seed as u32)
-                                ^ (iter as u32).wrapping_mul(0xC2B2_AE35)
-                                ^ 0x5C12_DA01
-                                ^ kix.wrapping_mul(0x27D4_EB2F)
-                                ^ gx.wrapping_mul(0x165667B1);
-                            (kind, record_replay_script(&net, &cfg, tc, iter, pseed, kind))
-                        })
-                        .collect();
-                    // Group by kind, write one JSON array file per opponent.
-                    for &kind in &SCRIPT_REPLAY_KINDS {
-                        let games: Vec<&str> = script_games
-                            .iter()
-                            .filter(|(k, _)| *k == kind)
-                            .map(|(_, j)| j.as_str())
-                            .collect();
-                        let path = tc.out.join(format!("replay_vs_{}.json", script_mode_tag(kind)));
-                        let _ = std::fs::write(path, format!("[{}]", games.join(",")));
-                    }
-                    println!(
-                        "iter {iter}: replay capture {}+{}+{}×{} games (merged parallel) in {:.1}s",
-                        tc.replay_games, tc.replay_games, SCRIPT_REPLAY_KINDS.len(), tc.replay_games, rstart.elapsed().as_secs_f64()
-                    );
+                    // Heavy observability pass — replay.json (champ-vs-HARD) +
+                    // replay_selfplay.json + one replay_vs_<tag>.json per scripted
+                    // opponent. Shared with run_ppo via `write_replays` (per-game
+                    // seed formulas unchanged, so AZ captures are byte-identical).
+                    write_replays(&net, &cfg, tc, iter);
                 }
             },
         );
+        let _ = rstart; // retained for symmetry; replay timing now logged inside write_replays
         let (br_opt, lb_opt) = bench_pair;
         if let Some(br) = br_opt {
-            let seat = |w: usize, m: usize| if m > 0 { format!("{:.4}", w as f64 / m as f64) } else { "null".to_string() };
-            // CHAMPION-only device metrics (the honest conversion):
-            //   deviceBuildRate = champ_device_built / games
-            //   deviceSurvival  = champ_device_won  / champ_device_built (champ's true conversion)
-            // The old owner-agnostic numbers conflated HARD's devices (e.g. (1+10)/15
-            // = 0.733 "survival" was mostly HARD), so they are dropped from the
-            // headline keys and exposed under `*Any*` for continuity.
+            // Full benchmark-history row (economy/mine-staffing/soldier/device/league
+            // metric superset the dashboard reads). Shared with run_ppo via
+            // `write_bench_history_row` so both paths emit byte-identical rows.
+            write_bench_history_row(&bench_hist, iter, &br, &lb_opt);
+            // CHAMPION-only device survival (re-derived here for the console summary
+            // line below; same formula as inside the shared writer).
             let champ_surv = if br.champ_device_built > 0 {
                 format!("{:.4}", br.champ_device_won as f64 / br.champ_device_built as f64)
             } else { "null".to_string() };
             let hard_surv = if br.hard_device_built > 0 {
                 format!("{:.4}", br.hard_device_won as f64 / br.hard_device_built as f64)
             } else { "null".to_string() };
-            let any_surv = if br.device_games > 0 { format!("{:.4}", br.device_wins as f64 / br.device_games as f64) } else { "null".to_string() };
-            let rmean = |i: usize| if br.rounds_cnt[i] > 0 { format!("{:.1}", br.rounds_sum[i] / br.rounds_cnt[i] as f64) } else { "null".to_string() };
-            let intents_json = bench_intents_json(&br);
-            // --- Step-0 HONEST + behavioral telemetry (always computed; old history
-            // lines lacking these fields are guarded with defaults on the dashboard).
-            let bank_share = match br.bankruptcy_win_share() { Some(v) => format!("{:.4}", v), None => "null".to_string() };
-            let device_denial = if br.hard_device_built > 0 {
-                format!("{:.4}", br.hard_device_denied as f64 / br.hard_device_built as f64)
-            } else { "null".to_string() };
-            // Per-game peak-soldier distribution: [0, 1, 2, 3, 4+] game-counts.
-            // Additive new key — the dashboard renders the histogram to make a flat
-            // ~1.0 maxSoldiersPerGame mean visually distinct from "0 or 3, never 1/2".
-            let b = &br.champ_max_soldiers_bins;
-            let champ_soldier_bins = format!(
-                "{{\"0\":{},\"1\":{},\"2\":{},\"3\":{},\"4+\":{}}}",
-                b[0], b[1], b[2], b[3], b[4]
-            );
-            // --- M1–M9 behavioral diagnostic JSON ----------------------------------
-            // Each metric ALWAYS emitted (or `null` when denominator is 0), so the
-            // dashboard's presence-gates can detect new-format lines cleanly. Old
-            // history lines (cnn-bc2 et al) lack ALL of these keys → those panels
-            // hide without breaking the existing render path.
-            let null_or_pct = |num: u64, den: u64| if den > 0 {
-                format!("{:.4}", num as f64 / den as f64)
-            } else { "null".to_string() };
-            let null_or_f64 = |num: f64, den: u64| if den > 0 {
-                format!("{:.4}", num / den as f64)
-            } else { "null".to_string() };
-            // M1 — unit efficiency (worker+expert prod / (prod+idle)) over all bench games.
-            let unit_total = br.unit_prod_rounds_sum + br.unit_idle_rounds_sum;
-            let unit_eff = null_or_pct(br.unit_prod_rounds_sum, unit_total);
-            // M2 — soldier-position split (attack / defend / idle shares).
-            let sol_total = br.sol_attack_rounds_sum + br.sol_defend_rounds_sum + br.sol_idle_rounds_sum;
-            let sol_atk = null_or_pct(br.sol_attack_rounds_sum, sol_total);
-            let sol_def = null_or_pct(br.sol_defend_rounds_sum, sol_total);
-            let sol_idle = null_or_pct(br.sol_idle_rounds_sum, sol_total);
-            // M3 / M4 — win-rate-by-builds histogram (bins 0/1/2/3+). `*Games` = games
-            // in that bin; `*Wins` = champ wins within that bin; dashboard computes the
-            // per-bin win-rate as wins/games.
-            let vg = &br.villages_built_games; let vw = &br.villages_built_wins;
-            let og = &br.outposts_built_games; let ow = &br.outposts_built_wins;
-            let win_by_villages = format!(
-                "{{\"0\":{{\"games\":{},\"wins\":{}}},\"1\":{{\"games\":{},\"wins\":{}}},\
-                 \"2\":{{\"games\":{},\"wins\":{}}},\"3+\":{{\"games\":{},\"wins\":{}}}}}",
-                vg[0], vw[0], vg[1], vw[1], vg[2], vw[2], vg[3], vw[3]);
-            let win_by_outposts = format!(
-                "{{\"0\":{{\"games\":{},\"wins\":{}}},\"1\":{{\"games\":{},\"wins\":{}}},\
-                 \"2\":{{\"games\":{},\"wins\":{}}},\"3+\":{{\"games\":{},\"wins\":{}}}}}",
-                og[0], ow[0], og[1], ow[1], og[2], ow[2], og[3], ow[3]);
-            // M6 — peak champ-soldier STACK bins (1 / 2 / 3) over bench games (omits 0).
-            let sb = &br.stack_bins;
-            let stack_bins_json = format!(
-                "{{\"1\":{},\"2\":{},\"3\":{}}}", sb[0], sb[1], sb[2]);
-            // Per-MINE staffing (worker-count distribution + the Expert lever).
-            let mwb = &br.mine_worker_bins;
-            let mine_worker_bins_json = format!(
-                "{{\"1\":{},\"2\":{},\"3\":{}}}", mwb[0], mwb[1], mwb[2]);
-            // M7 — experts hired per game (champ side; already in `extra`).
-            let experts_per_game = br.extra.hire_expert as f64 / br.n as f64;
-            // M8 — average frontier ratio (averaged across games that had ≥1 round).
-            let frontier_ratio = null_or_f64(br.frontier_ratio_sum, br.frontier_ratio_games as u64);
-            // M9 — average game length split by champion outcome.
-            let win_rounds = if br.champ_win_rounds_n > 0 {
-                format!("{:.2}", br.champ_win_rounds_sum as f64 / br.champ_win_rounds_n as f64)
-            } else { "null".to_string() };
-            let loss_rounds = if br.champ_loss_rounds_n > 0 {
-                format!("{:.2}", br.champ_loss_rounds_sum as f64 / br.champ_loss_rounds_n as f64)
-            } else { "null".to_string() };
-            // PILLAR 6 — per-opponent league win-rates. Each `benchVs*` is the learner
-            // win-rate vs that league bot over `lb.per` games (or `null` if the league
-            // bench was skipped this tick — should not happen when br is Some, but the
-            // dashboard guards anyway). `benchVsHard` mirrors the dedicated vs-HARD bench
-            // in the same per-opponent budget so the 5 series are apples-to-apples;
-            // `winRate`/`winRateVsHeur` continue to use the full-budget vs-HARD bench.
-            let lb_field = |w: Option<f64>| match w { Some(v) => format!("{:.4}", v), None => "null".to_string() };
-            let (lb_rusher, lb_fortress, lb_devrush, lb_strong, lb_hard, lb_per) = match &lb_opt {
-                Some(lb) => (lb_field(Some(lb.rusher)), lb_field(Some(lb.fortress)),
-                             lb_field(Some(lb.device_rush)), lb_field(Some(lb.strong_army)),
-                             lb_field(Some(lb.hard)), lb.per as i64),
-                None => ("null".into(), "null".into(), "null".into(), "null".into(), "null".into(), 0i64),
-            };
-            append_line(&bench_hist, &format!(
-                "{{\"gen\":{},\"winRate\":{:.4},\"lossRate\":{:.4},\"timeoutRate\":{:.4},\"tileFrac\":{:.4},\
-                 \"nGames\":{},\"winSeat0\":{},\"winSeat1\":{},\
-                 \"champWins\":{},\"hardWins\":{},\"trueTie\":{},\
-                 \"trueWinVsHard\":{:.4},\"bankruptcyWinShare\":{},\
-                 \"villagesPerGame\":{:.4},\"outpostsPerGame\":{:.4},\"maxSoldiersPerGame\":{:.4},\
-                 \"champSoldierBins\":{},\
-                 \"deviceDenialRate\":{},\"hardDeviceBuilt\":{},\"hardDeviceDenied\":{},\
-                 \"deviceBuildRate\":{:.4},\"deviceSurvival\":{},\
-                 \"hardDeviceBuildRate\":{:.4},\"hardDeviceSurvival\":{},\
-                 \"anyDeviceBuildRate\":{:.4},\"anyDeviceSurvival\":{},\
-                 \"roundsByCause\":{{\"device\":{},\"domination\":{},\"conquest\":{},\"bankruptcy\":{},\"tiebreak\":{}}},\
-                 \"unitEfficiency\":{},\
-                 \"unitUsefulRounds\":{},\"unitUselessRounds\":{},\
-                 \"soldierAttack\":{},\"soldierDefend\":{},\"soldierIdle\":{},\
-                 \"soldierUsefulRounds\":{},\"soldierUselessRounds\":{},\
-                 \"winByVillagesBuilt\":{},\"winByOutpostsBuilt\":{},\
-                 \"stackBins\":{},\
-                 \"mineWorkerBins\":{},\"minesWithExpert\":{},\"mineCount\":{},\
-                 \"plantsWithExpert\":{},\"plantCount\":{},\
-                 \"standingExpertsPerGame\":{:.4},\
-                 \"expertsHiredPerGame\":{:.4},\
-                 \"frontierRatio\":{},\
-                 \"roundsByOutcome\":{{\"win\":{},\"loss\":{}}},\
-                 \"bridgesPerGame\":{:.4},\
-                 \"benchVsRusher\":{},\"benchVsFortress\":{},\"benchVsDeviceRush\":{},\
-                 \"benchVsStrongArmy\":{},\"benchVsHard\":{},\"benchPerOpp\":{},\
-                 \"crackDeviceAttempts\":{},\"crackDeviceSuccesses\":{},\
-                 \"crackHQAttempts\":{},\"crackHQSuccesses\":{},\
-                 \"intents\":{},\"decisions\":{},\"ts\":\"{}\"}}",
-                iter, br.win, br.loss, br.timeout, br.tile_frac,
-                br.n, seat(br.wins_seat0, br.n_seat0), seat(br.wins_seat1, br.n_seat1),
-                br.champ_cause.json(), br.hard_cause.json(), br.true_tie,
-                br.true_win_vs_hard(), bank_share,
-                br.champ_villages_sum as f64 / br.n as f64,
-                br.champ_outposts_sum as f64 / br.n as f64,
-                br.champ_max_soldiers_sum as f64 / br.n as f64,
-                champ_soldier_bins,
-                device_denial, br.hard_device_built, br.hard_device_denied,
-                br.champ_device_built as f64 / br.n as f64, champ_surv,
-                br.hard_device_built as f64 / br.n as f64, hard_surv,
-                br.device_games as f64 / br.n as f64, any_surv,
-                rmean(0), rmean(1), rmean(2), rmean(3), rmean(4),
-                unit_eff,
-                br.unit_useful_rounds_sum, br.unit_useless_rounds_sum,
-                sol_atk, sol_def, sol_idle,
-                br.sol_attack_rounds_sum + br.sol_defend_rounds_sum,
-                br.sol_idle_rounds_sum,
-                win_by_villages, win_by_outposts,
-                stack_bins_json,
-                mine_worker_bins_json, br.mine_with_expert_sum, br.mine_total_sum,
-                br.plant_with_expert_sum, br.plant_total_sum,
-                br.champ_experts_sum as f64 / br.n as f64,
-                experts_per_game,
-                frontier_ratio,
-                win_rounds, loss_rounds,
-                br.champ_bridges_sum as f64 / br.n as f64,
-                lb_rusher, lb_fortress, lb_devrush, lb_strong, lb_hard, lb_per,
-                br.crack_device_attempts, br.crack_device_successes,
-                br.crack_hq_attempts, br.crack_hq_successes,
-                intents_json, br.decisions, now_iso()));
 
             // spatial.json heatmap (a representative mid-game CNN-vs-HARD state).
             let sp_seed = (tc.seed as u32) ^ (iter as u32).wrapping_mul(0x27D4_EB2F) ^ 0x5A7;
