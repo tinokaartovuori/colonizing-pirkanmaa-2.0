@@ -709,6 +709,209 @@ impl SpatialNet {
         (grad, policy_loss, value_loss)
     }
 
+    /// PPO clipped-surrogate + entropy + value backward pass for ONE recorded
+    /// decision (PPO-SPEC §3). TRAINING-ONLY / parity-FREE (the forward inference
+    /// path is untouched). Modelled on [`train_grad_cached_kl_inner`] (same value
+    /// head + trunk backward verbatim) but with a *custom policy upstream* derived
+    /// from the PPO clipped objective instead of cross-entropy.
+    ///
+    /// Inputs (all from the FROZEN θ_old captured at collection time, except the
+    /// net itself which is the CURRENT θ):
+    ///   * `cache`        — `forward_board_scalars` cache of the recorded state under θ.
+    ///   * `candidates`   — the per-candidate `(target, local, intent)` triples.
+    ///   * `chosen`       — index of the action that was sampled at collection.
+    ///   * `logp_old`     — ln π_old(chosen|s), captured under θ_old (τ=1 softmax).
+    ///   * `adv`          — GAE advantage A_t (batch-normalised by the caller).
+    ///   * `vtarg`        — GAE value target = A_t + V_old(s_t).
+    ///   * `_v_old`       — V_old(s_t) (only used by the optional value-clip; off by
+    ///                      default). Kept in the signature so the caller can pass it.
+    ///   * `clip_eps`     — PPO ratio clip ε.
+    ///   * `ent_coef`     — entropy bonus coefficient (subtracted from the loss).
+    ///   * `val_coef`     — value-loss coefficient.
+    ///   * `vclip`        — value-clip range (0 = OFF; the standard unclipped MSE).
+    ///
+    /// Returns `(grad, policy_loss, value_loss)` where:
+    ///   * policy_loss = L_clip + L_ent (the reported surrogate incl. entropy term),
+    ///   * value_loss  = (V_new − vtarg)^2  (unweighted, for logging),
+    ///   * grad        = ∇θ of `L_clip + L_ent + val_coef·value_loss`.
+    ///
+    /// Policy math (PPO-SPEC §3):
+    ///   r = exp(clamp(logp_new − logp_old, ±20));
+    ///   L_clip = −min(r·A, clip(r,1−ε,1+ε)·A);
+    ///   the clipped branch (grad 0) is active iff (A≥0 & r>1+ε) or (A<0 & r<1−ε),
+    ///   else dL_clip/dlogp_new = −r·A.
+    ///   ∂logp_new/∂s_c = [c==chosen] − p_c → policy upstream
+    ///       g_c = (dL_clip/dlogp_new)·([c==chosen]−p_c) + ent_coef·p_c·(ln p_c + H).
+    #[allow(clippy::too_many_arguments)]
+    pub fn train_grad_ppo_cached(
+        &self,
+        cache: &BoardCache,
+        candidates: &[(Option<(usize, usize)>, Vec<f64>, Vec<f64>)],
+        chosen: usize,
+        logp_old: f64,
+        adv: f64,
+        vtarg: f64,
+        _v_old: f64,
+        clip_eps: f64,
+        ent_coef: f64,
+        val_coef: f64,
+        vclip: f64,
+    ) -> (SpatialGrad, f64, f64) {
+        debug_assert!(chosen < candidates.len());
+        let d = self.d;
+        let (h, w) = (cache.h, cache.w);
+
+        let mut grad = SpatialGrad::zeros_like(self);
+        let mut grad_board_embed = vec![0.0f64; d * h * w];
+        let mut grad_global = vec![0.0f64; d];
+
+        // ----- Value head ----------------------------------------------------
+        // Standard MSE toward vtarg through the final tanh. Optional PPO value
+        // clip (vclip>0): use the larger of the unclipped and clipped squared
+        // error (the pessimistic bound), but ONLY when vclip is enabled.
+        let vf = self.value_forward(cache);
+        // Unclipped squared error (this is what we report regardless of vclip).
+        let value_loss = (vf.value - vtarg) * (vf.value - vtarg);
+        // d(value_loss_term)/d(value). With vclip off this is the plain MSE grad.
+        let d_value = if vclip > 0.0 {
+            // Clip V_new to V_old ± vclip; the gradient flows through whichever of
+            // the unclipped / clipped squared error is LARGER (pessimistic max).
+            let v_clipped = (vf.value).clamp(_v_old - vclip, _v_old + vclip);
+            let err_unclipped = vf.value - vtarg;
+            let err_clipped = v_clipped - vtarg;
+            if err_unclipped * err_unclipped >= err_clipped * err_clipped {
+                2.0 * err_unclipped
+            } else {
+                // Clipped branch: when v_clipped is at the clamp boundary the grad
+                // wrt V_new is 0 (clamp saturated); inside the band it is the plain
+                // 2·err. clamp saturates iff V_new is outside [V_old±vclip].
+                if vf.value > _v_old + vclip || vf.value < _v_old - vclip {
+                    0.0
+                } else {
+                    2.0 * err_clipped
+                }
+            }
+        } else {
+            2.0 * (vf.value - vtarg)
+        };
+        // Scale by val_coef and route through the tanh: value = tanh(out_pre).
+        let grad_out_pre = vec![val_coef * d_value * (1.0 - vf.value * vf.value)];
+        let (grad_h1, vw2, vb2) = self.value_d2.backward(&vf.h1, &grad_out_pre);
+        grad.value_d2_w = vw2;
+        grad.value_d2_b = vb2;
+        let grad_h1_pre = tanh_backward(&vf.h1, &grad_h1);
+        let value_in = self.value_input(cache);
+        let (grad_value_in, vw1, vb1) = self.value_d1.backward(&value_in, &grad_h1_pre);
+        grad.value_d1_w = vw1;
+        grad.value_d1_b = vb1;
+        for c in 0..d {
+            grad_global[c] += grad_value_in[c];
+        }
+
+        // ----- Policy head: PPO clipped surrogate + entropy -------------------
+        let inputs: Vec<Vec<f64>> = candidates
+            .iter()
+            .map(|(tgt, local, intent)| self.candidate_input(cache, *tgt, local, intent))
+            .collect();
+        let fwds: Vec<PolicyFwd> = inputs.iter().map(|x| self.policy_forward(x)).collect();
+        let scores: Vec<f64> = fwds.iter().map(|f| f.score).collect();
+        let p = softmax(&scores);
+
+        // logp_new under the CURRENT net (τ=1 softmax). Clamp the log-ratio to ±20
+        // before exp (PPO-SPEC §8 ratio-explosion guard).
+        let logp_new = p[chosen].max(1e-12).ln();
+        let log_ratio = (logp_new - logp_old).clamp(-20.0, 20.0);
+        let r = log_ratio.exp();
+
+        // Clipped surrogate. L_clip = −min(r·A, clip(r,1−ε,1+ε)·A).
+        let lo = 1.0 - clip_eps;
+        let hi = 1.0 + clip_eps;
+        // The clipped branch is ACTIVE (zero policy gradient) iff:
+        //   (A ≥ 0 & r > 1+ε)  or  (A < 0 & r < 1−ε).
+        let clip_active = (adv >= 0.0 && r > hi) || (adv < 0.0 && r < lo);
+        let l_clip = {
+            let unclipped = r * adv;
+            let clipped = r.clamp(lo, hi) * adv;
+            -unclipped.min(clipped)
+        };
+        // dL_clip/dlogp_new: 0 in the clipped branch, else −r·A
+        // (since d r/d logp_new = r).
+        let dlclip_dlogpnew = if clip_active { 0.0 } else { -r * adv };
+
+        // Entropy bonus: H = −Σ p_c ln p_c; L_ent = −ent_coef·H (subtract entropy
+        // so MINIMISING the loss MAXIMISES entropy). ∂L_ent/∂s_j = ent_coef·p_j·(ln p_j + H).
+        let mut entropy = 0.0f64;
+        for &pc in &p {
+            if pc > 0.0 {
+                entropy -= pc * pc.ln();
+            }
+        }
+        let l_ent = -ent_coef * entropy;
+        let policy_loss = l_clip + l_ent;
+
+        // Per-candidate policy upstream g_c on its logit score_c:
+        //   clip term : dlclip_dlogpnew · ([c==chosen] − p_c)
+        //   entropy   : ent_coef · p_c · (ln p_c + H)
+        for c in 0..candidates.len() {
+            let indicator = if c == chosen { 1.0 } else { 0.0 };
+            let g_clip = dlclip_dlogpnew * (indicator - p[c]);
+            let g_ent = if p[c] > 0.0 {
+                ent_coef * p[c] * (p[c].ln() + entropy)
+            } else {
+                0.0
+            };
+            let upstream = g_clip + g_ent;
+            let grad_score = vec![upstream];
+            let (grad_h1, pw2, pb2) = self.policy_d2.backward(&fwds[c].h1, &grad_score);
+            accum(&mut grad.policy_d2_w, &pw2);
+            accum(&mut grad.policy_d2_b, &pb2);
+            let grad_h1_pre = tanh_backward(&fwds[c].h1, &grad_h1);
+            let (grad_input, pw1, pb1) = self.policy_d1.backward(&inputs[c], &grad_h1_pre);
+            accum(&mut grad.policy_d1_w, &pw1);
+            accum(&mut grad.policy_d1_b, &pb1);
+            if let Some((x, y)) = candidates[c].0 {
+                for ch in 0..d {
+                    grad_board_embed[idx(ch, y, x, h, w)] += grad_input[ch];
+                }
+            }
+            for ch in 0..d {
+                grad_global[ch] += grad_input[d + ch];
+            }
+        }
+
+        // ----- Trunk backward (identical to the standard path) ---------------
+        let grad_from_pool = self.pool.backward(&grad_global, d, h, w);
+        for i in 0..grad_board_embed.len() {
+            grad_board_embed[i] += grad_from_pool[i];
+        }
+        let grad_trunk2: Vec<f64> = match (&self.conv3, &cache.res_act) {
+            (Some(conv3), Some(res_act)) => {
+                let grad_res_pre = tanh_backward(res_act, &grad_board_embed);
+                let (grad_into_trunk2, cw3, cb3) =
+                    conv3.backward(&cache.trunk2, &grad_res_pre, h, w);
+                grad.conv3_w = cw3;
+                grad.conv3_b = cb3;
+                grad_into_trunk2
+                    .iter()
+                    .zip(grad_board_embed.iter())
+                    .map(|(&a, &b)| a + b)
+                    .collect()
+            }
+            _ => grad_board_embed,
+        };
+        let grad_conv2_pre = tanh_backward(&cache.trunk2, &grad_trunk2);
+        let (grad_conv1_act, cw2, cb2) =
+            self.conv2.backward(&cache.conv1_act, &grad_conv2_pre, h, w);
+        grad.conv2_w = cw2;
+        grad.conv2_b = cb2;
+        let grad_conv1_pre = tanh_backward(&cache.conv1_act, &grad_conv1_act);
+        let (_grad_planes, cw1, cb1) = self.conv1.backward(&cache.planes, &grad_conv1_pre, h, w);
+        grad.conv1_w = cw1;
+        grad.conv1_b = cb1;
+
+        (grad, policy_loss, value_loss)
+    }
+
     /// Compute the policy-head probabilities (softmax over candidate scores) for an
     /// anchor net evaluation of `(planes, value_scalars, candidates)`. Read-only —
     /// used by the KL-anchor training path to produce frozen targets per batch.
@@ -1981,5 +2184,190 @@ mod tests {
         }
         let l1 = combined_loss(&net, &planes, h, w, &cands, &pi, z);
         assert!(l1 < l0, "loss should decrease: {l0} -> {l1}");
+    }
+
+    // ---- PPO clipped-surrogate gradient finite-difference check -------------
+    //
+    // PPO-SPEC §3d (MANDATORY). FD-checks `train_grad_ppo_cached` against the
+    // analytic gradient for the COMBINED `L_clip + L_ent + val_coef·MSE`, covering
+    // both advantage signs AND r inside / outside the clip band — and asserting the
+    // clipped branch produces ZERO policy gradient (the conv trunk + policy heads go
+    // to exactly 0 there while the value head still trains).
+
+    /// Recompute the PPO scalar loss `L_clip + L_ent + val_coef·(V − vtarg)^2` for
+    /// the current net params (FD probe). Mirrors `train_grad_ppo_cached` exactly,
+    /// including the ±20 log-ratio clamp and the value-clip (vclip) branch.
+    #[allow(clippy::too_many_arguments)]
+    fn ppo_loss(
+        net: &SpatialNet,
+        planes: &[f64],
+        h: usize,
+        w: usize,
+        vs: &[f64],
+        cands: &[(Option<(usize, usize)>, Vec<f64>, Vec<f64>)],
+        chosen: usize,
+        logp_old: f64,
+        adv: f64,
+        vtarg: f64,
+        v_old: f64,
+        clip_eps: f64,
+        ent_coef: f64,
+        val_coef: f64,
+        vclip: f64,
+    ) -> f64 {
+        let cache = net.forward_board_scalars(planes, h, w, vs);
+        // value
+        let value = net.value_from(&cache);
+        let value_loss = if vclip > 0.0 {
+            let v_clipped = value.clamp(v_old - vclip, v_old + vclip);
+            let eu = value - vtarg;
+            let ec = v_clipped - vtarg;
+            (eu * eu).max(ec * ec)
+        } else {
+            (value - vtarg) * (value - vtarg)
+        };
+        // policy
+        let scores: Vec<f64> = cands
+            .iter()
+            .map(|(t, l, i)| net.score_candidate(&cache, *t, l, i))
+            .collect();
+        let p = softmax(&scores);
+        let logp_new = p[chosen].max(1e-12).ln();
+        let log_ratio = (logp_new - logp_old).clamp(-20.0, 20.0);
+        let r = log_ratio.exp();
+        let lo = 1.0 - clip_eps;
+        let hi = 1.0 + clip_eps;
+        let l_clip = -(r * adv).min(r.clamp(lo, hi) * adv);
+        let mut entropy = 0.0;
+        for &pc in &p {
+            if pc > 0.0 {
+                entropy -= pc * pc.ln();
+            }
+        }
+        let l_ent = -ent_coef * entropy;
+        l_clip + l_ent + val_coef * value_loss
+    }
+
+    /// Run one FD vs analytic comparison of the PPO gradient for a given (adv, the
+    /// frozen logp_old chosen to land r inside or outside the clip band). When
+    /// `expect_clipped` is set, additionally assert the POLICY-side grads are ~0.
+    fn ppo_grad_fd_case(adv: f64, logp_old_offset: f64, expect_clipped: bool) {
+        let (pc, h, w) = (3usize, 3usize, 4usize);
+        let (local_dim, intent_dim, vs_dim) = (2usize, 2usize, 3usize);
+        let mut net = SpatialNet::new_seeded_arch(
+            pc, local_dim, intent_dim, vs_dim, 3, 4, 4, 4, false, 1357,
+        );
+        let planes = fill(pc * h * w, 11);
+        let vs = fill(vs_dim, 71);
+        let cands: Vec<(Option<(usize, usize)>, Vec<f64>, Vec<f64>)> = vec![
+            (Some((1, 0)), fill(local_dim, 21), fill(intent_dim, 31)),
+            (None, fill(local_dim, 22), fill(intent_dim, 32)),
+            (Some((3, 2)), fill(local_dim, 23), fill(intent_dim, 33)),
+        ];
+        let chosen = 0usize;
+        let (clip_eps, ent_coef, val_coef, vclip) = (0.2, 0.01, 0.5, 0.0);
+        let vtarg = 0.3;
+        let v_old = 0.1;
+
+        // Pick logp_old = logp_new(θ) − offset so r = exp(offset). With offset 0 the
+        // ratio is 1 (inside band); a large +/- offset pushes r outside the band.
+        let cache0 = net.forward_board_scalars(&planes, h, w, &vs);
+        let scores0: Vec<f64> = cands
+            .iter()
+            .map(|(t, l, i)| net.score_candidate(&cache0, *t, l, i))
+            .collect();
+        let p0 = softmax(&scores0);
+        let logp_new0 = p0[chosen].max(1e-12).ln();
+        let logp_old = logp_new0 - logp_old_offset;
+        let r0 = logp_old_offset.exp();
+
+        // Sanity: the case is configured as intended (inside vs outside band).
+        let lo = 1.0 - clip_eps;
+        let hi = 1.0 + clip_eps;
+        let clip_active = (adv >= 0.0 && r0 > hi) || (adv < 0.0 && r0 < lo);
+        assert_eq!(
+            clip_active, expect_clipped,
+            "test setup: adv={adv} r0={r0} expected clip_active={expect_clipped}"
+        );
+
+        let cache = net.forward_board_scalars(&planes, h, w, &vs);
+        let (grad, _pl, _vl) = net.train_grad_ppo_cached(
+            &cache, &cands, chosen, logp_old, adv, vtarg, v_old, clip_eps, ent_coef, val_coef, vclip,
+        );
+
+        // The policy heads + conv trunk receive policy gradient. When clipped, the
+        // policy-CLIP upstream is 0; the ONLY policy-side signal is the entropy bonus
+        // (tiny). To assert "ZERO policy gradient from the clip" we run the SAME case
+        // with ent_coef=0 and check the policy heads vanish in the clipped branch.
+        if expect_clipped {
+            let (grad_noent, _, _) = net.train_grad_ppo_cached(
+                &cache, &cands, chosen, logp_old, adv, vtarg, v_old, clip_eps, 0.0, val_coef, vclip,
+            );
+            // With no entropy + clipped clip term, the policy-d1/d2 grads must be 0
+            // (the value head + its trunk contribution remain non-zero, so we only
+            // check the policy-only Dense layers, which the value path never touches).
+            for (j, &gv) in grad_noent.policy_d2_w.iter().enumerate() {
+                assert!(gv.abs() < 1e-12, "clipped policy_d2_w[{j}] should be 0, got {gv}");
+            }
+            for (j, &gv) in grad_noent.policy_d1_w.iter().enumerate() {
+                assert!(gv.abs() < 1e-12, "clipped policy_d1_w[{j}] should be 0, got {gv}");
+            }
+        }
+
+        // FD-check every parameter slice against the analytic grad of the COMBINED loss.
+        macro_rules! check_param {
+            ($field:expr, $gradvec:expr, $name:expr) => {{
+                let n = $field.len();
+                let stride = (n / 6).max(1);
+                let mut j = 0;
+                while j < n {
+                    let save = $field[j];
+                    $field[j] = save + EPS;
+                    let lp = ppo_loss(
+                        &net, &planes, h, w, &vs, &cands, chosen, logp_old, adv, vtarg, v_old,
+                        clip_eps, ent_coef, val_coef, vclip,
+                    );
+                    $field[j] = save - EPS;
+                    let lm = ppo_loss(
+                        &net, &planes, h, w, &vs, &cands, chosen, logp_old, adv, vtarg, v_old,
+                        clip_eps, ent_coef, val_coef, vclip,
+                    );
+                    $field[j] = save;
+                    let num = (lp - lm) / (2.0 * EPS);
+                    assert_close($gradvec[j], num, $name);
+                    j += stride;
+                }
+            }};
+        }
+        check_param!(net.conv1.weights, grad.conv1_w, "ppo_conv1_w");
+        check_param!(net.conv1.bias, grad.conv1_b, "ppo_conv1_b");
+        check_param!(net.conv2.weights, grad.conv2_w, "ppo_conv2_w");
+        check_param!(net.conv2.bias, grad.conv2_b, "ppo_conv2_b");
+        check_param!(net.value_d1.weights, grad.value_d1_w, "ppo_value_d1_w");
+        check_param!(net.value_d1.bias, grad.value_d1_b, "ppo_value_d1_b");
+        check_param!(net.value_d2.weights, grad.value_d2_w, "ppo_value_d2_w");
+        check_param!(net.value_d2.bias, grad.value_d2_b, "ppo_value_d2_b");
+        check_param!(net.policy_d1.weights, grad.policy_d1_w, "ppo_policy_d1_w");
+        check_param!(net.policy_d1.bias, grad.policy_d1_b, "ppo_policy_d1_b");
+        check_param!(net.policy_d2.weights, grad.policy_d2_w, "ppo_policy_d2_w");
+        check_param!(net.policy_d2.bias, grad.policy_d2_b, "ppo_policy_d2_b");
+    }
+
+    #[test]
+    fn ppo_grad_finite_difference() {
+        // adv > 0, r inside band (offset 0 → r=1): NOT clipped, full gradient.
+        ppo_grad_fd_case(0.8, 0.0, false);
+        // adv > 0, r OUTSIDE band high (offset +1.0 → r≈2.72 > 1.2): CLIPPED, 0 policy grad.
+        ppo_grad_fd_case(0.8, 1.0, true);
+        // adv < 0, r inside band: NOT clipped, full gradient.
+        ppo_grad_fd_case(-0.8, 0.0, false);
+        // adv < 0, r OUTSIDE band low (offset −1.0 → r≈0.37 < 0.8): CLIPPED, 0 policy grad.
+        ppo_grad_fd_case(-0.8, -1.0, true);
+        // adv > 0, r outside band LOW (offset −1.0 → r<0.8): NOT clipped (clip only
+        // bites adv≥0 on the HIGH side) — full gradient. Confirms the asymmetry.
+        ppo_grad_fd_case(0.8, -1.0, false);
+        // adv < 0, r outside band HIGH (offset +1.0 → r>1.2): NOT clipped (clip only
+        // bites adv<0 on the LOW side) — full gradient.
+        ppo_grad_fd_case(-0.8, 1.0, false);
     }
 }

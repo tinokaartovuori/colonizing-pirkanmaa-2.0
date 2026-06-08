@@ -270,6 +270,79 @@ struct Example {
     value_only: bool,
 }
 
+// ---------------------------------------------------------------------------
+// PPO + GAE(λ) — buffer step + advantage estimation (PPO-SPEC §1, §2)
+// ---------------------------------------------------------------------------
+
+/// One recorded PPO decision step (PPO-SPEC §1). Collected on-policy by
+/// [`play_one_game_ppo`] with POLICY-HEAD SAMPLING (no MCTS), then consumed by
+/// [`train_batch_ppo`] over a few epochs and DISCARDED (never carried across iters
+/// — `logp_old`/`v_old` would go stale). `logp_old`/`v_old` are captured from the
+/// FROZEN θ_old at collection time and NEVER recomputed during epochs.
+#[allow(dead_code)] // `seat`/`chosen_intent` are recorded per spec §1 for observability/audit.
+struct PpoStep {
+    planes: Vec<f64>,
+    h: usize,
+    w: usize,
+    /// Per-state value-head scalar features (length [`VALUE_SCALAR_DIM`]).
+    value_scalars: Vec<f64>,
+    /// Per-candidate `(target, local, intent_onehot)` features (same shape as
+    /// [`Example::cands`]).
+    cands: Vec<CandFeat>,
+    /// Index of the SAMPLED action among `cands`.
+    chosen: usize,
+    /// ln π_old(chosen|s) under θ_old (un-tempered τ=1 softmax). Frozen.
+    logp_old: f64,
+    /// V_old(s) under θ_old. Frozen.
+    v_old: f64,
+    /// Per-step reward: terminal step = `terminal_z(seat)` ∈ [-1,1]; non-terminal
+    /// = 0.0 (+ optional Φ-difference shaping). GAE propagates it.
+    reward: f64,
+    /// Acting seat (always the learner = seat 0 in PPO collection).
+    seat: PlayerId,
+    /// GAE advantage A_t (filled after the game by [`compute_gae`], then
+    /// batch-normalised once per iter).
+    adv: f64,
+    /// GAE value target = A_t + V(s_t) (filled by [`compute_gae`]; NOT normalised).
+    vtarg: f64,
+    /// The Intent the acting seat CHOSE (observability/intent-histogram only).
+    chosen_intent: candidates::Intent,
+    /// Φ(s) of the acting seat at this state (for optional `--ppo-shape-weight`
+    /// terminal-only shaping; ignored when shape-weight = 0).
+    phi: f64,
+}
+
+/// Generalized Advantage Estimation, GAE(λ) (PPO-SPEC §2). Pure helper over ONE
+/// seat's temporally-ordered `(rewards, values)` sequence (`values[t] = V(s_t)`;
+/// the value at the terminal `s_{T+1}` is taken as 0). Returns `(adv, vtarg)` per
+/// step in the SAME temporal order, where:
+///
+///   delta_t = r_t + γ·V(s_{t+1}) − V(s_t)     (V(s_{T+1}) = 0)
+///   A_t     = delta_t + (γλ)·A_{t+1}          (A_{T+1} = 0)
+///   vtarg_t = A_t + V(s_t)
+///
+/// Advantages are NOT normalised here (the caller normalises BATCH-WIDE once per
+/// iter); `vtarg` is never normalised.
+fn compute_gae(rewards: &[f64], values: &[f64], gamma: f64, lambda: f64) -> (Vec<f64>, Vec<f64>) {
+    let n = rewards.len();
+    debug_assert_eq!(values.len(), n);
+    let mut adv = vec![0.0f64; n];
+    let mut vtarg = vec![0.0f64; n];
+    if n == 0 {
+        return (adv, vtarg);
+    }
+    let mut gae = 0.0f64;
+    for t in (0..n).rev() {
+        // V(s_{t+1}): the next step's value, or 0 at the terminal boundary.
+        let v_next = if t + 1 < n { values[t + 1] } else { 0.0 };
+        let delta = rewards[t] + gamma * v_next - values[t];
+        gae = delta + gamma * lambda * gae;
+        adv[t] = gae;
+        vtarg[t] = gae + values[t];
+    }
+    (adv, vtarg)
+}
+
 // --- economy scaffold (mirror controller.rs::plan_turn) ----------------------
 //
 // The MLP controller (`controller.rs::plan_turn`) and the alphazero search path
@@ -2295,6 +2368,83 @@ impl Default for TrainCfg {
     }
 }
 
+/// PPO + GAE(λ) training config (PPO-SPEC §6, §7). Embeds a [`TrainCfg`] `base`
+/// for all the SHARED knobs (board, opponent mix, Φ-shaping weights, bench cadence,
+/// warm-start + KL-anchor paths) so the reused helpers (`play_one_game_explore`'s
+/// scaffold/potential, the opponent-mix block, `bench_vs_hard`/`league_bench`, the
+/// warm-start + anchor loaders, the bench/checkpoint/log block) work verbatim; the
+/// PPO-specific fields live alongside.
+struct PpoCfg {
+    /// Shared scaffolding (board size, vs-hard/script/pfsp opponent mix, Φ-shaping
+    /// terms, bench/replay cadence, --init warm-start, --kl-anchor-net, seed, …).
+    base: TrainCfg,
+    /// Self-play games collected (FRESH on-policy) per iter. PPO-SPEC §6 default 256.
+    ppo_games: usize,
+    /// SGD passes over the freshly-collected buffer per iter. Default 4.
+    ppo_epochs: usize,
+    /// PPO clip ε. Default 0.2.
+    clip_eps: f64,
+    /// Entropy bonus coefficient. Default 0.01 (→0.02 if intents collapse to Pass).
+    ent_coef: f64,
+    /// Value-loss coefficient (≤1.0; trunk co-train risk). Default 0.5.
+    val_coef: f64,
+    /// Value-clip range (0 = OFF). Default 0.0.
+    vclip: f64,
+    /// GAE discount γ (per-decision steps). Default 0.997.
+    gamma: f64,
+    /// GAE λ (value head weak → don't go below 0.92). Default 0.95.
+    lambda: f64,
+    /// KL early-stop target: if a batch's approx-KL exceeds this, break the epoch
+    /// loop (PPO-SPEC §5 (3)). Default 0.02.
+    target_kl: f64,
+    /// KL ANCHOR weight toward the FROZEN warm-start net (PPO-SPEC §5 (2)). Folded
+    /// into the policy gradient as forward-KL. Default 0.3. Decays after benches.
+    kl_anchor: f64,
+    /// Sampling temperature for COLLECTION rollouts (PPO-SPEC §4). logp_old is still
+    /// recorded at τ=1. Default 1.0.
+    temp: f64,
+    /// Optional Φ-difference terminal shaping weight (PPO-SPEC §1). Default 0.0.
+    shape_weight: f64,
+    /// Value branch OFF for the first N iters (PPO-SPEC §8 optional warmup). Default 0.
+    policy_only_warmup: usize,
+}
+
+impl Default for PpoCfg {
+    fn default() -> Self {
+        let mut base = TrainCfg::default();
+        // PPO-SPEC §6 defaults that differ from --train: much lower lr, conservative
+        // opponent mix (vs-hard 0.75 + script + pfsp), bench cadence.
+        base.lr = 3e-4;
+        base.l2 = 1e-5;
+        base.batch = 256;
+        base.iters = 200;
+        base.sims = 64; // deploy/bench MCTS sims (collection is MCTS-free)
+        base.bench_games = 80;
+        base.vs_hard_frac = 0.75;
+        base.script_opponents = true;
+        base.script_frac = 0.5;
+        base.pfsp = true;
+        base.cap = 300;
+        base.out = PathBuf::from("rust-trainer/checkpoints-cnn-ppo");
+        PpoCfg {
+            base,
+            ppo_games: 256,
+            ppo_epochs: 4,
+            clip_eps: 0.2,
+            ent_coef: 0.01,
+            val_coef: 0.5,
+            vclip: 0.0,
+            gamma: 0.997,
+            lambda: 0.95,
+            target_kl: 0.02,
+            kl_anchor: 0.3,
+            temp: 1.0,
+            shape_weight: 0.0,
+            policy_only_warmup: 0,
+        }
+    }
+}
+
 /// Cold-start a fresh `SpatialNet` honouring the `--net-size` flag: LARGE round-3 arch
 /// by default, the PRE-round-3 SMALL ~9.8k-param arch when `tc.small_net`. I/O is
 /// identical between the two — only the trunk widths / residual block differ.
@@ -3973,6 +4123,359 @@ fn train_batch_lr(net: &mut SpatialNet, batch: &[&Example], lr: f64, l2: f64) ->
     (ploss / n, vloss / n)
 }
 
+// ---------------------------------------------------------------------------
+// PPO batch driver (PPO-SPEC §3 batch driver)
+// ---------------------------------------------------------------------------
+
+/// One PPO SGD step over a minibatch of [`PpoStep`]s (PPO-SPEC §3). For each step:
+/// forward the CURRENT net once, compute the clipped-surrogate + entropy + value
+/// gradient via [`SpatialNet::train_grad_ppo_cached`], reduce (sum) across cores,
+/// scale by 1/n, and apply. When `anchor_net` + `kl_anchor>0`, additionally folds a
+/// forward-KL anchor gradient toward the FROZEN anchor (PPO-SPEC §5 (2)) — computed
+/// by a SEPARATE per-step `train_grad_cached_kl_inner`-style call would re-run the
+/// trunk; instead we add the anchor's policy-KL gradient directly here by reusing the
+/// existing KL machinery on a near-uniform `pi` (see below).
+///
+/// Returns `(surrogate_loss, value_loss, approx_kl)` where `approx_kl ≈
+/// mean((r−1) − ln r)` over the batch — the PPO target-KL early-stop signal.
+fn train_batch_ppo(
+    net: &mut SpatialNet,
+    batch: &[&PpoStep],
+    pcfg: &PpoCfg,
+    train_value: bool,
+    anchor_net: Option<&SpatialNet>,
+) -> (f64, f64, f64) {
+    if batch.is_empty() {
+        return (0.0, 0.0, 0.0);
+    }
+    let net_ref: &SpatialNet = net;
+    // val_coef is forced to 0 during the policy-only warmup so the value branch
+    // (and its corrupting contribution to the shared trunk) is OFF.
+    let val_coef = if train_value { pcfg.val_coef } else { 0.0 };
+    let kl_anchor = pcfg.kl_anchor;
+    let use_anchor = kl_anchor > 0.0 && anchor_net.is_some();
+
+    // Per-step: (grad, surrogate_loss, value_loss, approx_kl_term).
+    let (mut acc, ploss, vloss, kl_sum) = batch
+        .par_iter()
+        .map(|st| {
+            let cache = net_ref.forward_board_scalars(&st.planes, st.h, st.w, &st.value_scalars);
+            let (mut g, pl, vl) = net_ref.train_grad_ppo_cached(
+                &cache,
+                &st.cands,
+                st.chosen,
+                st.logp_old,
+                st.adv,
+                st.vtarg,
+                st.v_old,
+                pcfg.clip_eps,
+                pcfg.ent_coef,
+                val_coef,
+                pcfg.vclip,
+            );
+            // approx_kl ≈ (r − 1) − ln r, r = exp(clamp(logp_new − logp_old, ±20)).
+            let logp_new = {
+                let mut scratch = PolicyScratch::new();
+                let scores: Vec<f64> = st
+                    .cands
+                    .iter()
+                    .map(|(t, l, i)| net_ref.score_candidate_into(&cache, *t, l, i, &mut scratch))
+                    .collect();
+                let p = softmax_local(&scores);
+                p[st.chosen].max(1e-12).ln()
+            };
+            let log_ratio = (logp_new - st.logp_old).clamp(-20.0, 20.0);
+            let r = log_ratio.exp();
+            let approx_kl = (r - 1.0) - log_ratio;
+            // KL ANCHOR: add forward-KL(π_new ‖ π_anchor) gradient. Reuse the existing
+            // KL-augmented backward by passing a ZERO `pi` (no CE term, since p−0 would
+            // be wrong) is unsafe; instead use the dedicated kl-inner with pi = the
+            // net's OWN current p (so the CE term p−pi = 0 and ONLY the forward-KL term
+            // survives). This isolates the anchor pull without a spurious CE push.
+            if use_anchor {
+                let anchor = anchor_net.unwrap();
+                let q = anchor.policy_probs_scalars(
+                    &st.planes, st.h, st.w, &st.value_scalars, &st.cands,
+                );
+                // pi = current p → CE grad p−pi = 0, leaving only kl_weight·forward-KL.
+                let scores: Vec<f64> = {
+                    let mut scratch = PolicyScratch::new();
+                    st.cands
+                        .iter()
+                        .map(|(t, l, i)| net_ref.score_candidate_into(&cache, *t, l, i, &mut scratch))
+                        .collect()
+                };
+                let p_self = softmax_local(&scores);
+                let (kg, _kpl, _kvl) = net_ref.train_grad_scalars_kl_anchor(
+                    &st.planes, st.h, st.w, &st.value_scalars,
+                    &st.cands, &p_self, st.vtarg, &q, kl_anchor,
+                );
+                // The kl-anchor call ALSO produced a value gradient toward `vtarg`; we do
+                // NOT want a second value update here (the PPO value grad above already
+                // trains it). Zero the value-head + (its-only) contribution is impossible
+                // to isolate cleanly, so instead we zero the value-head param grads and
+                // accept that the shared-trunk gets the (small) KL-anchor-value coupling —
+                // matching the train_batch_lr_kl behaviour where value+KL co-train. To keep
+                // it strictly additive-policy, we zero ONLY the value Dense grads.
+                let mut kg = kg;
+                for x in kg.value_d1_w.iter_mut() { *x = 0.0; }
+                for x in kg.value_d1_b.iter_mut() { *x = 0.0; }
+                for x in kg.value_d2_w.iter_mut() { *x = 0.0; }
+                for x in kg.value_d2_b.iter_mut() { *x = 0.0; }
+                g.add(&kg);
+            }
+            (g, pl, vl, approx_kl)
+        })
+        .reduce(
+            || (SpatialGrad::zeros_like(net_ref), 0.0, 0.0, 0.0),
+            |mut a, b| {
+                a.0.add(&b.0);
+                (a.0, a.1 + b.1, a.2 + b.2, a.3 + b.3)
+            },
+        );
+    let n = batch.len() as f64;
+    acc.scale(1.0 / n);
+    net.apply_grad(&acc, pcfg.base.lr, pcfg.base.l2);
+    (ploss / n, vloss / n, kl_sum / n)
+}
+
+/// Local numerically-stable softmax (the one in spatial_net is private).
+fn softmax_local(scores: &[f64]) -> Vec<f64> {
+    let m = scores.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let exps: Vec<f64> = scores.iter().map(|&s| (s - m).exp()).collect();
+    let sum: f64 = exps.iter().sum::<f64>().max(1e-12);
+    exps.iter().map(|&e| e / sum).collect()
+}
+
+// ---------------------------------------------------------------------------
+// PPO data collection — POLICY-HEAD SAMPLING (no MCTS) (PPO-SPEC §4)
+// ---------------------------------------------------------------------------
+
+/// Per-game outcome tallies for the PPO collection loop (subset of
+/// [`ExploreOutcome`] — only what the PPO dashboard log + PFSP needs).
+struct PpoOutcome {
+    decisive: bool,
+    rounds: i64,
+    cause: Option<WinCause>,
+    intents: [u64; NUM_INTENTS],
+    learner_won: bool,
+    pfsp_opp: Option<usize>,
+    script_opp: Option<ScriptKind>,
+}
+
+/// Play ONE game with the learner (seat 0) choosing actions by POLICY-HEAD SAMPLING
+/// (PPO-SPEC §4) — forward once per decision, `p = softmax(scores/temp)`, sample
+/// `chosen ∝ p`, record `logp_old = ln(softmax(scores)[chosen])` at τ=1 (UN-tempered)
+/// and `v_old`. NO MCTS (kept strictly for deploy/bench). Returns the learner's
+/// on-policy [`PpoStep`]s with `reward`/`adv`/`vtarg` filled (terminal reward + GAE),
+/// plus a [`PpoOutcome`]. Mirrors `play_one_game_explore`'s scaffold/turn/terminal-z
+/// machinery (so map-gen, scaffold, candidate enumeration, stall-cut and terminal_z
+/// are identical) but strips the recording/credit passes the MCTS path uses.
+fn play_one_game_ppo(
+    net: &SpatialNet,
+    seed: u32,
+    cfg: &TierConfig,
+    pcfg: &PpoCfg,
+    opp: Opponent<'_>,
+    rng: &mut XorShift32,
+) -> (Vec<PpoStep>, PpoOutcome) {
+    let tc = &pcfg.base;
+    let opp_pool_idx: Option<usize> = match opp {
+        Opponent::Frozen(i, _) => Some(i),
+        _ => None,
+    };
+    let opp_script: Option<ScriptKind> = match opp {
+        Opponent::Script(k) => Some(k),
+        _ => None,
+    };
+    // PPO records the LEARNER seat (seat 0) ONLY (PPO-SPEC §4). Even for SelfTwin the
+    // opponent seat plays with the same net but is not recorded.
+    let opp_is_net = matches!(opp, Opponent::SelfTwin);
+    let opp_frozen: Option<&SpatialNet> = match opp {
+        Opponent::Frozen(_, fnet) => Some(fnet),
+        _ => None,
+    };
+
+    let n_players = 2usize;
+    let mut g = Game::new(tc.width, tc.height, &["P1", "P2"]);
+    g.generate_map(tc.width, tc.height, seed);
+    let placer = HardAi::hard();
+    for _ in 0..n_players {
+        let cur = g.current_player();
+        placer.place_headquarters(&mut g, cur);
+        g.change_turn();
+    }
+    let mut hard = match opp_script {
+        Some(kind) => kind.make_bot(),
+        None => HardAi::hard(),
+    };
+
+    let mut steps: Vec<PpoStep> = Vec::new();
+    let mut winner: Option<PlayerId> = None;
+    let mut last_sig = board_signature(&g, n_players);
+    let mut last_progress = g.get_rounds_played();
+    let mut intent_tally = [0u64; NUM_INTENTS];
+    let mut scratch = PolicyScratch::new();
+
+    while g.live_players().len() > 1 && g.get_rounds_played() < tc.cap {
+        let cur = g.current_player();
+        let learner_seat = cur.0 == 0;
+        let net_seat = learner_seat || opp_is_net;
+        if net_seat {
+            let infer_net: &SpatialNet = if learner_seat { net } else { opp_frozen.unwrap_or(net) };
+            scaffold_ensure(&mut g, cur, cfg);
+            loop {
+                let cands = candidates::enumerate(&g, cur, cfg);
+                if cands.len() <= 1 {
+                    break;
+                }
+                // Forward once; score every candidate.
+                let (planes, h, w) = board_planes(&g, cur);
+                let vs = value_scalars(&g, cur);
+                let cache = infer_net.forward_board_scalars(&planes, h, w, &vs);
+                let scores: Vec<f64> = cands
+                    .iter()
+                    .map(|c| {
+                        let (tgt, local, intent) = cand_feat(&g, cur, c);
+                        infer_net.score_candidate_into(&cache, tgt, &local, &intent, &mut scratch)
+                    })
+                    .collect();
+                // π at τ=1 (for logp_old) and the (possibly tempered) sampling dist.
+                let p_tau1 = softmax_local(&scores);
+                let temp = pcfg.temp.max(1e-3);
+                let tempered: Vec<f64> = scores.iter().map(|&s| s / temp).collect();
+                let p_sample = softmax_local(&tempered);
+                // Sample chosen ∝ p_sample.
+                let mut rsel = rng.next_f64();
+                let mut chosen = p_sample.len() - 1;
+                for (i, &pi) in p_sample.iter().enumerate() {
+                    rsel -= pi;
+                    if rsel <= 0.0 {
+                        chosen = i;
+                        break;
+                    }
+                }
+                let chosen_cand = &cands[chosen];
+                // Record a PPO step ONLY for the learner seat.
+                if learner_seat {
+                    let cand_feats: Vec<CandFeat> =
+                        cands.iter().map(|c| cand_feat(&g, cur, c)).collect();
+                    let phi = potential_step1(
+                        &g, cur, tc.device_potential, tc.tile_potential, tc.idle_penalty,
+                        tc.soldier_cap_potential, tc.income_lead_potential, tc.cap_potential,
+                        tc.idle_flow_penalty, tc.w_army, tc.w_cut, tc.w_expert, tc.w_soldier_forward,
+                    );
+                    steps.push(PpoStep {
+                        planes,
+                        h,
+                        w,
+                        value_scalars: vs,
+                        cands: cand_feats,
+                        chosen,
+                        logp_old: p_tau1[chosen].max(1e-12).ln(),
+                        v_old: infer_net.value_from(&cache),
+                        reward: 0.0,
+                        seat: cur,
+                        adv: 0.0,
+                        vtarg: 0.0,
+                        chosen_intent: chosen_cand.intent,
+                        phi,
+                    });
+                    let ii = chosen_cand.intent as usize;
+                    if ii < NUM_INTENTS {
+                        intent_tally[ii] += 1;
+                    }
+                }
+                if chosen_cand.intent == candidates::Intent::Pass {
+                    break;
+                }
+                let ok = candidates::execute_action(&mut g, cur, cfg, &chosen_cand.action);
+                if !ok {
+                    break;
+                }
+                scaffold_staff(&mut g, cur, cfg);
+            }
+            scaffold_finalize(&mut g, cur, cfg);
+        } else {
+            hard.plan_turn(&mut g, cur);
+        }
+
+        match g.end_turn() {
+            EndTurnOutcome::Win(p) => {
+                winner = Some(p);
+                break;
+            }
+            EndTurnOutcome::Tie => break,
+            _ => {}
+        }
+        let r = g.get_rounds_played();
+        let sig = board_signature(&g, n_players);
+        if sig != last_sig {
+            last_sig = sig;
+            last_progress = r;
+        } else if r - last_progress >= tc.stall_rounds && !device_on_board(&g) {
+            break;
+        }
+    }
+
+    let winner_pid = winner.or_else(|| {
+        let live = g.live_players();
+        if live.len() == 1 { Some(live[0]) } else { None }
+    });
+    // Terminal z for the LEARNER seat (PPO-SPEC §1): win-cause-weighted ±mag, tie =
+    // −tie_penalty. (Opportunistic-discount + per-decision credit passes are MCTS-path
+    // only; PPO uses the plain terminal z + GAE for credit assignment.)
+    let beta = tc.device_bonus;
+    let device_decided = matches!(g.last_win_cause(), Some(WinCause::Device));
+    let mag = if device_decided { 1.0 } else { 1.0 - beta };
+    let terminal_z = |seat: PlayerId| -> f64 {
+        match winner_pid {
+            Some(w) if w == seat => mag,
+            Some(_) => -mag,
+            None => -tc.tie_penalty,
+        }
+    };
+
+    // Per-step reward (PPO-SPEC §1): terminal step = terminal_z; non-terminal = 0.
+    // Optional Φ-difference terminal shaping is propagated by GAE; here we put the
+    // shaped per-step reward γΦ(s_{t+1}) − Φ(s_t) when shape_weight > 0, plus the
+    // terminal z on the LAST learner step. GAE then propagates everything.
+    let n = steps.len();
+    if n > 0 {
+        let z = terminal_z(PlayerId(0));
+        if pcfg.shape_weight > 0.0 {
+            for t in 0..n {
+                let phi_t = steps[t].phi;
+                let phi_next = if t + 1 < n { steps[t + 1].phi } else { 0.0 };
+                let shaped = pcfg.shape_weight * (pcfg.gamma * phi_next - phi_t);
+                steps[t].reward = shaped;
+            }
+        }
+        // Terminal reward on the final learner step.
+        steps[n - 1].reward += z;
+    }
+
+    // GAE(λ) over the learner's temporally-ordered steps (all seat 0).
+    let rewards: Vec<f64> = steps.iter().map(|s| s.reward).collect();
+    let values: Vec<f64> = steps.iter().map(|s| s.v_old).collect();
+    let (adv, vtarg) = compute_gae(&rewards, &values, pcfg.gamma, pcfg.lambda);
+    for (i, st) in steps.iter_mut().enumerate() {
+        st.adv = adv[i];
+        st.vtarg = vtarg[i];
+    }
+
+    let outcome = PpoOutcome {
+        decisive: winner_pid.is_some(),
+        rounds: g.get_rounds_played(),
+        cause: g.last_win_cause(),
+        intents: intent_tally,
+        learner_won: winner_pid == Some(PlayerId(0)),
+        pfsp_opp: opp_pool_idx,
+        script_opp: opp_script,
+    };
+    (steps, outcome)
+}
+
 // --- benchmark vs HARD (full schema, both seats, greedy) ---------------------
 
 #[derive(Default, Clone, Copy)]
@@ -5366,6 +5869,385 @@ fn write_spatial_json_to(
         iter, w, h, frames.join(",")
     );
     let _ = std::fs::write(out, json);
+}
+
+// ---------------------------------------------------------------------------
+// PPO + GAE(λ) training loop (PPO-SPEC §7)
+// ---------------------------------------------------------------------------
+//
+// Parallel to `run_train` but: data is collected by POLICY-HEAD SAMPLING (no MCTS,
+// PPO-SPEC §4), credit is assigned by GAE(λ) (§2), the policy is updated with the
+// clipped surrogate + entropy + value loss (§3) under a KL trust region (clip ε +
+// forward-KL anchor + target-KL early-stop, §5). The buffer is FRESH on-policy each
+// iter (collect → epochs → DISCARD; never carried — stale logp_old). Bench /
+// checkpoint / log use the SAME JSON schema as `run_train` so the dashboard works,
+// + anchor decay + auto-revert collapse guards (§5, §8). `--train` is untouched.
+fn run_ppo(pcfg: &PpoCfg) {
+    let tc = &pcfg.base;
+    let cfg = TRAINING_CONFIG;
+    create_dir_all(&tc.out).expect("create out dir");
+    let _ = std::fs::write(tc.out.join("log.jsonl"), "");
+    let _ = std::fs::write(tc.out.join("benchmark-history.jsonl"), "");
+
+    // --- Warm-start (PPO-SPEC §5: hard-fail on dim mismatch — NO cold-start). ---
+    let init_path = tc.init.clone().unwrap_or_else(|| tc.out.join("distilled.json"));
+    let mut net = match std::fs::read_to_string(&init_path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<SpatialNet>(&s).ok())
+    {
+        Some(n) if n.local_dim == SPATIAL_LOCAL_DIM && n.value_scalar_dim == VALUE_SCALAR_DIM => {
+            println!(
+                "cnn_train --ppo: WARM-START SpatialNet from {} (params {})",
+                init_path.display(), n.param_count()
+            );
+            n
+        }
+        Some(n) => {
+            eprintln!(
+                "cnn_train --ppo: FATAL — --init {} has local_dim={} value_scalar_dim={} but this \
+                 build expects local_dim={} value_scalar_dim={}. PPO requires a compatible warm-start \
+                 (no cold-start). Aborting.",
+                init_path.display(), n.local_dim, n.value_scalar_dim, SPATIAL_LOCAL_DIM, VALUE_SCALAR_DIM
+            );
+            std::process::exit(2);
+        }
+        None => {
+            eprintln!(
+                "cnn_train --ppo: FATAL — --init {} not found / not a SpatialNet. PPO requires a \
+                 warm-start net. Aborting.",
+                init_path.display()
+            );
+            std::process::exit(2);
+        }
+    };
+
+    // --- KL anchor: a SECOND frozen net (PPO-SPEC §5 (2)). ---
+    let anchor_net: Option<SpatialNet> = if pcfg.kl_anchor > 0.0 && !tc.kl_anchor_net.as_os_str().is_empty() {
+        match std::fs::read_to_string(&tc.kl_anchor_net)
+            .ok()
+            .and_then(|s| serde_json::from_str::<SpatialNet>(&s).ok())
+        {
+            Some(n) if n.local_dim == SPATIAL_LOCAL_DIM && n.value_scalar_dim == VALUE_SCALAR_DIM => {
+                println!(
+                    "cnn_train --ppo: KL-ANCHOR loaded from {} (params {}) — λ={:.2} forward-KL",
+                    tc.kl_anchor_net.display(), n.param_count(), pcfg.kl_anchor
+                );
+                Some(n)
+            }
+            _ => {
+                eprintln!("cnn_train --ppo: WARNING — --kl-anchor-net could not be loaded / dim mismatch. KL anchor DISABLED.");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    let n_vs_hard = (pcfg.ppo_games as f64 * tc.vs_hard_frac).round() as usize;
+    println!(
+        "cnn_train --ppo: out={} iters={} ppo-games/iter={} ({} vs HARD) ppo-epochs={} batch={} lr={} l2={} \
+         clip={} ent={} val={} vclip={} γ={} λ={} target-kl={} kl-anchor={} temp={} shape-weight={} \
+         policy-only-warmup={} | bench every {} ({} games) | script-opp={} script-frac={:.2} pfsp={} | cap={} board={}x{}",
+        tc.out.display(), tc.iters, pcfg.ppo_games, n_vs_hard, pcfg.ppo_epochs, tc.batch, tc.lr, tc.l2,
+        pcfg.clip_eps, pcfg.ent_coef, pcfg.val_coef, pcfg.vclip, pcfg.gamma, pcfg.lambda, pcfg.target_kl,
+        pcfg.kl_anchor, pcfg.temp, pcfg.shape_weight, pcfg.policy_only_warmup,
+        tc.bench_every, tc.bench_games, tc.script_opponents, tc.script_frac, tc.pfsp, tc.cap, tc.width, tc.height
+    );
+
+    let log_path = tc.out.join("log.jsonl");
+    let bench_hist = tc.out.join("benchmark-history.jsonl");
+    let start = Instant::now();
+    let mut sp_rng = XorShift32::new((tc.seed as u32) ^ 0x5EED_1234);
+    let mut train_rng = XorShift32::new((tc.seed as u32) ^ 0xBEEF);
+    let mut best_win = -1.0f64;
+    // Mutable KL-anchor coef + lr that the collapse-guard decay (§5) adjusts.
+    let mut kl_coef = pcfg.kl_anchor;
+    let mut cur_lr = tc.lr;
+
+    // PFSP frozen past-champion pool (same machinery as run_train).
+    const PFSP_POOL_CAP: usize = 8;
+    let mut pool_nets: Vec<SpatialNet> = Vec::new();
+    let mut pool_wins: Vec<f64> = Vec::new();
+    let mut pool_games: Vec<f64> = Vec::new();
+    let pfsp_weight = |w: f64, n: f64| -> f64 {
+        if n < 1.0 { return 1.0; }
+        let p_win = (w / n).clamp(0.0, 1.0);
+        let f = 1.0 - p_win;
+        (f * f).max(1e-3)
+    };
+
+    for iter in 0..tc.iters {
+        // --- build per-game seed + opponent list (PPO-SPEC §4: reuse the run_train
+        //     opponent-mix block — conservative vs-HARD + script + PFSP). ----------
+        #[derive(Clone, Copy)]
+        enum OppKind { Hard, SelfTwin, Frozen(usize), Script(ScriptKind) }
+        let seeds: Vec<(u32, OppKind)> = (0..pcfg.ppo_games)
+            .map(|gi| {
+                let seed = (sp_rng.next_f64() * 1.0e9) as u32 ^ (gi as u32).wrapping_mul(2_654_435_761);
+                let script_pick: Option<ScriptKind> = if tc.script_opponents && tc.script_frac > 0.0 {
+                    let mut s_rng = XorShift32::new(seed ^ 0x5C1B_7E5C);
+                    if s_rng.next_f64() < tc.script_frac {
+                        let r = s_rng.next_f64() * 4.0;
+                        let pick = if r < 1.0 {
+                            ScriptKind::Rusher
+                        } else if r < 2.0 {
+                            ScriptKind::Fortress
+                        } else if r < 3.0 {
+                            ScriptKind::DeviceRush
+                        } else {
+                            ScriptKind::StrongArmy
+                        };
+                        Some(pick)
+                    } else { None }
+                } else { None };
+                let opp = if gi < n_vs_hard {
+                    OppKind::Hard
+                } else if let Some(kind) = script_pick {
+                    OppKind::Script(kind)
+                } else if tc.pfsp && !pool_nets.is_empty() {
+                    let mut pick_rng = XorShift32::new(seed ^ 0x9F5B_C0DE);
+                    let weights: Vec<f64> = (0..pool_nets.len())
+                        .map(|k| pfsp_weight(pool_wins[k], pool_games[k]))
+                        .collect();
+                    let total: f64 = weights.iter().sum();
+                    let mut r = pick_rng.next_f64() * total.max(1e-9);
+                    let mut idx = pool_nets.len() - 1;
+                    for (k, &wgt) in weights.iter().enumerate() {
+                        if r < wgt { idx = k; break; }
+                        r -= wgt;
+                    }
+                    OppKind::Frozen(idx)
+                } else {
+                    OppKind::SelfTwin
+                };
+                (seed, opp)
+            })
+            .collect();
+
+        // --- collect (parallel; games independent; &net read-only) ---------------
+        let per_game: Vec<(Vec<PpoStep>, PpoOutcome)> = seeds
+            .into_par_iter()
+            .map(|(seed, opp_kind)| {
+                let mut game_rng = XorShift32::new(seed ^ 0x9E37_79B1);
+                let opp = match opp_kind {
+                    OppKind::Hard => Opponent::Hard,
+                    OppKind::SelfTwin => Opponent::SelfTwin,
+                    OppKind::Frozen(idx) => Opponent::Frozen(idx, &pool_nets[idx]),
+                    OppKind::Script(kind) => Opponent::Script(kind),
+                };
+                play_one_game_ppo(&net, seed, &cfg, pcfg, opp, &mut game_rng)
+            })
+            .collect();
+
+        // --- pool steps + per-iter observability ---------------------------------
+        let mut buffer: Vec<PpoStep> = Vec::new();
+        let mut sp_decisive = 0u64; let mut sp_tie = 0u64;
+        let mut sp_device = 0u64; let mut sp_conquest = 0u64;
+        let mut sp_domination = 0u64; let mut sp_bankruptcy = 0u64;
+        let mut sp_rounds_sum = 0i64;
+        let mut iter_intents = [0u64; NUM_INTENTS];
+        for (steps, outcome) in per_game {
+            if let Some(idx) = outcome.pfsp_opp {
+                if idx < pool_games.len() {
+                    pool_games[idx] += 1.0;
+                    if outcome.learner_won { pool_wins[idx] += 1.0; }
+                }
+            }
+            if outcome.decisive { sp_decisive += 1; } else { sp_tie += 1; }
+            match outcome.cause {
+                Some(WinCause::Device) => sp_device += 1,
+                Some(WinCause::Domination) => sp_domination += 1,
+                Some(WinCause::Conquest) => sp_conquest += 1,
+                Some(WinCause::Bankruptcy) => sp_bankruptcy += 1,
+                None => { if outcome.decisive { sp_conquest += 1; } }
+            }
+            sp_rounds_sum += outcome.rounds;
+            for k in 0..NUM_INTENTS { iter_intents[k] += outcome.intents[k]; }
+            let _ = outcome.script_opp;
+            buffer.extend(steps);
+        }
+        let total_games = sp_decisive + sp_tie;
+        let sp_avg_rounds = if total_games > 0 { sp_rounds_sum as f64 / total_games as f64 } else { 0.0 };
+        let n_steps = buffer.len();
+
+        // --- normalize advantages BATCH-WIDE once/iter (PPO-SPEC §2). ------------
+        if n_steps > 1 {
+            let mean: f64 = buffer.iter().map(|s| s.adv).sum::<f64>() / n_steps as f64;
+            let var: f64 = buffer.iter().map(|s| (s.adv - mean) * (s.adv - mean)).sum::<f64>() / n_steps as f64;
+            let std = var.sqrt() + 1e-8;
+            for s in buffer.iter_mut() { s.adv = (s.adv - mean) / std; }
+        }
+
+        // --- epoch loop: shuffle, minibatch, train, approx-KL early-stop ---------
+        let train_value = iter >= pcfg.policy_only_warmup;
+        let mut ploss = 0.0; let mut vloss = 0.0; let mut last_kl = 0.0; let mut steps_done = 0usize;
+        let mut stopped_epoch: Option<usize> = None;
+        // Apply the (possibly decayed) lr/kl into a working PpoCfg copy used by the
+        // batch driver this iter (only the knobs train_batch_ppo reads).
+        let mut iter_base = tc.clone();
+        iter_base.lr = cur_lr;
+        let iter_cfg = PpoCfg {
+            base: iter_base,
+            ppo_games: pcfg.ppo_games,
+            ppo_epochs: pcfg.ppo_epochs,
+            clip_eps: pcfg.clip_eps,
+            ent_coef: pcfg.ent_coef,
+            val_coef: pcfg.val_coef,
+            vclip: pcfg.vclip,
+            gamma: pcfg.gamma,
+            lambda: pcfg.lambda,
+            target_kl: pcfg.target_kl,
+            kl_anchor: kl_coef,
+            temp: pcfg.temp,
+            shape_weight: pcfg.shape_weight,
+            policy_only_warmup: pcfg.policy_only_warmup,
+        };
+        if n_steps >= tc.batch {
+            'epochs: for ep in 0..pcfg.ppo_epochs {
+                let mut idx: Vec<usize> = (0..n_steps).collect();
+                for k in (1..n_steps).rev() {
+                    let j = (train_rng.next_f64() * (k as f64 + 1.0)).floor() as usize;
+                    idx.swap(k, j.min(k));
+                }
+                let mut s = 0;
+                while s + tc.batch <= n_steps {
+                    let batch: Vec<&PpoStep> = idx[s..s + tc.batch].iter().map(|&k| &buffer[k]).collect();
+                    let (p, v, kl) = train_batch_ppo(&mut net, &batch, &iter_cfg, train_value, anchor_net.as_ref());
+                    ploss += p; vloss += v; last_kl = kl; steps_done += 1;
+                    s += tc.batch;
+                    // KL early-stop (PPO-SPEC §5 (3)): break the EPOCH loop.
+                    if kl > pcfg.target_kl {
+                        stopped_epoch = Some(ep);
+                        break 'epochs;
+                    }
+                }
+            }
+        }
+        if steps_done > 0 { ploss /= steps_done as f64; vloss /= steps_done as f64; }
+
+        // --- per-iter log line (dashboard Koulutus tab; superset-compatible) -----
+        let elapsed = start.elapsed().as_secs_f64();
+        let gps = if elapsed > 0.0 { ((iter + 1) * pcfg.ppo_games) as f64 / elapsed } else { 0.0 };
+        let iter_intents_json = {
+            let mut s = String::from("{");
+            for k in 0..NUM_INTENTS {
+                if k > 0 { s.push(','); }
+                s.push_str(&format!("\"{}\":{}", INTENT_NAMES[k], iter_intents[k]));
+            }
+            s.push_str(",\"HireWorker\":0,\"HireExpert\":0}");
+            s
+        };
+        append_line(&log_path, &format!(
+            "{{\"gen\":{},\"bestFit\":null,\"meanFit\":null,\"medianFit\":null,\"fitStd\":null,\
+             \"policyLoss\":{:.5},\"valueLoss\":{:.5},\"bufferSize\":{},\"newExamples\":{},\
+             \"policyEntropy\":null,\"valPredWin\":null,\"valPredLoss\":null,\"valPredDraw\":null,\
+             \"gamesPerSec\":{:.3},\"elapsedSec\":{:.1},\"winRateVsHeur\":null,\
+             \"spTie\":{},\"spDecisive\":{},\"spDevice\":{},\"spConquest\":{},\
+             \"spDomination\":{},\"spBankruptcy\":{},\"spAvgRounds\":{:.1},\
+             \"ppoApproxKL\":{:.5},\"ppoKLCoef\":{:.4},\"ppoLR\":{:.6},\"ppoStoppedEpoch\":{},\
+             \"ppoSteps\":{},\"ppoTrainValue\":{},\
+             \"iterIntents\":{}}}",
+            iter, ploss, vloss, n_steps, n_steps,
+            gps, elapsed,
+            sp_tie, sp_decisive, sp_device, sp_conquest,
+            sp_domination, sp_bankruptcy, sp_avg_rounds,
+            last_kl, kl_coef, cur_lr,
+            stopped_epoch.map(|e| e as i64).unwrap_or(-1), steps_done, train_value,
+            iter_intents_json));
+
+        // --- periodic bench + checkpoint (same JSON schema as run_train). --------
+        let do_bench = iter % tc.bench_every == 0 || iter + 1 == tc.iters;
+        if do_bench {
+            let br = bench_vs_hard(&net, &cfg, tc, tc.bench_games, tc.seed as u32 ^ 0xBE0);
+            let per = (tc.bench_games / 5).max(8);
+            let lb = league_bench(&net, &cfg, tc, per, tc.seed as u32 ^ 0x5D3_0F);
+            let champ_surv = if br.champ_device_built > 0 {
+                format!("{:.4}", br.champ_device_won as f64 / br.champ_device_built as f64)
+            } else { "null".to_string() };
+            let intents_json = bench_intents_json(&br);
+            let lb_field = |v: f64| format!("{:.4}", v);
+            // Headline + behavioral keys the dashboard gates on (PPO-SPEC §7: same
+            // schema). Emitted as a superset-compatible bench-history line.
+            append_line(&bench_hist, &format!(
+                "{{\"gen\":{},\"winRate\":{:.4},\"lossRate\":{:.4},\"timeoutRate\":{:.4},\"tileFrac\":{:.4},\
+                 \"nGames\":{},\"trueWinVsHard\":{:.4},\
+                 \"villagesPerGame\":{:.4},\"outpostsPerGame\":{:.4},\"maxSoldiersPerGame\":{:.4},\
+                 \"deviceBuildRate\":{:.4},\"deviceSurvival\":{},\
+                 \"benchVsRusher\":{},\"benchVsFortress\":{},\"benchVsDeviceRush\":{},\
+                 \"benchVsStrongArmy\":{},\"benchVsHard\":{},\"benchPerOpp\":{},\
+                 \"intents\":{},\"decisions\":{},\"ts\":\"{}\"}}",
+                iter, br.win, br.loss, br.timeout, br.tile_frac,
+                br.n, br.true_win_vs_hard(),
+                br.champ_villages_sum as f64 / br.n as f64,
+                br.champ_outposts_sum as f64 / br.n as f64,
+                br.champ_max_soldiers_sum as f64 / br.n as f64,
+                br.champ_device_built as f64 / br.n as f64, champ_surv,
+                lb_field(lb.rusher), lb_field(lb.fortress), lb_field(lb.device_rush),
+                lb_field(lb.strong_army), lb_field(lb.hard), lb.per as i64,
+                intents_json, br.decisions, now_iso()));
+
+            // spatial.json heatmap (dashboard).
+            let sp_seed = (tc.seed as u32) ^ (iter as u32).wrapping_mul(0x27D4_EB2F) ^ 0x5A7;
+            write_spatial_json(&net, &cfg, tc, iter, sp_seed);
+
+            // checkpoint (latest + best).
+            let json = serde_json::to_string(&net).expect("SpatialNet serialises");
+            let _ = std::fs::write(tc.out.join("champion.json"), &json);
+            let true_win = br.true_win_vs_hard();
+            let mut tag = "";
+            if br.win > best_win {
+                best_win = br.win;
+                let _ = std::fs::write(tc.out.join("champion-best.json"), &json);
+                tag = " *BEST*";
+            }
+            let cc = &br.champ_cause;
+            println!(
+                "iter {iter}: vs-hard win {:.1}% (TRUE {:.1}%, loss {:.1}%, tie {:.1}%) | champ wins D{} Dom{} C{} B{} TB{} | vil {:.1} out {:.1} maxSol {:.1}/g | approxKL {:.4} klCoef {:.3} lr {:.5} | ploss {:.4} vloss {:.4} | steps {} | {:.0}s{}",
+                br.win * 100.0, true_win * 100.0, br.loss * 100.0, br.timeout * 100.0,
+                cc.device, cc.domination, cc.conquest, cc.bankruptcy, cc.tiebreak,
+                br.champ_villages_sum as f64 / br.n as f64,
+                br.champ_outposts_sum as f64 / br.n as f64,
+                br.champ_max_soldiers_sum as f64 / br.n as f64,
+                last_kl, kl_coef, cur_lr, ploss, vloss, n_steps, elapsed, tag
+            );
+
+            // --- anchor decay + auto-revert collapse guards (PPO-SPEC §5, §8). ---
+            // If true_win rose vs best: relax the anchor (kl_coef *= 0.9, floor 0.05).
+            // If it dropped >0.05 below the best bench: AUTO-REVERT to champion-best
+            // + halve lr (and restore the anchor coef). Target-KL stays on throughout.
+            if true_win > best_win {
+                // (best_win tracks br.win above; we use true_win as the quality signal
+                //  for anchor decay per the spec.)
+                kl_coef = (kl_coef * 0.9).max(0.05);
+            } else if true_win < best_win - 0.05 {
+                if let Ok(s) = std::fs::read_to_string(tc.out.join("champion-best.json")) {
+                    if let Ok(n) = serde_json::from_str::<SpatialNet>(&s) {
+                        println!("iter {iter}: AUTO-REVERT — trueWin {:.3} dropped >0.05 below best {:.3}; reloading champion-best + halving lr", true_win, best_win);
+                        net = n;
+                        cur_lr *= 0.5;
+                        kl_coef = pcfg.kl_anchor; // restore the anchor pull
+                    }
+                }
+            }
+
+            // PFSP snapshot (always keep the pool filled; only SAMPLED when --pfsp).
+            if tc.pfsp {
+                pool_nets.push(net.clone());
+                pool_wins.push(0.0);
+                pool_games.push(0.0);
+                while pool_nets.len() > PFSP_POOL_CAP {
+                    pool_nets.remove(0);
+                    pool_wins.remove(0);
+                    pool_games.remove(0);
+                }
+                println!("iter {iter}: PFSP pool snapshot (pool size {})", pool_nets.len());
+            }
+        }
+    }
+
+    let json = serde_json::to_string(&net).expect("SpatialNet serialises");
+    let _ = std::fs::write(tc.out.join("champion.json"), json);
+    println!("cnn_train --ppo: done in {:.0}s → {}", start.elapsed().as_secs_f64(), tc.out.display());
 }
 
 fn run_train(tc: &TrainCfg) {
@@ -8378,6 +9260,84 @@ fn main() {
         return;
     }
 
+    // PPO + GAE(λ) policy-gradient training (PPO-SPEC). Parallel to --train but
+    // collects on-policy by policy-head sampling (no MCTS), credits via GAE, and
+    // updates with the clipped surrogate under a KL trust region. Warm-start ONLY.
+    if args.iter().any(|a| a == "--ppo") {
+        if args.iter().any(|a| a == "--help" || a == "-h") {
+            println!(
+                "cnn_train --ppo: PPO + GAE(λ) training (policy-head sampling rollouts, no MCTS). \
+                 Requires a compatible --init warm-start net (no cold-start)."
+            );
+            println!(
+                "  shared flags (via TrainCfg base): --out --init --iters --batch --lr --l2 --vs-hard-frac \
+                 --bench-every --bench-games --cap --width --height --seed --script-opponents --script-frac \
+                 --pfsp --device-bonus --tie-penalty --kl-anchor-net + all Φ-shaping weights"
+            );
+            println!(
+                "  PPO flags: --ppo-games N (256) --ppo-epochs N (4) --ppo-clip F (0.2) --ppo-ent F (0.01) \
+                 --ppo-val F (0.5) --ppo-vclip F (0) --ppo-gamma F (0.997) --ppo-lambda F (0.95) \
+                 --ppo-target-kl F (0.02) --ppo-kl-anchor F (0.3) --ppo-temp F (1.0) --ppo-shape-weight F (0.0) \
+                 --ppo-policy-only-warmup N (0)"
+            );
+            return;
+        }
+        let mut pc = PpoCfg::default();
+        // Shared (base TrainCfg) knobs.
+        if let Some(v) = arg_val(&args, "--out") { pc.base.out = PathBuf::from(v); }
+        if let Some(v) = arg_val(&args, "--init") { pc.base.init = Some(PathBuf::from(v)); }
+        if let Some(v) = arg_val(&args, "--iters") { pc.base.iters = v.parse().unwrap_or(pc.base.iters); }
+        if let Some(v) = arg_val(&args, "--batch") { pc.base.batch = v.parse().unwrap_or(pc.base.batch); }
+        if let Some(v) = arg_val(&args, "--lr") { pc.base.lr = v.parse().unwrap_or(pc.base.lr); }
+        if let Some(v) = arg_val(&args, "--l2") { pc.base.l2 = v.parse().unwrap_or(pc.base.l2); }
+        if let Some(v) = arg_val(&args, "--vs-hard-frac") {
+            pc.base.vs_hard_frac = v.parse::<f64>().unwrap_or(pc.base.vs_hard_frac).clamp(0.0, 1.0);
+        }
+        if let Some(v) = arg_val(&args, "--bench-every") { pc.base.bench_every = v.parse::<usize>().unwrap_or(pc.base.bench_every).max(1); }
+        if let Some(v) = arg_val(&args, "--bench-games") { pc.base.bench_games = v.parse().unwrap_or(pc.base.bench_games); }
+        if let Some(v) = arg_val(&args, "--cap") { pc.base.cap = v.parse().unwrap_or(pc.base.cap); }
+        if let Some(v) = arg_val(&args, "--width") { pc.base.width = v.parse().unwrap_or(pc.base.width); }
+        if let Some(v) = arg_val(&args, "--height") { pc.base.height = v.parse().unwrap_or(pc.base.height); }
+        if let Some(v) = arg_val(&args, "--seed") { pc.base.seed = v.parse().unwrap_or(pc.base.seed); }
+        if args.iter().any(|a| a == "--pfsp") { pc.base.pfsp = true; }
+        if args.iter().any(|a| a == "--no-pfsp") { pc.base.pfsp = false; }
+        if args.iter().any(|a| a == "--script-opponents") { pc.base.script_opponents = true; }
+        if args.iter().any(|a| a == "--no-script-opponents") { pc.base.script_opponents = false; }
+        if let Some(v) = arg_val(&args, "--script-frac") {
+            pc.base.script_frac = v.parse::<f64>().unwrap_or(pc.base.script_frac).clamp(0.0, 1.0);
+        }
+        if let Some(v) = arg_val(&args, "--device-bonus") { pc.base.device_bonus = v.parse().unwrap_or(pc.base.device_bonus); }
+        if let Some(v) = arg_val(&args, "--tie-penalty") { pc.base.tie_penalty = v.parse().unwrap_or(pc.base.tie_penalty); }
+        if let Some(v) = arg_val(&args, "--stall-rounds") { pc.base.stall_rounds = v.parse().unwrap_or(pc.base.stall_rounds); }
+        if let Some(v) = arg_val(&args, "--kl-anchor-net") { pc.base.kl_anchor_net = PathBuf::from(v); }
+        if let Some(v) = arg_val(&args, "--net-size") { pc.base.small_net = v.eq_ignore_ascii_case("small"); }
+        if args.iter().any(|a| a == "--small-net") { pc.base.small_net = true; }
+        // Φ-shaping weights (default 0/no-op; only used when --ppo-shape-weight>0).
+        if let Some(v) = arg_val(&args, "--device-potential") { pc.base.device_potential = v.parse().unwrap_or(pc.base.device_potential); }
+        if let Some(v) = arg_val(&args, "--tile-potential") { pc.base.tile_potential = v.parse().unwrap_or(pc.base.tile_potential); }
+        if let Some(v) = arg_val(&args, "--soldier-cap-potential") { pc.base.soldier_cap_potential = v.parse::<f64>().unwrap_or(pc.base.soldier_cap_potential).max(0.0); }
+        if let Some(v) = arg_val(&args, "--w-army") { pc.base.w_army = v.parse::<f64>().unwrap_or(pc.base.w_army).max(0.0); }
+        if let Some(v) = arg_val(&args, "--w-soldier-forward") { pc.base.w_soldier_forward = v.parse::<f64>().unwrap_or(pc.base.w_soldier_forward).clamp(0.0, 1.0); }
+        if let Some(v) = arg_val(&args, "--w-expert") { pc.base.w_expert = v.parse::<f64>().unwrap_or(pc.base.w_expert).clamp(0.0, 1.0); }
+        if let Some(v) = arg_val(&args, "--w-cut") { pc.base.w_cut = v.parse::<f64>().unwrap_or(pc.base.w_cut).max(0.0); }
+        // PPO-specific knobs.
+        if let Some(v) = arg_val(&args, "--ppo-games") { pc.ppo_games = v.parse::<usize>().unwrap_or(pc.ppo_games).max(1); }
+        if let Some(v) = arg_val(&args, "--ppo-epochs") { pc.ppo_epochs = v.parse::<usize>().unwrap_or(pc.ppo_epochs).max(1); }
+        if let Some(v) = arg_val(&args, "--ppo-clip") { pc.clip_eps = v.parse::<f64>().unwrap_or(pc.clip_eps).max(1e-4); }
+        if let Some(v) = arg_val(&args, "--ppo-ent") { pc.ent_coef = v.parse::<f64>().unwrap_or(pc.ent_coef).max(0.0); }
+        if let Some(v) = arg_val(&args, "--ppo-val") { pc.val_coef = v.parse::<f64>().unwrap_or(pc.val_coef).clamp(0.0, 1.0); }
+        if let Some(v) = arg_val(&args, "--ppo-vclip") { pc.vclip = v.parse::<f64>().unwrap_or(pc.vclip).max(0.0); }
+        if let Some(v) = arg_val(&args, "--ppo-gamma") { pc.gamma = v.parse::<f64>().unwrap_or(pc.gamma).clamp(0.0, 1.0); }
+        if let Some(v) = arg_val(&args, "--ppo-lambda") { pc.lambda = v.parse::<f64>().unwrap_or(pc.lambda).clamp(0.0, 1.0); }
+        if let Some(v) = arg_val(&args, "--ppo-target-kl") { pc.target_kl = v.parse::<f64>().unwrap_or(pc.target_kl).max(1e-5); }
+        if let Some(v) = arg_val(&args, "--ppo-kl-anchor") { pc.kl_anchor = v.parse::<f64>().unwrap_or(pc.kl_anchor).max(0.0); }
+        if let Some(v) = arg_val(&args, "--ppo-temp") { pc.temp = v.parse::<f64>().unwrap_or(pc.temp).max(1e-3); }
+        if let Some(v) = arg_val(&args, "--ppo-shape-weight") { pc.shape_weight = v.parse::<f64>().unwrap_or(pc.shape_weight).max(0.0); }
+        if let Some(v) = arg_val(&args, "--ppo-policy-only-warmup") { pc.policy_only_warmup = v.parse::<usize>().unwrap_or(pc.policy_only_warmup); }
+        run_ppo(&pc);
+        return;
+    }
+
     // Real AlphaZero iteration/benchmark/checkpoint loop.
     if args.iter().any(|a| a == "--train") {
         let mut tc = TrainCfg::default();
@@ -9392,6 +10352,44 @@ mod tests {
         for &v in &g {
             assert!((-1.0..=1.0).contains(&v));
         }
+    }
+
+    // --- PPO GAE(λ) hand-computed check (PPO-SPEC §2) ------------------------
+
+    #[test]
+    fn compute_gae_matches_hand_computation() {
+        // 3 steps; terminal reward only (non-terminal = 0), values are arbitrary.
+        // V(s_3) (terminal boundary) = 0.
+        let rewards = [0.0, 0.0, 1.0];
+        let values = [0.2, 0.5, 0.4];
+        let gamma = 0.9;
+        let lambda = 0.95;
+        let (adv, vtarg) = compute_gae(&rewards, &values, gamma, lambda);
+
+        // Hand compute (back-to-front):
+        //   delta_2 = r_2 + γ·V(s_3) − V(s_2) = 1.0 + 0.9·0   − 0.4 = 0.6
+        //   A_2     = delta_2                                       = 0.6
+        //   delta_1 = r_1 + γ·V(s_2) − V(s_1) = 0   + 0.9·0.4 − 0.5 = -0.14
+        //   A_1     = delta_1 + γλ·A_2 = -0.14 + 0.9·0.95·0.6        = 0.373
+        //   delta_0 = r_0 + γ·V(s_1) − V(s_0) = 0   + 0.9·0.5 − 0.2 = 0.25
+        //   A_0     = delta_0 + γλ·A_1 = 0.25 + 0.9·0.95·0.373       = 0.5689...
+        let gl = gamma * lambda;
+        let d2 = rewards[2] + gamma * 0.0 - values[2];
+        let a2 = d2;
+        let d1 = rewards[1] + gamma * values[2] - values[1];
+        let a1 = d1 + gl * a2;
+        let d0 = rewards[0] + gamma * values[1] - values[0];
+        let a0 = d0 + gl * a1;
+        assert!((adv[2] - a2).abs() < 1e-12, "A_2 want {a2} got {}", adv[2]);
+        assert!((adv[1] - a1).abs() < 1e-12, "A_1 want {a1} got {}", adv[1]);
+        assert!((adv[0] - a0).abs() < 1e-12, "A_0 want {a0} got {}", adv[0]);
+        // vtarg_t = A_t + V(s_t).
+        assert!((vtarg[2] - (a2 + values[2])).abs() < 1e-12);
+        assert!((vtarg[1] - (a1 + values[1])).abs() < 1e-12);
+        assert!((vtarg[0] - (a0 + values[0])).abs() < 1e-12);
+        // Empty input is handled.
+        let (ea, ev) = compute_gae(&[], &[], gamma, lambda);
+        assert!(ea.is_empty() && ev.is_empty());
     }
 
     // --- (b) growth-aware potential Φ ---------------------------------------
