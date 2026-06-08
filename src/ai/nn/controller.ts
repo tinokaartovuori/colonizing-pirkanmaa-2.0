@@ -30,6 +30,7 @@ import { select, scoreCandidate } from './policy';
 import { SearchConfig, select as searchSelect } from './search';
 import { ValueNet } from './value';
 import { SpatialNetTS, selectSpatialIndex } from './spatial_net';
+import { SpatialSearchConfig, selectSpatialMcts } from './spatial_search';
 import { buildSnapshot } from '../../managers/persistence';
 import * as M from './metrics';
 import * as S from './safety';
@@ -46,6 +47,19 @@ import * as S from './safety';
 export interface SearchWiring {
   config: SearchConfig;
   valueNet: ValueNet | null;
+  mapInfo: { width: number; height: number; seed: number };
+}
+
+/**
+ * Optional spatial-net MCTS wiring. When present (with a `spatialNet`), the
+ * discretionary decision loop runs the deploy/bench PUCT search (spatial_search.ts)
+ * using the CNN's policy as prior + its value head at the leaves — the FULL-strength
+ * deploy mode of the AlphaZero champion (e.g. sd4-az-002), instead of the greedy
+ * policy argmax. `mapInfo` supplies the seed/dimensions the sandbox needs to
+ * regenerate the deterministic terrain. The army-economy scaffold still runs first.
+ */
+export interface SpatialSearchWiring {
+  config: SpatialSearchConfig;
   mapInfo: { width: number; height: number; seed: number };
 }
 
@@ -88,6 +102,13 @@ export class NeuralAiController {
      * `genome` MLP is then unused for scoring. Takes precedence over `search`.
      */
     private spatialNet?: SpatialNetTS,
+    /**
+     * Optional spatial-net deploy MCTS. When present (alongside `spatialNet`), the
+     * discretionary loop runs PUCT search (policy prior + value head leaves) for
+     * the CNN champion's FULL deploy strength instead of the greedy argmax. Omitted
+     * ⇒ greedy spatial policy (byte-identical to the prior deploy).
+     */
+    private spatialSearch?: SpatialSearchWiring,
   ) {}
 
   // --- first round ----------------------------------------------------------
@@ -162,7 +183,29 @@ export class NeuralAiController {
         const gvec = globalFeatures(player, this.om, this.pm, round);
         let cands = enumerate(ctx);
         let choice: ReturnType<typeof select>;
-        if (this.spatialNet) {
+        if (this.spatialNet && this.spatialSearch) {
+          // Trained spatial CNN deploy WITH MCTS: snapshot the LIVE mid-turn state,
+          // run PUCT search (policy prior + value-head leaves) in a sandbox, and
+          // pick the most-visited root edge INDEX (into THIS enumerate(), same
+          // order/state). The search never mutates the live engine. This is the
+          // champion's full bench-strength deploy mode (sims≈64). Falls back to the
+          // greedy argmax on any search failure so a CPU turn never stalls.
+          let idx: number;
+          try {
+            const snap = buildSnapshot(this.om, this.pm, this.spatialSearch.mapInfo);
+            idx = selectSpatialMcts(
+              this.spatialNet, snap, player.getPlayerNum(), this.cfg, this.spatialSearch.config,
+            );
+          } catch {
+            try {
+              idx = selectSpatialIndex(this.spatialNet, player, this.om, this.pm, cands);
+            } catch {
+              choice = select(this.genome, gvec, cands, this.cfg, this.rand);
+              idx = cands.indexOf(choice);
+            }
+          }
+          choice = cands[idx] ?? cands[cands.length - 1];
+        } else if (this.spatialNet) {
           // Trained spatial CNN deploy: greedy argmax of the net's per-candidate
           // score over the LIVE state (board planes + target-tile embed). Mirrors
           // the deployed net-greedy turn loop the champion was benchmarked with.

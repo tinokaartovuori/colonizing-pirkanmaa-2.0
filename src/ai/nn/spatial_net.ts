@@ -23,10 +23,12 @@
 import { TileBase } from '../../model/tile';
 import { AbundantForest, Forest, Grassland, Mountain, River } from '../../model/tiles';
 import { PlayerBase } from '../../model/player';
-import { BasicResource } from '../../core/resources';
+import { BasicResource, strangeDeviceCountdown } from '../../core/resources';
 import type { ObjectManager } from '../../managers/objectmanager';
 import type { PlayerManager } from '../../managers/playermanager';
 import { Candidate, INTENT_COUNT, LOCAL_DIM } from './candidates';
+import { moneyDrainPerRound } from './metrics';
+import { StrangeDevice } from '../../model/building';
 
 // ---------------------------------------------------------------------------
 // Serialized net (matches the Rust serde JSON of SpatialNet exactly).
@@ -240,6 +242,137 @@ function availableTilesFor(player: PlayerBase, om: ObjectManager): Set<TileBase>
   return avail;
 }
 
+// ---------------------------------------------------------------------------
+// Value-head per-state scalar features — port of cnn_train.rs `value_scalars`.
+// ---------------------------------------------------------------------------
+
+/** Length of the value-head scalar vector (cnn_train.rs VALUE_SCALAR_DIM). */
+export const VALUE_SCALAR_DIM = 12;
+const DEVICE_MONEY_COST = 1300; // STRANGE_DEVICE_BUILD_COST money component.
+const DEVICE_MIN_ROUND = 18; // build_strange_device rounds≥18 gate.
+
+function clamp01(x: number): number {
+  return x < 0 ? 0 : x > 1 ? 1 : x;
+}
+
+function countWorkers(tile: TileBase): number {
+  let n = 0;
+  for (const u of tile.getUnits()) if (u.getType() === 'BasicWorker') n++;
+  return n;
+}
+
+/** Growth-aware realized MONEY income/round (port of realized_income_per_round). */
+function realizedIncomePerRound(player: PlayerBase): number {
+  let income = 0;
+  for (const tile of player.getObjects()) {
+    if (!(tile instanceof TileBase)) continue;
+    const b = tile.getBuilding();
+    if (!b) continue;
+    if (!isProducingProducer(tile)) {
+      // isProducingProducer only covers the planes producer set; here we also
+      // need the same gate used by realized_income (Farm/Mine/Hydro/Nuclear/
+      // Village/Outpost). isProducingProducer returns true exactly for those
+      // when producing, so reuse it directly.
+      continue;
+    }
+    const money = b.getProduction().get(BasicResource.MONEY) ?? 0;
+    const kind = b.getType();
+    if (kind === 'Mine') {
+      const workers = countWorkers(tile);
+      const mult = tile.getUnits().some((u) => u.getType() === 'Expert') ? 2 : 1;
+      income += money * workers * mult;
+    } else if (kind === 'Hydroelectric Power Plant' || kind === 'Nuclear Power Plant') {
+      income += money * countWorkers(tile);
+    } else {
+      income += money;
+    }
+  }
+  return income - moneyDrainPerRound(player);
+}
+
+/**
+ * VALUE_SCALAR_DIM-length per-state scalar feature vector for the value head, from
+ * `player`'s perspective. 1:1 port of cnn_train.rs `value_scalars`. All entries
+ * bounded to ≈[-1,1].
+ */
+export function valueScalars(
+  player: PlayerBase, om: ObjectManager, pm: PlayerManager,
+): number[] {
+  const enemies = liveEnemies(player, om, pm);
+
+  const inc = clamp01(realizedIncomePerRound(player) / 400);
+
+  // Staffed ratio (growth-aware).
+  let total = 0, producing = 0;
+  for (const tile of player.getObjects()) {
+    if (!(tile instanceof TileBase)) continue;
+    const b = tile.getBuilding();
+    if (!b || !PRODUCER_TYPES.has(b.getType())) continue;
+    total += 1;
+    if (isProducingProducer(tile)) producing += 1;
+  }
+  const staffedRatio = producing / Math.max(1, total);
+
+  // Filled (used) capacity.
+  const usedUnit = Math.max(0, player.getMaxUnitAmount() - player.getFreeUnitAmount());
+  const usedSoldier = Math.max(0, player.getMaxSoldierAmount() - player.getFreeSoldierAmount());
+  const usedUnitN = clamp01(usedUnit / 10);
+  const usedSoldierN = clamp01(usedSoldier / 6);
+
+  // Treasury toward the Device.
+  const money = player.getResources().get(BasicResource.MONEY) ?? 0;
+  const bank = clamp01(money / DEVICE_MONEY_COST);
+
+  // Tile lead, signed in [-1,1].
+  const myTiles = om.getTileCountForPlayer(player);
+  let maxEnemy = 0;
+  for (const q of enemies) maxEnemy = Math.max(maxEnemy, om.getTileCountForPlayer(q));
+  const totalTiles = Math.max(1, om.getTileCount());
+  const tileLead = Math.max(-1, Math.min(1, (myTiles - maxEnemy) / totalTiles));
+
+  // Device-window flag.
+  const rounds = pm.getRoundsPlayed();
+  const notLosing = enemies.every((q) => om.getTileCountForPlayer(q) <= myTiles);
+  const hasDevice = om.hasStrangeDevice();
+  const deviceWindow = rounds >= DEVICE_MIN_ROUND && !hasDevice && notLosing ? 1 : 0;
+
+  // My device countdown / 40.
+  const devTile = om.findStrangeDeviceTile();
+  let myCountdown = 0;
+  if (devTile && devTile.getOwner() === player) {
+    const b = devTile.getBuilding();
+    const cd = b instanceof StrangeDevice ? b.getCountdown() : 0;
+    myCountdown = clamp01(cd / 40);
+  }
+
+  // Relative army strength (signed): my soldiers vs strongest live enemy.
+  const mySol = player.getCurrentSoldierAmount();
+  let maxEnemySol = 0;
+  for (const q of enemies) maxEnemySol = Math.max(maxEnemySol, q.getCurrentSoldierAmount());
+  const relArmy = Math.tanh((mySol - maxEnemySol) / 4);
+
+  // Headroom (capacity-blindness fix).
+  const soldierHeadroom = clamp01(player.getFreeSoldierAmount() / 6);
+  const workerHeadroom = clamp01(player.getFreeUnitAmount() / 10);
+
+  // Enemy device threat (mirror of my_countdown), progress in [0,1].
+  let enemyDeviceThreat = 0;
+  if (devTile) {
+    const o = devTile.getOwner();
+    if (o !== null && o !== player && enemies.includes(o)) {
+      const b = devTile.getBuilding();
+      const cd = b instanceof StrangeDevice ? Math.max(0, b.getCountdown()) : 0;
+      const maxCd = Math.max(1, strangeDeviceCountdown(om.getTileCount()));
+      enemyDeviceThreat = clamp01((maxCd - cd) / maxCd);
+    }
+  }
+
+  return [
+    inc, staffedRatio, usedUnitN, usedSoldierN, bank, tileLead,
+    deviceWindow, myCountdown, relArmy, soldierHeadroom, workerHeadroom, enemyDeviceThreat,
+  ];
+}
+
 /** Build the (PLANE_COUNT,H,W) tensor for `player`. Returns {planes,h,w}. */
 export function boardPlanes(
   player: PlayerBase, om: ObjectManager, pm: PlayerManager,
@@ -391,6 +524,8 @@ export interface BoardCache {
   boardEmbed: number[];
   /** GlobalAvgPool(boardEmbed); length D. */
   globalEmbed: number[];
+  /** Per-state value-head scalar features (length value_scalar_dim), or []. */
+  valueScalars: number[];
 }
 
 function clamp3(v: number): number {
@@ -432,7 +567,7 @@ export class SpatialNetTS {
   }
 
   /** Run the shared conv trunk + pool over a board. */
-  forwardBoard(planes: number[], h: number, width: number): BoardCache {
+  forwardBoard(planes: number[], h: number, width: number, valueScalars: number[] = []): BoardCache {
     const conv1 = tanhForward(convForward(this.w.conv1, planes, h, width));
     let boardEmbed = tanhForward(convForward(this.w.conv2, conv1, h, width));
     // Optional residual block (champion sd4-az-002 has none).
@@ -442,7 +577,31 @@ export class SpatialNetTS {
       boardEmbed = resAct.map((r, i) => r + trunk2[i]);
     }
     const globalEmbed = globalAvgPool(boardEmbed, this.d, h, width);
-    return { h, w: width, boardEmbed, globalEmbed };
+    return { h, w: width, boardEmbed, globalEmbed, valueScalars };
+  }
+
+  /**
+   * Scalar value in [-1,1] from a cached board (mirror Rust `value_from` /
+   * `value_forward`). value_input = global_embed (D) ⊕ value_scalars; then
+   * Dense(value_d1) -> tanh -> Dense(value_d2) -> tanh. Returns 0 if the value
+   * head is absent (policy-only weights).
+   */
+  valueFrom(cache: BoardCache): number {
+    const vd1 = this.w.value_d1;
+    const vd2 = this.w.value_d2;
+    if (!vd1 || !vd2) return 0;
+    const vsd = this.w.value_scalar_dim ?? 0;
+    let input: number[];
+    if (vsd === 0) {
+      input = cache.globalEmbed;
+    } else {
+      input = new Array<number>(this.d + vsd);
+      for (let i = 0; i < this.d; i++) input[i] = cache.globalEmbed[i];
+      for (let i = 0; i < vsd; i++) input[this.d + i] = cache.valueScalars[i] ?? 0;
+    }
+    const h1 = tanhForward(denseForward(vd1, input));
+    const outPre = denseForward(vd2, h1)[0];
+    return Math.tanh(outPre);
   }
 
   /** Linear policy score for one candidate against a cached board. */

@@ -8,10 +8,10 @@ import type { PlayerManager } from '../../managers/playermanager';
 import type { NeuralDifficulty } from '../../model/player';
 import { Genome } from './mlp';
 import { TierConfig } from './candidates';
-import { NeuralAiController, SearchWiring } from './controller';
+import { NeuralAiController, SearchWiring, SpatialSearchWiring } from './controller';
 import { NEURAL_WEIGHTS } from './weights';
 import { NEURAL_MODELS_BY_ID } from './models';
-import { TIER_SEARCH, HARD_CONFIG, HARD_SEARCH } from './tiers';
+import { TIER_SEARCH, HARD_CONFIG, HARD_SEARCH, SPATIAL_HARD_SEARCH } from './tiers';
 import type { SearchConfig } from './search';
 import type { ValueNet } from './value';
 import { SpatialNetTS } from './spatial_net';
@@ -99,8 +99,15 @@ export function createModelController(
   // policy mode), with the army-economy scaffold the net was trained on.
   if (modelId === SPATIAL_CHAMPION_ID) {
     const net = new SpatialNetTS(SPATIAL_CHAMPION_WEIGHTS);
+    // With map info, deploy at FULL bench strength via the spatial deploy MCTS
+    // (policy prior + value-head leaves, sims≈64 — the Rust deploy config). Without
+    // it (e.g. golden-trace export / parity), fall back to the greedy net policy so
+    // those paths stay byte-identical. The army-economy scaffold runs first either way.
+    const spatialSearch: SpatialSearchWiring | undefined = mapInfo
+      ? { config: SPATIAL_HARD_SEARCH, mapInfo }
+      : undefined;
     return new NeuralAiController(
-      eh, om, pm, spatialPlaceholderGenome(), HARD_CONFIG, rand, undefined, net,
+      eh, om, pm, spatialPlaceholderGenome(), HARD_CONFIG, rand, undefined, net, spatialSearch,
     );
   }
   const model = NEURAL_MODELS_BY_ID[modelId];

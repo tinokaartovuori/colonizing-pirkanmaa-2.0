@@ -33,7 +33,12 @@ fn main() {
 
     let (pc, h, w) = (net.plane_count, 4usize, 5usize);
     let planes = synth_planes(pc, h, w);
-    let cache = net.forward_board(&planes, h, w);
+
+    // Deterministic synthetic value_scalars (length = net.value_scalar_dim),
+    // bounded ~[-1,1] — same formula the TS twin uses.
+    let vsd = net.value_scalar_dim;
+    let vscal: Vec<f64> = (0..vsd).map(|i| ((i % 7) as f64) / 7.0 * 2.0 - 1.0).collect();
+    let cache = net.forward_board_scalars(&planes, h, w, &vscal);
 
     // Synthetic candidate features (deterministic).
     let local: Vec<f64> = (0..net.local_dim).map(|i| ((i % 5) as f64) * 0.1 - 0.2).collect();
@@ -42,10 +47,11 @@ fn main() {
 
     let s_target = net.score_candidate(&cache, Some((2, 1)), &local, &intent);
     let s_pass = net.score_candidate(&cache, None, &local, &intent);
+    let value = net.value_from(&cache);
 
     let be_sum: f64 = cache.board_embed.iter().sum();
     let ge_sum: f64 = cache.global_embed.iter().sum();
 
-    println!("RUST_FWD board_embed_sum={:.10} global_embed_sum={:.10} score_target={:.10} score_pass={:.10}",
-        be_sum, ge_sum, s_target, s_pass);
+    println!("RUST_FWD board_embed_sum={:.10} global_embed_sum={:.10} score_target={:.10} score_pass={:.10} value={:.10}",
+        be_sum, ge_sum, s_target, s_pass, value);
 }
