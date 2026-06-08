@@ -29,6 +29,7 @@ import { enumerate, AiCtx, TierConfig, Intent } from './candidates';
 import { select, scoreCandidate } from './policy';
 import { SearchConfig, select as searchSelect } from './search';
 import { ValueNet } from './value';
+import { SpatialNetTS, selectSpatialIndex } from './spatial_net';
 import { buildSnapshot } from '../../managers/persistence';
 import * as M from './metrics';
 import * as S from './safety';
@@ -79,6 +80,14 @@ export class NeuralAiController {
     private rand: () => number = Math.random,
     /** Optional test-time MCTS. When omitted, planTurn is byte-identical to today. */
     private search?: SearchWiring,
+    /**
+     * Optional trained spatial CNN. When present, the discretionary decision loop
+     * scores candidates with the CNN's `score_candidate` (board planes + per-tile
+     * target embed + global pool) and picks the greedy argmax — the deployed
+     * (non-MCTS) policy mode of the AlphaZero champion (e.g. sd4-az-002). The
+     * `genome` MLP is then unused for scoring. Takes precedence over `search`.
+     */
+    private spatialNet?: SpatialNetTS,
   ) {}
 
   // --- first round ----------------------------------------------------------
@@ -153,7 +162,19 @@ export class NeuralAiController {
         const gvec = globalFeatures(player, this.om, this.pm, round);
         let cands = enumerate(ctx);
         let choice: ReturnType<typeof select>;
-        if (this.search) {
+        if (this.spatialNet) {
+          // Trained spatial CNN deploy: greedy argmax of the net's per-candidate
+          // score over the LIVE state (board planes + target-tile embed). Mirrors
+          // the deployed net-greedy turn loop the champion was benchmarked with.
+          let idx: number;
+          try {
+            idx = selectSpatialIndex(this.spatialNet, player, this.om, this.pm, cands);
+          } catch {
+            choice = select(this.genome, gvec, cands, this.cfg, this.rand);
+            idx = cands.indexOf(choice);
+          }
+          choice = cands[idx] ?? cands[cands.length - 1];
+        } else if (this.search) {
           // Test-time MCTS: snapshot the LIVE mid-turn state, branch in a
           // sandbox, and pick the best candidate INDEX (into THIS enumerate(),
           // same order/state). Execute it on the LIVE engine below. The search

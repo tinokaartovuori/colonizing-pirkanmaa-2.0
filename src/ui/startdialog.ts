@@ -2,6 +2,7 @@
 // with a per-player Human/Computer selector.
 
 import { Difficulty, PlayerConfig } from '../model/player';
+import { SPATIAL_CHAMPION_DIFFICULTY } from '../ai/nn';
 
 export interface StartSettings {
   width: number;
@@ -19,16 +20,19 @@ function checkCharacters(s: string): boolean {
 }
 
 const DEFAULT_NAMES = ['PlayerOne', 'PlayerTwo', 'PlayerThree', 'PlayerFour'];
-// Only two opponent types are offered: a human, or the current heuristic CPU (the
-// `hard` rule-based bot — the one that understands and races the Strange Device). The
-// older easy/medium tiers, the neural opponents and the trained `model:` roster still
-// exist in the engine (used by tests/sims) but are no longer surfaced in the New Game UI.
+// Opponent types offered in New Game: a human, the trained CNN AlphaZero champion
+// (sd4-az-002 — the strongest opponent, plays the learned army-economy strategy),
+// or the heuristic rule-based CPU (the `hard` bot that races the Strange Device).
+// The older easy/medium tiers and the rest of the `model:` roster still exist in
+// the engine (tests/sims) but are not surfaced here.
 const TYPE_OPTIONS: Array<[Difficulty, string]> = [
   ['human', 'Human'],
-  ['hard', 'CPU'],
+  [SPATIAL_CHAMPION_DIFFICULTY as Difficulty, 'CPU (Neural Champion)'],
+  ['hard', 'CPU (Heuristic)'],
 ];
-// Player 2 starts as the heuristic CPU so a single human can play straight away.
-const DEFAULT_TYPES: Difficulty[] = ['human', 'hard', 'human', 'human'];
+// Player 2 starts as the strongest CPU (the trained neural champion) so a single
+// human gets the best opponent straight away.
+const DEFAULT_TYPES: Difficulty[] = ['human', SPATIAL_CHAMPION_DIFFICULTY as Difficulty, 'human', 'human'];
 
 /** On load, when a saved game exists: let the player resume it or start fresh. */
 export function showResumeDialog(onContinue: () => void, onNewGame: () => void): void {

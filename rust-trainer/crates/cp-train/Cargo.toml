@@ -23,6 +23,10 @@ path = "src/bin/bench.rs"
 name = "value_train"
 path = "src/bin/value_train.rs"
 
+[[bin]]
+name = "cnn_fwd_parity"
+path = "src/bin/cnn_fwd_parity.rs"
+
 [dependencies]
 cp-sim = { path = "../cp-sim" }
 cp-ai = { path = "../cp-ai" }

@@ -99,6 +99,15 @@ export interface Candidate {
   local: number[];
   execute: () => boolean;
   label: string;
+  /**
+   * The board tile this candidate acts on (Build/Expand/BuyUnit/Attack target, or
+   * a soldier's MarchSoldier destination). `undefined` for Pass. ADDITIVE: used
+   * ONLY by the spatial CNN deploy path (`spatial_net.ts`), which reads the
+   * board_embed column at this tile's `(x,y)` as the candidate's `target_embed`.
+   * Mirrors `policy_spatial::candidate_target_tile` in the Rust trainer. The MLP
+   * policy path ignores it, so it is non-parity-affecting.
+   */
+  target?: TileBase;
 }
 
 export interface AiCtx {
@@ -357,6 +366,7 @@ function buildFarm(ctx: AiCtx): Candidate | null {
     intent: Intent.BuildFarm,
     local: localVec({ p, cost: FARM_BUILD_COST, netDelta: 44, targetValue: 4, incomeStaffing: !!staffed }),
     label: 'BuildFarm',
+    target: spot,
     execute: () => ctx.eh.aiBuildBuilding('Farm', spot),
   };
 }
@@ -371,6 +381,7 @@ function buildMine(ctx: AiCtx): Candidate | null {
     intent: Intent.BuildMine,
     local: localVec({ p, cost: MINE_BUILD_COST, netDelta: 20, targetValue: 5 }),
     label: 'BuildMine',
+    target: mountain,
     execute: () => ctx.eh.aiBuildBuilding('Mine', mountain),
   };
 }
@@ -390,6 +401,7 @@ function buildVillage(ctx: AiCtx): Candidate | null {
     intent: Intent.BuildVillage,
     local: localVec({ p, cost: VILLAGE_BUILD_COST, netDelta: -5, targetValue: 4, unitCapGain: 3 }),
     label: 'BuildVillage',
+    target: spot,
     execute: () => ctx.eh.aiBuildBuilding('Village', spot),
   };
 }
@@ -427,6 +439,7 @@ function buildOutpost(ctx: AiCtx): Candidate | null {
     intent: Intent.BuildOutpost,
     local: localVec({ p, cost: OUTPOST_BUILD_COST, netDelta: -50, targetValue: 3, soldierCapGain: 3 }),
     label: 'BuildOutpost',
+    target: spot,
     execute: () => ctx.eh.aiBuildBuilding('Outpost', spot),
   };
 }
@@ -444,6 +457,7 @@ function buildHydro(ctx: AiCtx): Candidate | null {
     intent: Intent.BuildHydro,
     local: localVec({ p, cost: HEPP_BUILD_COST, netDelta: 80, targetValue: 3 }),
     label: 'BuildHydro',
+    target: river,
     execute: () => ctx.eh.aiBuildBuilding('Hydroelectric Power Plant', river),
   };
 }
@@ -459,6 +473,7 @@ function buildNuclear(ctx: AiCtx): Candidate | null {
     intent: Intent.BuildNuclear,
     local: localVec({ p, cost: NUCLEARPP_BUILD_COST, netDelta: 160, targetValue: 5 }),
     label: 'BuildNuclear',
+    target: spot,
     execute: () => ctx.eh.aiBuildBuilding('Nuclear Power Plant', spot),
   };
 }
@@ -509,6 +524,7 @@ function buildStrangeDevice(ctx: AiCtx): Candidate | null {
     intent: Intent.BuildStrangeDevice,
     local: localVec({ p, cost: STRANGE_DEVICE_BUILD_COST, netDelta: 0, targetValue: 6 }),
     label: 'BuildStrangeDevice',
+    target: spot,
     execute: () => ctx.eh.aiBuildBuilding('Strange Device', spot),
   };
 }
@@ -548,6 +564,7 @@ function buildBridge(ctx: AiCtx): Candidate | null {
     intent: Intent.BuildBridge,
     local: localVec({ p, cost: BRIDGE_BUILD_COST, netDelta: -5, targetValue: unblockCount }),
     label: 'BuildBridge',
+    target: river,
     execute: () => ctx.eh.aiBuildBuilding('Bridge', river),
   };
 }
@@ -605,6 +622,7 @@ function crackDevice(ctx: AiCtx, enemyCoords: { x: number; y: number }[]): Candi
     intent: Intent.CrackDevice,
     local: localVec({ p, netDelta: 0, targetValue: Math.max(0, 6 - Math.min(6, countdown)), spatial }),
     label: 'CrackDevice',
+    target: dev,
     execute: () => {
       let cur = placed;
       let did = false;
@@ -686,6 +704,7 @@ function crackHQ(ctx: AiCtx, enemyCoords: { x: number; y: number }[]): Candidate
     intent: Intent.CrackHQ,
     local: localVec({ p, netDelta: 0, targetValue: 6, spatial }),
     label: 'CrackHQ',
+    target: hq,
     execute: () => {
       let cur = placed;
       let did = false;
@@ -750,6 +769,7 @@ function expandCandidates(ctx: AiCtx, idx: Map<TileBase, number>, enemyCoords: {
       intent: Intent.Expand,
       local: localVec({ p, cost: canHire && !idle ? BASIC_WORKER_COST : undefined, netDelta: idle ? 0 : -5, targetValue: claimValue(tile), unitCapGain: capGain, spatial }),
       label: 'Expand',
+      target: tile,
       execute: () => {
         if (idle && idle.tile !== tile) return ctx.eh.aiMoveUnit(idle.unit, idle.tile, tile);
         if (canHire) return ctx.eh.aiBuyAndPlaceUnit('BasicWorker', tile);
@@ -774,6 +794,7 @@ function hireSoldier(ctx: AiCtx): Candidate | null {
     intent: Intent.HireSoldier,
     local: localVec({ p, cost: SOLDIER_COST, netDelta: -30, soldierCapGain: 0, threatened: threatened.length > 0 }),
     label: 'HireSoldier',
+    target: tile,
     execute: () => ctx.eh.aiBuyAndPlaceUnit('Soldier', tile),
   };
 }
@@ -835,6 +856,7 @@ function attackCandidates(ctx: AiCtx, idx: Map<TileBase, number>, enemyCoords: {
       intent: Intent.Attack,
       local: localVec({ p, netDelta: 0, targetValue: isHq ? 6 : 4 - defenders, soldierCapGain: 0, spatial }),
       label: 'Attack' + (isHq ? ':HQ' : ''),
+      target: tile,
       execute: () => {
         let cur = placed;
         let did = false;
@@ -918,6 +940,7 @@ function marchSoldierCandidates(
         intent: Intent.MarchSoldier,
         local: localVec({ p, targetValue: d0 - dBest, spatial }),
         label: 'MarchSoldier',
+        target: dest,
         execute: () => ctx.eh.aiMoveUnit(unit, from, dest),
       },
     });
@@ -945,6 +968,7 @@ function stackProducer(ctx: AiCtx): Candidate | null {
     intent: Intent.StackProducer,
     local: localVec({ p, cost, netDelta: 20, targetValue: 3, incomeStaffing: true }),
     label: 'StackProducer' + (wantExpert ? ':Expert' : ''),
+    target: tile,
     execute: () => ctx.eh.aiBuyAndPlaceUnit(wantExpert ? 'Expert' : 'BasicWorker', tile),
   };
 }

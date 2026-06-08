@@ -14,6 +14,20 @@ import { NEURAL_MODELS_BY_ID } from './models';
 import { TIER_SEARCH, HARD_CONFIG, HARD_SEARCH } from './tiers';
 import type { SearchConfig } from './search';
 import type { ValueNet } from './value';
+import { SpatialNetTS } from './spatial_net';
+import {
+  SPATIAL_CHAMPION_ID, SPATIAL_CHAMPION_LABEL, SPATIAL_CHAMPION_NOTE, SPATIAL_CHAMPION_WEIGHTS,
+} from './models_spatial';
+
+/** Difficulty key for the bundled CNN champion (reachable as `model:<id>`). */
+export const SPATIAL_CHAMPION_DIFFICULTY = `model:${SPATIAL_CHAMPION_ID}`;
+export { SPATIAL_CHAMPION_ID, SPATIAL_CHAMPION_LABEL, SPATIAL_CHAMPION_NOTE };
+
+/** A zero MLP genome the spatial-CNN controller carries but never uses for
+ *  scoring (the spatial net drives all decisions). Sized to the policy input. */
+function spatialPlaceholderGenome(): Genome {
+  return { arch: [1, 1], params: [0, 0] };
+}
 
 const TIER_KEY: Record<NeuralDifficulty, 'easy' | 'medium' | 'hard'> = {
   'nn-easy': 'easy',
@@ -79,6 +93,16 @@ export function createModelController(
   rand: () => number = Math.random,
   mapInfo?: { width: number; height: number; seed: number },
 ): NeuralAiController {
+  // The bundled CNN AlphaZero champion: drive the controller with the trained
+  // spatial net (board planes + per-tile target embed) at HARD strength. No MLP
+  // genome or MCTS — the deployed champion plays net-greedy (its benchmarked
+  // policy mode), with the army-economy scaffold the net was trained on.
+  if (modelId === SPATIAL_CHAMPION_ID) {
+    const net = new SpatialNetTS(SPATIAL_CHAMPION_WEIGHTS);
+    return new NeuralAiController(
+      eh, om, pm, spatialPlaceholderGenome(), HARD_CONFIG, rand, undefined, net,
+    );
+  }
   const model = NEURAL_MODELS_BY_ID[modelId];
   if (!model) throw new Error(`unknown neural model: ${modelId}`);
   const search: SearchWiring | undefined = mapInfo
