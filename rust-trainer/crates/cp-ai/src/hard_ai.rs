@@ -169,7 +169,13 @@ pub const EASY_PARAMS: AiParams = AiParams {
 /// All new logic is gated on `device` (+ `warmonger` for the proactive outposts), so
 /// HARD (`device: true, warmonger: false`) is unaffected.
 pub const DEVICE_RUSH_PARAMS: AiParams = AiParams {
-    reserve: 150,            // FIX 2: lowered 250→150 so banking can spend down to the
+    // ARC sd4 RE-TUNE (2026-06-08): reserve 150→100. On the sd4 economy (cheaper Villages)
+    // the lower floor lets the device-strategist bank toward the 1300-money Device a touch
+    // faster and field a couple more counterplay soldiers, nudging its league avg 26%→28%
+    // (vs rusher 10%→14%, vs hard 10%→14%) while no-op build/win/solvency stay PASS. The
+    // device archetype is a TEACHER (crackable by design — see league_h2h ASSERTION 3), so
+    // its low win-rate vs attackers is intended; this only trims the lopsided losses.
+    reserve: 100,            // FIX 2: lowered 250→150 so banking can spend down to the
                              // Device cost (a 250 reserve held cash hostage above the build)
     max_actions: 28,
     experts: true,           // efficient economy to afford the Device fast
@@ -398,7 +404,11 @@ pub const RUSHER_PARAMS: AiParams = AiParams {
     // could fund earlier soldiers + a harder HQ push; 170 still clears the bankruptcy bar
     // (the per-commit upkeep projections are the real guard) while freeing tempo for the
     // homing rush (HQ-reach was only ~42% — too passive).
-    reserve: 170,
+    // ARC sd4 RE-TUNE (2026-06-08): reserve 170→150. The Village money-upkeep cut (-10→-5)
+    // gives the rusher more sustained cash, so 150 lets it spend earlier on soldiers/the HQ
+    // push without risking solvency (still 0% self-bankrupt). Lifted its mirror-edge and
+    // vs-hard win-rate (vs hard 52%→57%, league avg 69%→71%) per the league_sweep results.
+    reserve: 150,
     max_actions: 30,
     experts: true,
     military: true,
@@ -448,7 +458,17 @@ pub const FORTRESS_PARAMS: AiParams = AiParams {
     // `reserve + drain*5` floor in `affords` is RETAINED on every commit (it is the
     // cushion that protects the turtle when an attacker strips its income tiles); only
     // the reserve constant and the proactive-timing gates were loosened.
-    reserve: 320,
+    // ARC sd4 RE-TUNE (2026-06-08): reserve 320→250. Counter-intuitively, a DEEP cut (tried
+    // 150) made the wall WORSE (peaked-2-Outposts 46%→32%): a too-low floor lets the turtle
+    // spend banked cash on econ/expansion FIRST, so the per-commit
+    // `affordable_after_commit(500,50,4)` Outpost gate then can't fire — the high floor is
+    // load-bearing as the banking that funds the wall. But 320 over-banked slightly on the
+    // cheaper sd4 economy; 250 is the league_sweep optimum (avg 17%→19%, vs hard 14%→18%,
+    // vs strong_army 17%→18%) while keeping the banking discipline and 0% self-bankrupt. The
+    // FORTRESS is a turtle — it is DESIGNED to lose the long game to aggressors (domination/
+    // conquest) while forcing expensive assaults; its low league win-rate is archetype-
+    // inherent (no param moves it materially — see league_sweep), not an sd4 regression.
+    reserve: 250,
     max_actions: 26,
     experts: true,
     military: true,
@@ -510,7 +530,15 @@ pub const STRONG_ARMY_PARAMS: AiParams = AiParams {
     // ARC sd3 RE-TUNE (2026-06-07): reserve 145→130. With the cheaper military the yardstick
     // can spend a little more aggressively on its army/econ tempo without risking solvency
     // (still 0% self-bankrupt under pressure), edging back ahead of the (now buffed) rusher.
-    reserve: 130,
+    // ARC sd4 RE-TUNE (2026-06-08): reserve 130→90. On the sd4 economy the r130 floor LEFT
+    // the yardstick FAILING its two key bars (vs rusher 46% [bar 60], vs hard 49% [bar 50]).
+    // The Village money-upkeep cut (-10→-5) means the yardstick can run a leaner cash floor
+    // and convert the saved cash into army/econ tempo without bankrupting (0% self-bankrupt
+    // under pressure — cut_priority + army_builder + the per-commit projections still guard
+    // it). league_sweep: r90 lifts vs hard 49%→61% (PASS) and vs rusher 46%→51%, league avg
+    // 67%→72%. (vs rusher stays <60% — rusher is a near-mirror aggressive HARD, inherently
+    // ~50/50; the 0.60 bar is aspirational, see the COMMIT-meta note above.)
+    reserve: 90,
     max_actions: 34,
     experts: true,
     military: true,
@@ -4129,7 +4157,7 @@ mod tests {
     #[test]
     fn rusher_param_shape() {
         let p = RUSHER_PARAMS;
-        assert_eq!(p.reserve, 170, "RUSHER reserve 170 (ARC sd3 re-tune from 220 — cheaper military frees tempo)");
+        assert_eq!(p.reserve, 150, "RUSHER reserve 150 (ARC sd4 re-tune from 170 — cheaper Villages free tempo)");
         assert_eq!(p.max_actions, 30);
         assert!(p.experts);
         assert!(p.military);
@@ -4145,14 +4173,14 @@ mod tests {
         assert!(!p.device);
         // Constructor wires correctly.
         let bot = HardAi::rusher();
-        assert_eq!(bot.params.reserve, 170);
+        assert_eq!(bot.params.reserve, 150);
     }
 
     /// FORTRESS (the turtle) — proactive Outposts, never marches its wall.
     #[test]
     fn fortress_param_shape() {
         let p = FORTRESS_PARAMS;
-        assert_eq!(p.reserve, 320);
+        assert_eq!(p.reserve, 250, "FORTRESS reserve 250 (ARC sd4 re-tune from 320 — banking discipline kept, cheaper sd4 economy)");
         assert_eq!(p.max_actions, 26);
         assert!(p.experts);
         assert!(p.military);
@@ -4193,7 +4221,7 @@ mod tests {
     #[test]
     fn strong_army_param_shape() {
         let p = STRONG_ARMY_PARAMS;
-        assert_eq!(p.reserve, 130, "STRONG_ARMY reserve 130 (ARC sd3 re-tune from 145 — cheaper military, more tempo)");
+        assert_eq!(p.reserve, 90, "STRONG_ARMY reserve 90 (ARC sd4 re-tune from 130 — leaner floor clears the beat-HARD bar on sd4)");
         assert_eq!(p.max_actions, 34);
         assert!(p.experts);
         assert!(p.military);
@@ -4214,7 +4242,7 @@ mod tests {
         // Constructor wires correctly.
         let bot = HardAi::strong_army();
         assert!(bot.params.army_builder);
-        assert_eq!(bot.params.reserve, 130);
+        assert_eq!(bot.params.reserve, 90);
 
         // Behavioural: with gates OFF, STRONG_ARMY commits on HARD's schedule — it is
         // ALWAYS assault-ready (no deadlocking massing gate), exactly like HARD.
@@ -4236,7 +4264,7 @@ mod tests {
     #[test]
     fn device_rush_rebuild_param_shape() {
         let p = DEVICE_RUSH_PARAMS;
-        assert_eq!(p.reserve, 150, "DEVICE_RUSH reserve 150 lets banking spend down to the Device cost");
+        assert_eq!(p.reserve, 100, "DEVICE_RUSH reserve 100 (ARC sd4 re-tune from 150 — banks toward the Device a touch faster)");
         assert_eq!(p.max_actions, 28);
         assert!(p.experts);
         assert!(p.military);
