@@ -31,6 +31,9 @@ const SERVER_URL =
 /** Per-player seat colour, indexed by 0-based seat (mirrors menu.ts COLOR_BAR / banner.ts). */
 const COLOR_BALL = ['red', 'blue', 'purple', 'yellow'];
 
+/** Autoplay cadence (ms per turn). Each step re-renders the board on a fresh scene. */
+const AUTOPLAY_MS = 450;
+
 interface SeatMetrics {
   seat: number;
   money: number; wood: number; stone: number; metal: number;
@@ -258,7 +261,7 @@ export function showReplayDashboard(deps: ReplayDeps): void {
     autoplay = window.setInterval(() => {
       if (!current || index >= current.gameData.history.length - 1) { stopAutoplay(); return; }
       goTo(index + 1, true);
-    }, 900);
+    }, AUTOPLAY_MS);
   });
 
   // --- load a game into the viewer ------------------------------------------
