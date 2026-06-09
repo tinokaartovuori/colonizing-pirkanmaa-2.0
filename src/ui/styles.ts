@@ -42,7 +42,7 @@ export function injectStyles(): void {
     content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
     border: 16px solid transparent; image-rendering: pixelated;
   }
-  .cp-container::before { border-image: ${SUNKEN}; }
+  .cp-container::before { border-image: ${RAISED}; } /* raised/elevated main panels */
   .cp-btn::before { border-image: ${RAISED}; }
 
   .cp-divider { background: #0c0c0c; box-shadow: 0 1px 0 #383838; }
@@ -93,8 +93,8 @@ export function injectStyles(): void {
   }
   .cp-dialog {
     position: relative; background: ${FILL}; color: ${TEXT};
-    border: 16px solid transparent; border-image: ${SUNKEN}; image-rendering: pixelated;
-    width: min(440px, 92vw); max-height: 90vh; overflow-y: auto;
+    border: 16px solid transparent; border-image: ${RAISED}; image-rendering: pixelated;
+    width: min(500px, 94vw); max-height: 90vh; overflow-y: auto;
   }
   .cp-dialog > * { position: relative; z-index: 1; image-rendering: auto; }
   .cp-dialog h2 { font-size: 15px; margin: 2px 0 16px; text-align: center; color:#ffd479; }
@@ -111,7 +111,9 @@ export function injectStyles(): void {
   .cp-row input[type=number] { width: 74px; }
   .cp-section { font-size: 9px; color:#9a9a9a; margin: 16px 0 8px; border-top:2px solid #000; padding-top:12px; }
   .cp-prow { gap: 8px; }
-  .cp-prow input { flex: 1; width: auto; }
+  .cp-prow input { flex: 1; width: auto; min-width: 0; }
+  /* Opponent dropdowns need room for the longest label ("Gunnar (AlphaZero XL)"). */
+  .cp-prow select { flex: 0 0 auto; width: 210px; }
   .cp-prow input.cp-locked { color:#9a9a9a; cursor: not-allowed; }
   .cp-type { width: 134px; }
   .cp-dialog .cp-actions { display: flex; gap: 14px; margin-top: 20px; justify-content: center; }

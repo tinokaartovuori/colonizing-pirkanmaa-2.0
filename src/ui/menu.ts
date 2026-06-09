@@ -50,6 +50,7 @@ const BUILD_PREVIEW: Record<string, string> = {
   Mine: 'mine',
   'Hydroelectric Power Plant': 'hydropower1NS',
   Bridge: 'bridgeNS',
+  'Strange Device': 'strange_device',
 };
 
 function abbreviate(name: string): string {

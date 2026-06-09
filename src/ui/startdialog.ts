@@ -116,25 +116,45 @@ export function showStartDialog(onStart: (s: StartSettings) => void): void {
   // switching back to Human restores the player's last-typed (editable) name. The
   // human name is stashed per seat so toggling type doesn't lose it.
   const humanNames = [...DEFAULT_NAMES];
-  const syncSeatLock = (i: number) => {
-    const nameInput = $<HTMLInputElement>(`cp-p${i + 1}`);
-    const difficulty = $<HTMLSelectElement>(`cp-t${i}`).value as Difficulty;
-    const character = rosterCharacterFor(difficulty);
-    if (character) {
-      if (!nameInput.readOnly) humanNames[i] = nameInput.value; // stash before locking
-      nameInput.value = character.name;
-      nameInput.readOnly = true;
-      nameInput.classList.add('cp-locked');
-    } else {
-      if (nameInput.readOnly) nameInput.value = humanNames[i]; // restore on unlock
-      nameInput.readOnly = false;
-      nameInput.classList.remove('cp-locked');
+  // Lock AI seats to their character name; when the SAME AI is chosen by more than one
+  // active seat, suffix them (Jorma1, Jorma2, …) so they're distinguishable. Human seats
+  // keep their editable, last-typed name. Recomputed across all seats on any change.
+  const relabelSeats = () => {
+    const n = clamp(players, 2, 4);
+    const chars = [0, 1, 2, 3].map((i) => {
+      const nameInput = $<HTMLInputElement>(`cp-p${i + 1}`);
+      const character = rosterCharacterFor($<HTMLSelectElement>(`cp-t${i}`).value as Difficulty);
+      if (character && !nameInput.readOnly) humanNames[i] = nameInput.value; // stash before locking
+      return character ?? null;
+    });
+    // How many ACTIVE seats use each character (only active seats actually play).
+    const total: Record<string, number> = {};
+    for (let i = 0; i < n; i++) if (chars[i]) total[chars[i]!.name] = (total[chars[i]!.name] ?? 0) + 1;
+    const seen: Record<string, number> = {};
+    for (let i = 0; i < 4; i++) {
+      const nameInput = $<HTMLInputElement>(`cp-p${i + 1}`);
+      const character = chars[i];
+      if (character) {
+        let label = character.name;
+        if (i < n && total[character.name] > 1) {
+          seen[character.name] = (seen[character.name] ?? 0) + 1;
+          label = `${character.name}${seen[character.name]}`;
+        }
+        nameInput.value = label;
+        nameInput.readOnly = true;
+        nameInput.classList.add('cp-locked');
+      } else {
+        if (nameInput.readOnly) nameInput.value = humanNames[i]; // restore on unlock
+        nameInput.readOnly = false;
+        nameInput.classList.remove('cp-locked');
+      }
     }
   };
   [0, 1, 2, 3].forEach((i) => {
-    $<HTMLSelectElement>(`cp-t${i}`).addEventListener('change', () => syncSeatLock(i));
-    syncSeatLock(i); // apply initial lock state (e.g. seat 2 defaults to Kalevi)
+    $<HTMLSelectElement>(`cp-t${i}`).addEventListener('change', relabelSeats);
   });
+  players.addEventListener('input', relabelSeats); // player-count change re-dedups active seats
+  relabelSeats(); // apply initial lock state (e.g. seat 2 defaults to Kalevi)
 
   $<HTMLButtonElement>('cp-rand').addEventListener('click', () => {
     seed.value = String(Math.floor(Math.random() * 200) + 1);

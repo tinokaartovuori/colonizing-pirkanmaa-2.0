@@ -25,13 +25,14 @@ import type { ObjectManager } from '../../managers/objectmanager';
 import type { PlayerManager } from '../../managers/playermanager';
 import { Genome } from './mlp';
 import { globalFeatures } from './features';
-import { enumerate, AiCtx, TierConfig, Intent } from './candidates';
+import { enumerate, AiCtx, TierConfig, Intent, Candidate } from './candidates';
 import { select, scoreCandidate } from './policy';
 import { SearchConfig, select as searchSelect } from './search';
 import { ValueNet } from './value';
 import { SpatialNetTS, selectSpatialIndex } from './spatial_net';
 import { SpatialSearchConfig, selectSpatialMcts } from './spatial_search';
 import { buildSnapshot } from '../../managers/persistence';
+import { MctsWorkerClient } from './mcts-worker-client';
 import * as M from './metrics';
 import * as S from './safety';
 
@@ -83,6 +84,16 @@ export type DecisionSink = (d: DecisionTrace) => void;
 
 export class NeuralAiController {
   private budget = 0;
+  /**
+   * Lazily-created Web Worker client for the spatial MCTS search. Built on the
+   * first spatial-search turn (only when `spatialNet` + `spatialSearch` are wired)
+   * and reused across every turn/sim. Running the search off the main thread keeps
+   * the UI rendering at 60fps while a neural CPU thinks. `false` once we've decided
+   * to fall back permanently (worker unavailable / errored); `null` = not yet built.
+   */
+  private workerClient: MctsWorkerClient | null | false = null;
+  /** One-time fallback-warning latch (so the console isn't spammed per turn). */
+  private warnedWorkerFallback = false;
 
   constructor(
     private eh: GameEventHandler,
@@ -184,26 +195,10 @@ export class NeuralAiController {
         let cands = enumerate(ctx);
         let choice: ReturnType<typeof select>;
         if (this.spatialNet && this.spatialSearch) {
-          // Trained spatial CNN deploy WITH MCTS: snapshot the LIVE mid-turn state,
-          // run PUCT search (policy prior + value-head leaves) in a sandbox, and
-          // pick the most-visited root edge INDEX (into THIS enumerate(), same
-          // order/state). The search never mutates the live engine. This is the
-          // champion's full bench-strength deploy mode (sims≈64). Falls back to the
-          // greedy argmax on any search failure so a CPU turn never stalls.
-          let idx: number;
-          try {
-            const snap = buildSnapshot(this.om, this.pm, this.spatialSearch.mapInfo);
-            idx = selectSpatialMcts(
-              this.spatialNet, snap, player.getPlayerNum(), this.cfg, this.spatialSearch.config,
-            );
-          } catch {
-            try {
-              idx = selectSpatialIndex(this.spatialNet, player, this.om, this.pm, cands);
-            } catch {
-              choice = select(this.genome, gvec, cands, this.cfg, this.rand);
-              idx = cands.indexOf(choice);
-            }
-          }
+          // Trained spatial CNN deploy WITH MCTS, run IN-THREAD (the sync path used
+          // by tests/training and the worker-unavailable fallback). The browser uses
+          // the async `planTurnAsync` which offloads this same search to a Worker.
+          const idx = this.resolveSpatialMctsIndexSync(player, cands, gvec);
           choice = cands[idx] ?? cands[cands.length - 1];
         } else if (this.spatialNet) {
           // Trained spatial CNN deploy: greedy argmax of the net's per-candidate
@@ -265,6 +260,149 @@ export class NeuralAiController {
         yield;
         // Realize the obvious follow-up: staff, expand the unit cap if it now
         // blocks staffing, then staff the new slots (mirrors the Rust loop tail).
+        yield* this.staffIncome(player);
+        yield* this.ensureUnitCap(player);
+        yield* this.staffIncome(player);
+      }
+    } catch {
+      /* never let a CPU crash the game */
+    }
+  }
+
+  /**
+   * Resolve the chosen candidate INDEX for the spatial-CNN-with-MCTS branch
+   * IN-THREAD (synchronous): run the full PUCT search on a snapshot of the LIVE
+   * mid-turn state, falling back to the greedy spatial argmax and finally the MLP
+   * policy on any failure so a CPU turn never stalls. Shared by the sync `planTurn`
+   * and as the fallback for the async/worker path. The live engine is never mutated.
+   */
+  private resolveSpatialMctsIndexSync(player: PlayerBase, cands: Candidate[], gvec: number[]): number {
+    try {
+      const snap = buildSnapshot(this.om, this.pm, this.spatialSearch!.mapInfo);
+      return selectSpatialMcts(
+        this.spatialNet!, snap, player.getPlayerNum(), this.cfg, this.spatialSearch!.config,
+      );
+    } catch {
+      try {
+        return selectSpatialIndex(this.spatialNet!, player, this.om, this.pm, cands);
+      } catch {
+        const choice = select(this.genome, gvec, cands, this.cfg, this.rand);
+        return cands.indexOf(choice);
+      }
+    }
+  }
+
+  /**
+   * Run the spatial-CNN MCTS search OFF the main thread via a Web Worker and
+   * return the chosen candidate INDEX. The worker runs the SAME `selectSpatialMcts`
+   * on the SAME snapshot, so its index aligns with `cands` (enumeration is
+   * deterministic for a given state). On ANY problem — Workers unavailable, the
+   * worker errors, or it's been disabled — it falls back to the synchronous
+   * in-thread search and logs a one-time warning. The live engine is never mutated
+   * by the worker (it's READ-ONLY: snapshot → index).
+   */
+  private async resolveSpatialMctsIndexViaWorker(player: PlayerBase, cands: Candidate[], gvec: number[]): Promise<number> {
+    if (this.workerClient === false) return this.resolveSpatialMctsIndexSync(player, cands, gvec);
+    try {
+      if (this.workerClient === null) {
+        this.workerClient = new MctsWorkerClient(
+          this.spatialNet!.w, this.cfg, this.spatialSearch!.config,
+        );
+      }
+      const snap = buildSnapshot(this.om, this.pm, this.spatialSearch!.mapInfo);
+      return await this.workerClient.searchViaWorker(snap, player.getPlayerNum());
+    } catch (e) {
+      this.workerClient = false; // disable the worker for the rest of the match
+      if (!this.warnedWorkerFallback) {
+        this.warnedWorkerFallback = true;
+        // eslint-disable-next-line no-console
+        console.warn('[neural-ai] MCTS Web Worker unavailable — falling back to in-thread search.', e);
+      }
+      return this.resolveSpatialMctsIndexSync(player, cands, gvec);
+    }
+  }
+
+  /**
+   * Async twin of `planTurn` for the browser: byte-identical control flow, except
+   * the spatial-CNN-with-MCTS branch AWAITS the search in a Web Worker (with the
+   * in-thread fallback) so the main thread keeps rendering at 60fps while a neural
+   * CPU thinks. The chosen candidate's `execute()` (live-engine mutation + Phaser
+   * animations) STAYS on the main thread after the await. main.ts drives this with
+   * `await steps.next()`, keeping the `setTimeout(…, CPU_ACTION_MS)` pacing between
+   * actions. The sync `planTurn` (above) remains the path for tests/training and
+   * for non-spatial-search controllers. The move chosen is identical to `planTurn`
+   * (same search, same snapshot, same deterministic enumeration).
+   */
+  async *planTurnAsync(player: PlayerBase, trace?: DecisionSink): AsyncGenerator<void> {
+    this.budget = this.cfg.budget;
+    try {
+      yield* this.ensureWoodIncome(player);
+      yield* this.staffIncome(player);
+      yield* this.ensureUnitCap(player);
+      yield* this.ensureMetalIncome(player);
+      yield* this.staffIncome(player);
+
+      const ctx: AiCtx = { eh: this.eh, om: this.om, pm: this.pm, player, cfg: this.cfg };
+      const round = this.pm.getRoundsPlayed();
+      while (this.budget > 0) {
+        const gvec = globalFeatures(player, this.om, this.pm, round);
+        let cands = enumerate(ctx);
+        let choice: ReturnType<typeof select>;
+        if (this.spatialNet && this.spatialSearch) {
+          // The ONLY async difference vs. planTurn: offload the heavy PUCT search to
+          // the Web Worker (await), so the main thread keeps animating. Everything
+          // after the await — execute() and the scaffold follow-up — runs on the
+          // main thread exactly as in planTurn.
+          const idx = await this.resolveSpatialMctsIndexViaWorker(player, cands, gvec);
+          choice = cands[idx] ?? cands[cands.length - 1];
+        } else if (this.spatialNet) {
+          let idx: number;
+          try {
+            idx = selectSpatialIndex(this.spatialNet, player, this.om, this.pm, cands);
+          } catch {
+            choice = select(this.genome, gvec, cands, this.cfg, this.rand);
+            idx = cands.indexOf(choice);
+          }
+          choice = cands[idx] ?? cands[cands.length - 1];
+        } else if (this.search) {
+          const snap = buildSnapshot(this.om, this.pm, this.search.mapInfo);
+          let idx: number;
+          try {
+            idx = searchSelect(
+              this.genome, snap, player.getPlayerNum(), this.cfg,
+              this.search.config, this.search.valueNet, this.rand,
+            );
+          } catch {
+            choice = select(this.genome, gvec, cands, this.cfg, this.rand);
+            idx = cands.indexOf(choice);
+          }
+          choice = cands[idx] ?? cands[cands.length - 1];
+        } else {
+          choice = select(this.genome, gvec, cands, this.cfg, this.rand);
+        }
+        if (trace) {
+          trace({
+            round,
+            globalVec: gvec,
+            candidates: cands.map((c) => ({ intent: c.intent, local: c.local.slice(), label: c.label })),
+            scores: cands.map((c) => scoreCandidate(this.genome, gvec, c)),
+            chosenCandidateIndex: cands.indexOf(choice),
+            chosenIntent: choice.intent,
+          });
+        }
+        if (choice.intent === Intent.Pass) break;
+        let ok = false;
+        try { ok = choice.execute(); } catch { ok = false; }
+        if (!ok) {
+          cands = cands.filter((c) => c !== choice);
+          if (cands.length <= 1) break;
+          choice = select(this.genome, gvec, cands, this.cfg, this.rand);
+          if (choice.intent === Intent.Pass) break;
+          try { ok = choice.execute(); } catch { ok = false; }
+          if (!ok) break;
+        }
+        this.budget -= 1;
+        yield;
         yield* this.staffIncome(player);
         yield* this.ensureUnitCap(player);
         yield* this.staffIncome(player);

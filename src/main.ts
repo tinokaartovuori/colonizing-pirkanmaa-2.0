@@ -245,17 +245,33 @@ function startMatch(settings: StartSettings, restore?: GameSnapshot): void {
     }
 
     // Play the turn one visible action at a time so it looks like real play.
-    const steps = aiFor(player).planTurn(player);
-    const stepOnce = (): void => {
+    // Neural controllers expose `planTurnAsync`, an async generator whose heavy
+    // MCTS step runs in a Web Worker — `await steps.next()` then yields control
+    // back to the event loop while the worker thinks, so animations/input never
+    // freeze. The heuristic controller's sync generator works through the SAME
+    // `await steps.next()` path unchanged. Per-action pacing (CPU_ACTION_MS) is
+    // preserved: we schedule the next step on a timeout AFTER each step resolves,
+    // and each candidate `execute()` still runs on the main thread (so its scene
+    // animations play) before the next step is awaited.
+    const ctrl = aiFor(player);
+    const steps: Generator<void> | AsyncGenerator<void> =
+      ctrl.planTurnAsync ? ctrl.planTurnAsync(player) : ctrl.planTurn(player);
+    const stepOnce = async (): Promise<void> => {
       if (!isCurrent() || playerManager.getCurrentPlayer() !== player) {
         eventHandler.setAiActive(false);
         return;
       }
       let done = false;
       try {
-        done = steps.next().done === true;
+        done = (await steps.next()).done === true;
       } catch {
         done = true;
+      }
+      // The turn may have ended (or the match restarted) while we awaited the
+      // worker — re-check before mutating UI / scheduling another step.
+      if (!isCurrent() || playerManager.getCurrentPlayer() !== player) {
+        eventHandler.setAiActive(false);
+        return;
       }
       if (done) {
         eventHandler.setAiActive(false);
@@ -263,9 +279,9 @@ function startMatch(settings: StartSettings, restore?: GameSnapshot): void {
         return;
       }
       menu.setCpuTurnMenuView(player); // refresh so resources tick down as it spends
-      window.setTimeout(stepOnce, CPU_ACTION_MS);
+      window.setTimeout(() => { void stepOnce(); }, CPU_ACTION_MS);
     };
-    stepOnce();
+    void stepOnce();
   }
 
   // --- input that is ignored while a CPU is playing -------------------------
