@@ -96,9 +96,8 @@ export const OUTPOST_SHOP_DESCRIPTION =
 export const STRANGE_DEVICE_DESCRIPTION =
   'A strange humming device of unknown origin. While it stands a countdown ticks ' +
   'down every round — if it reaches zero you win the game instantly. But owning it ' +
-  '<u>halves your maximum soldiers</u>, so guard it well: the enemy will come for it.';
+  '<u>lowers your soldier cap by 2</u>, so guard it well: the enemy will come for it.';
 
 export const STRANGE_DEVICE_SHOP_DESCRIPTION =
-  'Starts a countdown — if it still stands at zero, you win! Only one can exist at a ' +
-  'time. Warning: while built it <u>halves your soldier cap</u> (excess soldiers are ' +
-  'disbanded at once). Build it on a defendable tile, not your headquarters.';
+  'Survive its countdown to zero and you win! Only one at a time. ' +
+  '<u>−2 to your soldier cap</u> while built. Build it on a defendable tile.';

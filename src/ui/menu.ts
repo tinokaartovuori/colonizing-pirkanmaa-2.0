@@ -568,7 +568,7 @@ export class MenuController implements IMenuObjectManager {
     // The Strange Device has no per-round product — its "effect" is the win countdown and
     // the soldier-cap penalty, so we surface that instead of an empty Products list.
     if (name === 'Strange Device') {
-      return `${cost}<br><u>Effect:</u><br>Win if it survives the countdown.<br>Halves your soldier cap.`;
+      return `${cost}<br><u>Effect:</u><br>Win if it survives.<br>−2 soldier cap.`;
     }
     let prod = `<br><u>Products:</u><br>`;
     if (name === 'Farm') {
