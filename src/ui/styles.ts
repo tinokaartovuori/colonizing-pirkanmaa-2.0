@@ -42,8 +42,8 @@ export function injectStyles(): void {
     content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
     border: 16px solid transparent; image-rendering: pixelated;
   }
-  .cp-container::before { border-image: ${RAISED}; } /* raised/elevated main panels */
-  .cp-btn::before { border-image: ${RAISED}; }
+  .cp-container::before { border-image: ${SUNKEN}; } /* in-game HUD panels: recessed/non-raised */
+  .cp-btn::before { border-image: ${RAISED}; }      /* buttons: raised */
 
   .cp-divider { background: #0c0c0c; box-shadow: 0 1px 0 #383838; }
 
