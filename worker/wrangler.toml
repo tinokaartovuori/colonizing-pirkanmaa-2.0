@@ -1,0 +1,22 @@
+# Cloudflare Worker config for the Colonizing Pirkanmaa game-records backend.
+#
+# One-time setup (see worker/README.md for the full walkthrough):
+#   1. wrangler d1 create cp-games        # prints a database_id
+#   2. paste that id into `database_id` below
+#   3. wrangler d1 execute cp-games --remote --file=worker/schema.sql
+#   4. wrangler deploy                     # prints the public https://…workers.dev URL
+
+name = "cp-games"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# Free-tier observability (request logs in the Cloudflare dashboard).
+[observability]
+enabled = true
+
+# D1 = Cloudflare's serverless SQLite. The binding name `cp_games` is what the
+# Worker reads as `env.cp_games`.
+[[d1_databases]]
+binding = "cp_games"
+database_name = "cp-games"
+database_id = "03acb2ac-5e04-42d8-897b-bceaf4c61464"

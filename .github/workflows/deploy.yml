@@ -25,6 +25,13 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+        env:
+          # Public HTTPS URL of the Cloudflare Worker game-records backend.
+          # Set once as a repo variable: Settings → Secrets and variables →
+          # Actions → Variables → New variable → VITE_CP_SERVER =
+          # https://cp-games.<your-subdomain>.workers.dev
+          # If unset, the client falls back to localhost and uploads no-op in prod.
+          VITE_CP_SERVER: ${{ vars.VITE_CP_SERVER }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

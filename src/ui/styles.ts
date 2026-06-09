@@ -150,6 +150,80 @@ export function injectStyles(): void {
   .cp-banner > * { image-rendering: auto; }
   .cp-banner.cp-show { opacity: 1; }
   .cp-banner .cp-dot { width: 14px; height: 14px; image-rendering: pixelated; }
+
+  /* ---- Replay dashboard (browse + step through recorded games) ------------ */
+  /* The panel reuses the raised dialog frame but is wide and column-flexed, with
+     three sunken (recessed) sub-panels: the game list, the transport controls and
+     the per-seat metrics — same 9-slice language as the in-game HUD. */
+  .cp-replay-overlay { padding: 16px; }
+  .cp-replay {
+    width: min(1140px, 97vw); height: min(840px, 94vh);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .cp-replay-head { display: flex; align-items: center; justify-content: space-between; }
+  .cp-replay-head h2 { margin: 0; }
+  .cp-replay-body { flex: 1; display: flex; gap: 14px; margin-top: 14px; min-height: 0; }
+
+  /* Sunken sub-panels. .cp-container draws its recessed ::before frame; the host
+     must be positioned and its content inset past the 16px frame border. */
+  .cp-replay-list, .cp-replay-controls, .cp-replay-metrics { position: relative; }
+  .cp-replay-list { flex: 0 0 300px; overflow: hidden; }
+  .cp-replay-list-inner {
+    position: relative; z-index: 1; height: 100%; overflow-y: auto; padding: 14px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .cp-replay-view { flex: 1; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .cp-replay-board {
+    flex: 1; min-height: 240px; background: #0c0c0c; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: inset 2px 2px 0 #050505, inset -2px -2px 0 #2a2a2a;
+  }
+  .cp-replay-board #cp-stage { transform-origin: center center; }
+  .cp-replay-controls-inner, .cp-replay-metrics-inner { position: relative; z-index: 1; padding: 12px 14px; }
+
+  .cp-replay-title { font-size: 9px; line-height: 1.6; color: ${TEXT}; margin-bottom: 10px; }
+  .cp-rp-matchup { color: #ffd479; }
+  .cp-replay-transport { display: flex; align-items: center; gap: 10px; }
+  .cp-replay-transport .cp-mini { min-width: 30px; }
+  .cp-replay-turn { font-size: 9px; color: #9a9a9a; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #cp-rp-slider {
+    flex: 1; min-width: 0; height: 14px; -webkit-appearance: none; appearance: none;
+    background: #141414; box-shadow: inset 2px 2px 0 #050505, inset -2px -2px 0 #383838, 0 0 0 2px #000;
+    accent-color: #ffd479; cursor: pointer;
+  }
+  #cp-rp-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 12px; height: 18px; background: #ffd479;
+    border: 2px solid #000; cursor: pointer;
+  }
+  #cp-rp-slider::-moz-range-thumb { width: 12px; height: 18px; background: #ffd479; border: 2px solid #000; }
+  #cp-rp-slider:disabled { opacity: 0.4; cursor: default; }
+
+  /* Game list cards — inset bevel; raised highlight on the selected one. */
+  .cp-rp-card {
+    background: #1a1a1a; padding: 8px 9px; cursor: pointer; line-height: 1.5;
+    box-shadow: inset 1px 1px 0 #383838, inset -1px -1px 0 #050505; transition: filter 0.1s ease;
+  }
+  .cp-rp-card:hover { filter: brightness(1.3); }
+  .cp-rp-card.cp-rp-sel { box-shadow: inset 0 0 0 2px #ffd479; background: #232014; }
+  .cp-rp-card-matchup { font-size: 8px; color: #d0d0d0; word-break: break-word; }
+  .cp-rp-card-meta { font-size: 7px; color: #b6f7a8; margin-top: 5px; }
+  .cp-rp-card-date { font-size: 7px; color: #777; margin-top: 3px; }
+  .cp-rp-empty { font-size: 8px; color: #9a9a9a; line-height: 1.8; padding: 6px; text-align: center; }
+
+  /* Per-seat metrics row. */
+  .cp-replay-metrics-inner { display: flex; flex-wrap: wrap; gap: 10px; }
+  .cp-rp-seat {
+    flex: 1 1 200px; background: #141414; padding: 8px 10px;
+    box-shadow: inset 2px 2px 0 #050505, inset -2px -2px 0 #2a2a2a;
+  }
+  .cp-rp-seat-head { display: flex; align-items: center; gap: 7px; font-size: 9px; color: #eee; margin-bottom: 7px; }
+  .cp-rp-dot { width: 12px; height: 12px; image-rendering: pixelated; }
+  .cp-rp-seat-name { flex: 1; word-break: break-word; }
+  .cp-rp-device { font-size: 7px; color: #ff9a5a; }
+  .cp-rp-seat-stats { display: flex; flex-wrap: wrap; gap: 6px 10px; font-size: 8px; color: #d0d0d0; font-variant-numeric: tabular-nums; }
+  .cp-rp-res { display: inline-flex; align-items: center; gap: 4px; }
+  .cp-rp-res img { width: 12px; height: 12px; }
+  .cp-rp-stat { color: #9a9a9a; }
   `;
   const style = document.createElement('style');
   style.textContent = css;

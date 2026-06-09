@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { injectStyles } from './ui/styles';
 import { showStartDialog, showResumeDialog, StartSettings } from './ui/startdialog';
+import { showReplayDashboard } from './ui/replaydashboard';
 import { buildSnapshot, saveSnapshot, loadSnapshot, clearSnapshot, GameSnapshot } from './managers/persistence';
 import { GameRecorder } from './managers/gamerecorder';
 import { showHelpWindow } from './ui/help';
@@ -81,13 +82,30 @@ game.events.once('boot-complete', () => {
       () => startMatch(saved.settings, saved),
       () => {
         clearSnapshot();
-        showStartDialog(startMatch);
+        showStartDialog(startMatch, openReplay);
       },
     );
   } else {
-    showStartDialog(startMatch);
+    showStartDialog(startMatch, openReplay);
   }
 });
+
+/** Open the replay dashboard (browse + step through recorded human-vs-AI games).
+ *  Neutralises the live-match window handlers so a resize/save/Esc from a previous
+ *  match can't fight the dashboard, which reparents and resizes the board itself. */
+function openReplay(): void {
+  matchToken = {}; // any pending CPU timers from a previous match become no-ops
+  saveCurrent = () => {};
+  onEscape = () => {};
+  fitStage = () => {};
+  if (activeMenu) { activeMenu.destroy(); activeMenu = null; }
+  showReplayDashboard({
+    game,
+    stage,
+    parent,
+    onExit: () => showStartDialog(startMatch, openReplay),
+  });
+}
 
 function startMatch(settings: StartSettings, restore?: GameSnapshot): void {
   if (activeMenu) {
@@ -343,5 +361,5 @@ function quitToMenu(): void {
     activeMenu.destroy();
     activeMenu = null;
   }
-  showStartDialog(startMatch);
+  showStartDialog(startMatch, openReplay);
 }

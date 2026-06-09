@@ -13,7 +13,9 @@ game (who played whom + the full per-turn history + outcome) gets saved to a ser
 be reviewed later — primarily to study **how the AI did vs humans**. Pure AI-vs-AI games are
 NOT saved.
 
-**Status: ~90% built, 0% live.** The hard parts are done — only *hosting + wiring* remain:
+**Status: built end-to-end; not yet live (awaiting the user's Cloudflare deploy).** Client +
+local backend + the Cloudflare Worker are all done — only the account-auth deploy steps remain
+(see "What's left" below). Pieces:
 - ✅ **Client side DONE**: `src/managers/gamerecorder.ts` (`GameRecorder`) records a per-turn
   history during the match and, on game end **if ≥1 human seat**, POSTs the full record to
   `${VITE_CP_SERVER}/api/games` (best-effort; never blocks the UI). Hooked via
@@ -23,29 +25,37 @@ NOT saved.
   no-human rule server-side → 422 `NO_HUMAN`), `GET /api/games`, `GET /api/games/:id`,
   `GET /api/games/stats` (per-AI win-rate vs humans). CORS `*`. Schema + request shape in
   `server/README.md`. Smoke test: `server/smoke-test.sh`.
-- ❌ **THE GAP**: the deployed GitHub Pages build has `VITE_CP_SERVER` unset → the client POSTs
-  to `http://127.0.0.1:8790`, which **public visitors don't have**, so it just fails silently.
-  Nothing is actually collected. **The backend isn't hosted anywhere public.**
+- ✅ **Cloudflare Worker + D1 DONE (`worker/`)**: `worker/src/index.js` (API, ported 1:1 from
+  `server/`), `worker/schema.sql` (D1 tables, identical schema), `worker/wrangler.toml` (binding;
+  `database_id` placeholder filled at deploy), `worker/README.md` (deploy guide), `npm run
+  worker:*` scripts. `deploy.yml` now injects `vars.VITE_CP_SERVER` into the build.
+- ❌ **THE GAP (remaining)**: nobody has run the Cloudflare deploy yet, so there's no public URL
+  and `VITE_CP_SERVER` isn't set → the deployed build still falls back to `http://127.0.0.1:8790`
+  and uploads no-op for visitors. Closing it = the account-auth deploy steps below.
 
 **Why it's not trivial:** GitHub Pages is **static** (no backend). The game is public + HTTPS, so
 the backend must be a **public HTTPS endpoint** the github.io page can POST to (a localhost or
 plain-HTTP backend is blocked by mixed-content + is unreachable to visitors).
 
-**To finish — three steps:**
-1. **Host the backend at a public HTTPS URL.** Options (user previously leaned "own Node+SQLite",
-   but that needs a public host):
-   - **(Recommended) Cloudflare Worker + D1** — D1 is serverless SQLite; free, persistent, no
-     server to keep alive, reachable from the static Pages site. Port `server/db.js`+`server.js`
-     logic (it's small: validate-has-human → insert → list/get/stats) to a Worker + D1 schema
-     (maps almost 1:1 from the current SQLite schema). Cleanest "free + always-on".
-   - **Self-host the existing Node+SQLite** on any public HTTPS box (VPS, or a home server behind
-     a Cloudflare Tunnel / Tailscale Funnel). Keeps `server/` as-is; you maintain uptime + a cert.
-   - **Turso** (hosted libSQL/SQLite) + a tiny Worker — keeps SQLite, managed DB.
-2. **Point the frontend at it**: build with `VITE_CP_SERVER=https://<backend-url>`. Set it in
-   `.github/workflows/deploy.yml` (the `npm run build` step) so the deployed bundle POSTs there.
-3. **Verify**: play a human-vs-Kalevi game on the live site to completion → `GET /api/games`
-   shows the row (matchup + per-turn `history` + `finalSnapshot` in `gameData`). An AI-vs-AI game
-   must NOT appear (422).
+**Chosen host: Cloudflare Worker + D1** (free, serverless SQLite, always-on, reachable from the
+static Pages site). The Worker is now **built** (`worker/`) — `server/db.js`+`server.js` ported
+1:1 to the Workers runtime + D1, same endpoints/shapes/schema. Full deploy walkthrough in
+`worker/README.md`. Rejected alternatives: self-host Node+SQLite (needs an always-on box + cert),
+Turso (extra managed dep) — both strictly more upkeep than D1.
+
+**What's left = account-auth steps only (need the user's Cloudflare login; ~5 min):**
+1. **Deploy the Worker** (run from repo root; `npx` fetches wrangler — nothing to install):
+   - `npm run worker:login` → authorize Cloudflare account in browser
+   - `npm run worker:create` → prints `database_id`; paste it into `worker/wrangler.toml`
+   - `npm run worker:schema` → creates the tables in remote D1
+   - `npm run worker:deploy` → prints the public `https://cp-games.<subdomain>.workers.dev` URL
+2. **Point the frontend at it**: GitHub → repo Settings → Secrets and variables → Actions →
+   **Variables** → add `VITE_CP_SERVER` = that Worker URL (no trailing slash). `deploy.yml` already
+   passes `vars.VITE_CP_SERVER` into `npm run build`, so the next push to `main` bakes it in.
+   (It's a public URL embedded in the client → a repo *variable*, not a secret.)
+3. **Verify**: `curl $URL/health` → `{"ok":true}`; then play a human-vs-Kalevi game on the live
+   site to completion → `GET /api/games` shows the row (matchup + per-turn `history` +
+   `finalSnapshot` in `gameData`). An AI-vs-AI game must NOT appear (422 `NO_HUMAN`).
 
 **POST body the client sends** (match this on any rehost — full spec in `server/README.md`):
 ```jsonc

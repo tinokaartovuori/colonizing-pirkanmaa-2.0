@@ -55,7 +55,10 @@ export function showResumeDialog(onContinue: () => void, onNewGame: () => void):
   });
 }
 
-export function showStartDialog(onStart: (s: StartSettings) => void): void {
+export function showStartDialog(
+  onStart: (s: StartSettings) => void,
+  onWatch?: () => void,
+): void {
   const overlay = document.createElement('div');
   overlay.className = 'cp-root cp-overlay';
   const dialog = document.createElement('div');
@@ -81,7 +84,7 @@ export function showStartDialog(onStart: (s: StartSettings) => void): void {
     <div class="cp-section">Name &amp; type for each player</div>
     ${playerRow(0)}${playerRow(1)}${playerRow(2)}${playerRow(3)}
     <div class="cp-error" id="cp-err"></div>
-    <div class="cp-actions"><button id="cp-start" class="cp-primary">Start</button><button id="cp-exit">Exit</button></div>
+    <div class="cp-actions"><button id="cp-start" class="cp-primary">Start</button>${onWatch ? '<button id="cp-watch">Watch Games</button>' : ''}<button id="cp-exit">Exit</button></div>
   `;
   overlay.appendChild(dialog);
   document.body.appendChild(overlay);
@@ -163,6 +166,13 @@ export function showStartDialog(onStart: (s: StartSettings) => void): void {
   $<HTMLButtonElement>('cp-exit').addEventListener('click', () => {
     overlay.remove();
   });
+
+  if (onWatch) {
+    $<HTMLButtonElement>('cp-watch').addEventListener('click', () => {
+      overlay.remove();
+      onWatch();
+    });
+  }
 
   $<HTMLButtonElement>('cp-start').addEventListener('click', () => {
     const width = clamp(w, 10, 25);

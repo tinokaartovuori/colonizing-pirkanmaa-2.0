@@ -10,7 +10,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "models": "vite-node models/manage.ts",
-    "server": "node --experimental-sqlite server/server.js"
+    "server": "node --experimental-sqlite server/server.js",
+    "worker:login": "npx wrangler login",
+    "worker:create": "npx wrangler d1 create cp-games --config worker/wrangler.toml",
+    "worker:schema": "npx wrangler d1 execute cp-games --remote --config worker/wrangler.toml --file=worker/schema.sql",
+    "worker:deploy": "npx wrangler deploy --config worker/wrangler.toml",
+    "worker:dev": "npx wrangler dev --config worker/wrangler.toml"
   },
   "devDependencies": {
     "typescript": "^5.7.2",
