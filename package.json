@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "models": "vite-node models/manage.ts"
+    "models": "vite-node models/manage.ts",
+    "server": "node --experimental-sqlite server/server.js"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

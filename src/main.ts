@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { injectStyles } from './ui/styles';
 import { showStartDialog, showResumeDialog, StartSettings } from './ui/startdialog';
 import { buildSnapshot, saveSnapshot, loadSnapshot, clearSnapshot, GameSnapshot } from './managers/persistence';
+import { GameRecorder } from './managers/gamerecorder';
 import { showHelpWindow } from './ui/help';
 import { MenuController } from './ui/menu';
 import { showTurnBanner, clearBanner } from './ui/banner';
@@ -158,6 +159,23 @@ function startMatch(settings: StartSettings, restore?: GameSnapshot): void {
   menu.onQuit = quitToMenu;
   eventHandler.onRestart = quitToMenu;
   eventHandler.onTurnChanged = driveTurn;
+
+  // Passive game recorder: append per-turn history at each turn boundary, and on
+  // game-over upload the completed human-vs-AI game to the analysis backend. Fresh
+  // per match (a restored save starts a new history from the restored state).
+  const recorder = new GameRecorder(objectManager, playerManager, {
+    width: settings.width,
+    height: settings.height,
+    seed: settings.seed,
+  });
+  eventHandler.onTurnEnded = (endedBy) => {
+    if (!isCurrent()) return;
+    recorder.recordTurn(endedBy);
+  };
+  eventHandler.onGameOver = (gameInfo) => {
+    if (!isCurrent()) return;
+    recorder.finish(gameInfo);
+  };
 
   objectManager.addDALS(eventHandler, menu, gsm);
   activeMenu = menu;

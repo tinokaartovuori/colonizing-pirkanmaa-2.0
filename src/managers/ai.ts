@@ -1278,7 +1278,7 @@ export class AiController {
       }
       if (
         player.getFreeSoldierAmount() > 0 &&
-        this.metal(player) >= 50 &&
+        this.metal(player) >= 30 &&
         this.affords(player, SOLDIER_COST, params.reserve) &&
         this.canAffordUpkeep(player, 30, params.reserve + 600)
       ) {
@@ -1439,7 +1439,7 @@ export class AiController {
       const buyable = canBuy
         ? Math.min(
             player.getFreeSoldierAmount(),
-            Math.floor(this.metal(player) / 50),
+            Math.floor(this.metal(player) / 30),
             Math.floor((this.money(player) - params.reserve) / 200),
           )
         : 0;
@@ -1450,7 +1450,7 @@ export class AiController {
         let did = false;
         if (spare) {
           did = yield* this.doAction(() => this.eh.aiMoveUnit(spare.unit, spare.tile, tile));
-        } else if (canBuy && player.getFreeSoldierAmount() > 0 && this.metal(player) >= 50 && this.affords(player, SOLDIER_COST, params.reserve)) {
+        } else if (canBuy && player.getFreeSoldierAmount() > 0 && this.metal(player) >= 30 && this.affords(player, SOLDIER_COST, params.reserve)) {
           did = yield* this.doAction(() => this.eh.aiBuyAndPlaceUnit('Soldier', tile));
         }
         if (!did) break;

@@ -51,7 +51,7 @@ export class GameScene extends Phaser.Scene implements IGameScene {
   private bordersDirty = true;
   /** Distinct marker (red tile + countdown number) for each Strange Device, keyed by the
    *  building's ID. The Device has no art yet, so this is how it reads on the map. */
-  private deviceMarkers: Map<number, { rect: Phaser.GameObjects.Rectangle; text: Phaser.GameObjects.Text }> = new Map();
+  private deviceMarkers: Map<number, { image: Phaser.GameObjects.Image; text: Phaser.GameObjects.Text }> = new Map();
 
   private mousePicture: string[] = [];
   private mouseDragSprite: Phaser.GameObjects.Image | null = null;
@@ -160,10 +160,9 @@ export class GameScene extends Phaser.Scene implements IGameScene {
     this.bordersDirty = true;
   }
 
-  /** Draw/update a distinct marker for a Strange Device tile: a red square plus the
-   *  win-countdown number (rounds until its owner wins). The Device has no art yet, so this
-   *  is the only thing marking it on the map — deliberately conspicuous so both players can
-   *  see the clock and where to strike. */
+  /** Draw/update the Strange Device tile: the device art (purple dome) plus the
+   *  win-countdown number (rounds until its owner wins), positioned over the dome so both
+   *  players can read the clock and see where to strike. */
   private refreshDeviceMarker(tile: TileBase): void {
     const building = tile.getBuilding();
     if (!(building instanceof StrangeDevice)) return;
@@ -171,31 +170,30 @@ export class GameScene extends Phaser.Scene implements IGameScene {
     const c = tile.getCoordinate();
     const x = c.x() * g + g / 2;
     const y = c.y() * g + g / 2;
+    // The dome sits a little above the tile centre; place the countdown on its face.
+    const domeY = y - g * 0.1;
     const txt = String(building.getCountdown());
     let marker = this.deviceMarkers.get(building.ID);
-    if (!marker || !marker.rect.scene || !marker.text.scene) {
-      // Red tile (above the building sprite at depth 1, below units at depth 3).
-      const rect = this.add
-        .rectangle(x, y, g * 0.84, g * 0.84, 0xc01818, 0.82)
-        .setStrokeStyle(Math.max(2, Math.round(g / 18)), 0x3a0000, 1)
-        .setDepth(2);
-      // Countdown number on top of everything so it stays readable.
+    if (!marker || !marker.image.scene || !marker.text.scene) {
+      // Device tile art (above terrain ≤ depth 1, below units at depth 3).
+      const image = this.add.image(x, y, 'strange_device').setDisplaySize(g, g).setDepth(2);
+      // Countdown number on top of everything so it stays readable on the dome.
       const text = this.add
-        .text(x, y, txt, {
+        .text(x, domeY, txt, {
           fontFamily: '"PressStart2P", monospace',
-          fontSize: `${Math.max(11, Math.round(g / 2.6))}px`,
+          fontSize: `${Math.max(10, Math.round(g / 2.8))}px`,
           color: '#ffffff',
-          stroke: '#3a0000',
-          strokeThickness: Math.max(3, Math.round(g / 12)),
+          stroke: '#2a0030',
+          strokeThickness: Math.max(3, Math.round(g / 14)),
         })
         .setOrigin(0.5)
         .setDepth(4);
-      marker = { rect, text };
+      marker = { image, text };
       this.deviceMarkers.set(building.ID, marker);
     } else {
-      marker.rect.setPosition(x, y);
+      marker.image.setPosition(x, y);
       marker.text.setText(txt);
-      marker.text.setPosition(x, y);
+      marker.text.setPosition(x, domeY);
     }
   }
 
@@ -206,10 +204,10 @@ export class GameScene extends Phaser.Scene implements IGameScene {
       this.items.delete(obj.ID);
       if (obj instanceof TileBase) this.bordersDirty = true;
     }
-    // A destroyed Strange Device takes its marker (red tile + countdown) with it.
+    // A destroyed Strange Device takes its marker (device art + countdown) with it.
     const marker = this.deviceMarkers.get(obj.ID);
     if (marker) {
-      marker.rect.destroy();
+      marker.image.destroy();
       marker.text.destroy();
       this.deviceMarkers.delete(obj.ID);
     }
@@ -251,7 +249,7 @@ export class GameScene extends Phaser.Scene implements IGameScene {
     for (const b of this.borderImages) b.destroy();
     this.borderImages = [];
     for (const m of this.deviceMarkers.values()) {
-      m.rect.destroy();
+      m.image.destroy();
       m.text.destroy();
     }
     this.deviceMarkers.clear();

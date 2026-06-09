@@ -18,10 +18,14 @@ import { SpatialNetTS } from './spatial_net';
 import {
   SPATIAL_CHAMPION_ID, SPATIAL_CHAMPION_LABEL, SPATIAL_CHAMPION_NOTE, SPATIAL_CHAMPION_WEIGHTS,
 } from './models_spatial';
+import type { SpatialWeights } from './spatial_net';
+import { SPATIAL_ROSTER_BY_ID } from './models_spatial_roster';
 
 /** Difficulty key for the bundled CNN champion (reachable as `model:<id>`). */
 export const SPATIAL_CHAMPION_DIFFICULTY = `model:${SPATIAL_CHAMPION_ID}`;
 export { SPATIAL_CHAMPION_ID, SPATIAL_CHAMPION_LABEL, SPATIAL_CHAMPION_NOTE };
+export { SPATIAL_ROSTER, SPATIAL_ROSTER_BY_ID } from './models_spatial_roster';
+export type { SpatialRosterModel } from './models_spatial_roster';
 
 /** A zero MLP genome the spatial-CNN controller carries but never uses for
  *  scoring (the spatial net drives all decisions). Sized to the policy input. */
@@ -80,6 +84,16 @@ export function createNeuralController(
 }
 
 /**
+ * Resolve a `model:<id>` id to its bundled spatial-CNN weights, or null if the
+ * id is not a spatial net. Checks the headline champion first (default
+ * fallback), then the multi-model roster (`kalevi` / `gunnar` / …).
+ */
+function lookupSpatialWeights(modelId: string): SpatialWeights | null {
+  if (modelId === SPATIAL_CHAMPION_ID) return SPATIAL_CHAMPION_WEIGHTS;
+  return SPATIAL_ROSTER_BY_ID[modelId]?.weights ?? null;
+}
+
+/**
  * Build a controller for a specific bundled trained model (difficulty
  * `model:<id>`). Plays at full strength (hard tier + hard MCTS when `mapInfo`
  * is supplied). This is the entry point for the named "Trained: …" opponents;
@@ -93,12 +107,15 @@ export function createModelController(
   rand: () => number = Math.random,
   mapInfo?: { width: number; height: number; seed: number },
 ): NeuralAiController {
-  // The bundled CNN AlphaZero champion: drive the controller with the trained
-  // spatial net (board planes + per-tile target embed) at HARD strength. No MLP
-  // genome or MCTS — the deployed champion plays net-greedy (its benchmarked
-  // policy mode), with the army-economy scaffold the net was trained on.
-  if (modelId === SPATIAL_CHAMPION_ID) {
-    const net = new SpatialNetTS(SPATIAL_CHAMPION_WEIGHTS);
+  // Bundled CNN AlphaZero nets (the headline champion in models_spatial.ts plus
+  // the multi-model roster in models_spatial_roster.ts, e.g. `model:kalevi` /
+  // `model:gunnar`): drive the controller with the trained spatial net (board
+  // planes + per-tile target embed) at HARD strength. No MLP genome — the
+  // deployed nets play net-greedy (their benchmarked policy mode), with the
+  // army-economy scaffold the nets were trained on.
+  const spatialWeights = lookupSpatialWeights(modelId);
+  if (spatialWeights) {
+    const net = new SpatialNetTS(spatialWeights);
     // With map info, deploy at FULL bench strength via the spatial deploy MCTS
     // (policy prior + value-head leaves, sims≈64 — the Rust deploy config). Without
     // it (e.g. golden-trace export / parity), fall back to the greedy net policy so

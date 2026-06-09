@@ -61,6 +61,21 @@ export class GameEventHandler implements IGameEventHandler {
     this.onTurnChanged?.();
   }
 
+  /**
+   * Fired at every turn boundary, *after* end-of-turn resolution but *before* the
+   * turn-changed / game-over UI, with the player whose turn just ended. The app
+   * layer uses it as a passive observer to record per-turn game history. Not used
+   * by the headless tests.
+   */
+  onTurnEnded: ((endedBy: PlayerBase) => void) | null = null;
+
+  /**
+   * Fired once when the match ends (a sole survivor wins, or everyone ties out),
+   * with the winner (null on a tie), the win cause and the rounds played. The app
+   * layer uses it to upload the completed game. Not used by the headless tests.
+   */
+  onGameOver: ((info: { winner: PlayerBase | null; winCause: string; rounds: number }) => void) | null = null;
+
   /** Toggle menu suppression while a CPU player takes its turn. */
   setAiActive(active: boolean): void {
     this.aiActive_ = active;
@@ -133,14 +148,23 @@ export class GameEventHandler implements IGameEventHandler {
       const owner = byNum(ts.owner);
 
       if (ts.b) {
-        const bOwner = byNum(ts.b.owner) ?? owner;
+        // The building's TRUE owner as recorded (may be null even on an owned tile:
+        // a terrain-placed Mikontalo stays unowned-as-a-building while its tile is
+        // owned). `bOwner` (recorded-or-tile-owner) is used only to CONSTRUCT a
+        // building that doesn't exist yet — construction needs an owner.
+        const recordedBOwner = byNum(ts.b.owner);
+        const bOwner = recordedBOwner ?? owner;
         let building = tile.getBuilding();
         if (!building) {
           // Mikontalo is placed by terrain generation; everything else we build here.
           building = ts.b.type === 'Headquarters' && bOwner ? this.makeHeadquarters(bOwner) : this.makeBuilding(ts.b.type, tile, bOwner!);
           if (building) this.placeBuildingDirect(building, tile, bOwner);
-        } else if (bOwner) {
-          building.setOwner(bOwner);
+        } else {
+          // Existing (terrain-placed) building: restore its EXACT recorded owner,
+          // including null — overwriting it with the tile owner flipped an unowned
+          // Mikontalo to owned on every snapshot round-trip (save/load + MCTS sandbox),
+          // which broke buildSnapshot∘restore idempotence.
+          building.setOwner(recordedBOwner);
         }
         if (building) {
           if (ts.b.growthPhase !== undefined && building.getType() === 'Farm') (building as Farm).setGrowthPhase(ts.b.growthPhase);
@@ -313,6 +337,11 @@ export class GameEventHandler implements IGameEventHandler {
     if (this.gameOver_) return; // the match is decided — no further turns
     const losingReasons: string[] = [];
     const current = this.playerManager_.getCurrentPlayer();
+    // Win-cause classification for the game-over callback (set by whichever win/lose
+    // resolution below fires). 'domination' = 70%-tiles, 'device' = Strange Device
+    // countdown, 'bankruptcy' = sole survivor after an opponent went bankrupt,
+    // 'conquest' = sole survivor by elimination, 'tie' = everyone out the same turn.
+    let winCause: 'conquest' | 'domination' | 'device' | 'bankruptcy' | 'tie' = 'conquest';
 
     // Generate resources from the current player's tiles.
     for (const object of current.getObjects()) {
@@ -372,6 +401,7 @@ export class GameEventHandler implements IGameEventHandler {
         if (value < 0) {
           if (player.getObjects().length > 0) {
             losingReasons.push('noresources');
+            winCause = 'bankruptcy';
             this.playerManager_.setPlayerAsLost(player, this.playerManager_.getCurrentPlayer());
             lostPlayersThisRound.push(player);
             this.neutralizePlayer(player);
@@ -390,6 +420,7 @@ export class GameEventHandler implements IGameEventHandler {
           (this.objectManager_.getTileCountForPlayer(player) * 100) / this.objectManager_.getTileCount(),
         ) >= 70
       ) {
+        winCause = 'domination';
         for (const p of [...this.playerManager_.getPlayers()]) {
           if (player !== p) {
             this.playerManager_.setPlayerAsLost(p);
@@ -423,6 +454,7 @@ export class GameEventHandler implements IGameEventHandler {
         const owner = dt.getOwner();
         if (owner === current) device.decrementCountdown();
         if (owner !== null && device.getCountdown() <= 0) {
+          winCause = 'device';
           for (const p of [...this.playerManager_.getPlayers()]) {
             if (p !== owner) {
               this.playerManager_.setPlayerAsLost(p);
@@ -439,10 +471,16 @@ export class GameEventHandler implements IGameEventHandler {
 
     if (this.playerManager_.getPlayers().length <= 1) this.gameOver_ = true; // winner or tie — lock the match
 
+    // Passive history hook: the turn `current` just played is fully resolved now.
+    this.onTurnEnded?.(current);
+
     if (this.playerManager_.getPlayers().length === 0) {
       this.menuObjectManager_.setTieMenu(lostPlayersThisRound, losingReasons);
+      this.onGameOver?.({ winner: null, winCause: 'tie', rounds: this.playerManager_.getRoundsPlayed() });
     } else if (this.playerManager_.getPlayers().length === 1) {
-      this.menuObjectManager_.setWinMenu(this.playerManager_.getPlayers()[0]);
+      const winner = this.playerManager_.getPlayers()[0];
+      this.menuObjectManager_.setWinMenu(winner);
+      this.onGameOver?.({ winner, winCause, rounds: this.playerManager_.getRoundsPlayed() });
     } else if (lostPlayersThisRound.length === 0) {
       this.openDefaultMenuView();
       this.notifyTurnChanged();

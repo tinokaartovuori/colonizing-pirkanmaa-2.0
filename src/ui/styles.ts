@@ -112,6 +112,7 @@ export function injectStyles(): void {
   .cp-section { font-size: 9px; color:#9a9a9a; margin: 16px 0 8px; border-top:2px solid #000; padding-top:12px; }
   .cp-prow { gap: 8px; }
   .cp-prow input { flex: 1; width: auto; }
+  .cp-prow input.cp-locked { color:#9a9a9a; cursor: not-allowed; }
   .cp-type { width: 134px; }
   .cp-dialog .cp-actions { display: flex; gap: 14px; margin-top: 20px; justify-content: center; }
   /* Dialog buttons use the raised frame as a real border (they auto-size to text). */

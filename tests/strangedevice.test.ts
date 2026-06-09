@@ -20,6 +20,7 @@ import { Grassland } from '../src/model/tiles';
 import { StrangeDevice } from '../src/model/building';
 import { PlayerBase } from '../src/model/player';
 import { IMenuObjectManager } from '../src/managers/menu-interface';
+import { buildSnapshot, GameSnapshot } from '../src/managers/persistence';
 
 class StubScene implements IGameScene {
   drawItem(): void {}
@@ -284,5 +285,45 @@ describe('Strange Device — destroyed when its tile is lost', () => {
     eh.endTurn(); // P2's turn — the connectivity cut runs on P1, orphan tile -> Device destroyed
     expect(om.hasStrangeDevice()).toBe(false);
     expect(tile.getBuilding()).toBeNull();
+  });
+});
+
+describe('Strange Device — survives game-state save/restore (snapshot round-trip)', () => {
+  it('persists the Device position, owner, and countdown through JSON save → load', () => {
+    const W = 12, H = 12, SEED = 11;
+    const a = newGame(W, H, SEED);
+    const [p1] = placeBothHqs(a.om, a.eh, a.pm);
+    grant(p1);
+    const spot = emptyGrass(p1)[0];
+    const dx = spot.getCoordinate().x();
+    const dy = spot.getCoordinate().y();
+    expect(a.eh.aiBuildBuilding('Strange Device', spot)).toBe(true);
+    // Force a distinct mid-game clock so we prove the SAVED time is what comes back,
+    // not the freshly-recomputed initial countdown.
+    deviceOf(a.om)!.setCountdown(7);
+    const ownerNum = deviceOf(a.om)!.getOwner()!.getPlayerNum();
+
+    // Save exactly as localStorage does: snapshot → JSON string → parse back.
+    const snap = buildSnapshot(a.om, a.pm, { width: W, height: H, seed: SEED });
+    const roundTripped = JSON.parse(JSON.stringify(snap)) as GameSnapshot;
+
+    // The serialised form actually carries the Device + its countdown.
+    const devSnap = roundTripped.tiles.find((t) => t.b?.type === 'Strange Device');
+    expect(devSnap).toBeDefined();
+    expect(devSnap!.x).toBe(dx);
+    expect(devSnap!.y).toBe(dy);
+    expect(devSnap!.b!.countdown).toBe(7);
+
+    // Restore into a FRESH engine from the same seed and confirm the Device is whole.
+    const b = newGame(W, H, SEED);
+    b.eh.restoreSnapshot(roundTripped);
+    const restoredTile = b.om.findStrangeDeviceTile();
+    expect(restoredTile).not.toBeNull();
+    expect(restoredTile!.getCoordinate().x()).toBe(dx);
+    expect(restoredTile!.getCoordinate().y()).toBe(dy);
+    const restored = restoredTile!.getBuilding() as StrangeDevice;
+    expect(restored.getCountdown()).toBe(7);
+    expect(restored.getOwner()!.getPlayerNum()).toBe(ownerNum);
+    expect(b.om.hasStrangeDevice()).toBe(true);
   });
 });

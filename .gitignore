@@ -15,3 +15,6 @@ rust-trainer/target*
 # Model weights blobs are large; the registry + manifests (metadata) ARE tracked.
 # Uncomment to stop tracking the weight blobs themselves:
 # models/**/weights.json
+
+# Local backend SQLite database (regenerable, not source)
+server/data/

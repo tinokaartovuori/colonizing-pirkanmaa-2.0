@@ -2,7 +2,7 @@
 // with a per-player Human/Computer selector.
 
 import { Difficulty, PlayerConfig } from '../model/player';
-import { SPATIAL_CHAMPION_DIFFICULTY } from '../ai/nn';
+import { AI_ROSTER, rosterCharacterFor } from '../managers/gamerecorder';
 
 export interface StartSettings {
   width: number;
@@ -20,19 +20,17 @@ function checkCharacters(s: string): boolean {
 }
 
 const DEFAULT_NAMES = ['PlayerOne', 'PlayerTwo', 'PlayerThree', 'PlayerFour'];
-// Opponent types offered in New Game: a human, the trained CNN AlphaZero champion
-// (sd4-az-002 — the strongest opponent, plays the learned army-economy strategy),
-// or the heuristic rule-based CPU (the `hard` bot that races the Strange Device).
-// The older easy/medium tiers and the rest of the `model:` roster still exist in
-// the engine (tests/sims) but are not surfaced here.
+// Opponent types offered in New Game: a human, or one of the three named AI
+// CHARACTERS — Jorma (heuristic HARD bot), Kalevi (AlphaZero) and Gunnar
+// (AlphaZero XL). Picking an AI LOCKS the seat's name to that character. The
+// roster (names / difficulty strings / labels) lives in gamerecorder.ts.
 const TYPE_OPTIONS: Array<[Difficulty, string]> = [
   ['human', 'Human'],
-  [SPATIAL_CHAMPION_DIFFICULTY as Difficulty, 'CPU (Neural Champion)'],
-  ['hard', 'CPU (Heuristic)'],
+  ...AI_ROSTER.map((c) => [c.difficulty, c.label] as [Difficulty, string]),
 ];
-// Player 2 starts as the strongest CPU (the trained neural champion) so a single
-// human gets the best opponent straight away.
-const DEFAULT_TYPES: Difficulty[] = ['human', SPATIAL_CHAMPION_DIFFICULTY as Difficulty, 'human', 'human'];
+// Player 2 starts as Kalevi (AlphaZero) so a single human gets a strong opponent
+// straight away.
+const DEFAULT_TYPES: Difficulty[] = ['human', 'model:kalevi', 'human', 'human'];
 
 /** On load, when a saved game exists: let the player resume it or start fresh. */
 export function showResumeDialog(onContinue: () => void, onNewGame: () => void): void {
@@ -112,6 +110,31 @@ export function showStartDialog(onStart: (s: StartSettings) => void): void {
   };
   players.addEventListener('input', syncRows);
   syncRows();
+
+  // Per-seat name locking: when a seat's type is an AI character (Jorma / Kalevi /
+  // Gunnar), the name input is forced to that character's name and made read-only;
+  // switching back to Human restores the player's last-typed (editable) name. The
+  // human name is stashed per seat so toggling type doesn't lose it.
+  const humanNames = [...DEFAULT_NAMES];
+  const syncSeatLock = (i: number) => {
+    const nameInput = $<HTMLInputElement>(`cp-p${i + 1}`);
+    const difficulty = $<HTMLSelectElement>(`cp-t${i}`).value as Difficulty;
+    const character = rosterCharacterFor(difficulty);
+    if (character) {
+      if (!nameInput.readOnly) humanNames[i] = nameInput.value; // stash before locking
+      nameInput.value = character.name;
+      nameInput.readOnly = true;
+      nameInput.classList.add('cp-locked');
+    } else {
+      if (nameInput.readOnly) nameInput.value = humanNames[i]; // restore on unlock
+      nameInput.readOnly = false;
+      nameInput.classList.remove('cp-locked');
+    }
+  };
+  [0, 1, 2, 3].forEach((i) => {
+    $<HTMLSelectElement>(`cp-t${i}`).addEventListener('change', () => syncSeatLock(i));
+    syncSeatLock(i); // apply initial lock state (e.g. seat 2 defaults to Kalevi)
+  });
 
   $<HTMLButtonElement>('cp-rand').addEventListener('click', () => {
     seed.value = String(Math.floor(Math.random() * 200) + 1);

@@ -10,17 +10,21 @@
 // value head (`valueFrom`), already in the root player's frame; exact ±1 on a
 // survivorship terminal. Final action = MOST-VISITED root edge (ties → lowest).
 //
-// State machinery mirrors search.ts: the LIVE engine is never mutated — every
-// node is reconstructed by rebuilding a sandbox from the captured root snapshot
-// and replaying the path's edge actions. Priors = softmax(tau=TAU) over the
-// spatial net's per-candidate score; the leaf trunk is cached per node.
+// State machinery mirrors search.ts: the LIVE engine is never mutated. Each node
+// caches a state snapshot when built, so expanding a child restores the parent's
+// snapshot and applies ONE edge — semantically identical to rebuilding from the
+// root snapshot and replaying the whole edge path (both round-trip through the same
+// buildSnapshot/restoreSnapshot), but it skips the O(depth) opponent-turn rolls
+// that replay would redo on every expansion (a pure speedup; move choices are
+// unchanged). Priors = softmax(tau=TAU) over the spatial net's per-candidate score;
+// the leaf trunk is cached per node.
 
 import { enumerate, AiCtx, TierConfig, Intent, Candidate } from './candidates';
 import {
   SpatialNetTS, BoardCache, boardPlanes, valueScalars, candLocal, intentOnehot, targetXY,
 } from './spatial_net';
 import { createSandbox, Sandbox } from './sandbox';
-import { GameSnapshot } from '../../managers/persistence';
+import { GameSnapshot, buildSnapshot } from '../../managers/persistence';
 import { PlayerBase } from '../../model/player';
 import { ObjectManager } from '../../managers/objectmanager';
 import { PlayerManager } from '../../managers/playermanager';
@@ -29,6 +33,15 @@ import { AiController } from '../../managers/ai';
 // Deploy/bench constants (cnn_train.rs).
 export const C_PUCT = 1.5;
 export const TAU = 1.0;
+
+/**
+ * TEST-ONLY equivalence switch. When true, `sandboxAt` ignores the per-node state
+ * cache and falls back to the original replay-from-root reconstruction. Used by the
+ * move-equivalence test to prove the snapshot cache yields byte-identical choices.
+ * Always false in deploy. Toggle via `setForceReplayFromRoot`.
+ */
+let FORCE_REPLAY_FROM_ROOT = false;
+export function setForceReplayFromRoot(on: boolean): void { FORCE_REPLAY_FROM_ROOT = on; }
 
 /** Spatial-MCTS deploy config (mirrors the Rust deploy `mcts_select` call). */
 export interface SpatialSearchConfig {
@@ -74,6 +87,16 @@ interface Node {
   /** Cached spatial value of this node's state (root frame), or undefined for
    *  terminal/survivorship nodes that short-circuit. */
   cachedValue?: number;
+  /**
+   * Cached snapshot of this node's sandbox state, captured the moment the node was
+   * built. Restoring a sandbox from THIS snapshot and applying one child edge is
+   * semantically identical to rebuilding from the root snapshot and replaying the
+   * whole edge path (both round-trip through the same snapshot/restore), but it
+   * avoids re-running the O(depth) opponent-turn rolls on every expansion — the
+   * dominant per-sim cost. Undefined only for terminal/survivorship leaves (never
+   * expanded). PURE PERF: move choices are unchanged.
+   */
+  snapshot?: GameSnapshot;
 }
 
 /** PUCT edge selection. Ties → LOWEST index (cnn_train.rs puct_select). */
@@ -141,6 +164,8 @@ class SpatialSearch {
       edgeValue: new Array<number>(n).fill(0),
       visits: 0, expanded: false, terminal,
       cachedValue: this.net.valueFrom(cache),
+      // Capture this node's exact state for O(1) child expansion (see Node.snapshot).
+      snapshot: buildSnapshot(sb.om, sb.pm, this.rootSnap.settings),
     };
   }
 
@@ -156,17 +181,19 @@ class SpatialSearch {
   }
 
   /**
-   * Reconstruct the sandbox at a node: rebuild from the root snapshot and replay
-   * the node's edge actions. Each replayed edge applies ONE root intent and then
-   * advances the round (opponents + endTurn) — mirroring the per-node game clone
-   * + `advance_after_root` of the Rust tree. Returns the sandbox at the node, or
-   * null if the game became terminal mid-replay.
+   * Reconstruct the sandbox AT a node. Restores directly from the node's cached
+   * state snapshot (captured in `makeNode` the moment the node was built), which is
+   * semantically identical to rebuilding from the root snapshot and replaying the
+   * whole edge path — both round-trip through the same buildSnapshot/restoreSnapshot
+   * — but skips the O(depth) opponent-turn rolls of that replay. If the snapshot is
+   * somehow absent (defensive; terminal nodes are never expanded), falls back to the
+   * exact replay-from-root path so semantics are preserved.
    */
-  private replay(nodeIdx: number): Sandbox {
+  private sandboxAt(nodeIdx: number): Sandbox {
+    const snap = this.nodes[nodeIdx].snapshot;
+    if (snap && !FORCE_REPLAY_FROM_ROOT) return createSandbox(snap);
     const sb = createSandbox(this.rootSnap);
-    for (const edge of this.nodes[nodeIdx].path) {
-      this.applyEdge(sb, edge);
-    }
+    for (const edge of this.nodes[nodeIdx].path) this.applyEdge(sb, edge);
     return sb;
   }
 
@@ -211,7 +238,7 @@ class SpatialSearch {
       // Expand this edge.
       const path = this.nodes[node].path.slice();
       path.push(edge);
-      const sb = this.replay(node); // state at the parent
+      const sb = this.sandboxAt(node); // restore the parent's cached state (O(1))
       this.applyEdge(sb, edge); // advance one full round via this edge
       const childNode = this.makeNode(sb, path);
       this.nodes.push(childNode);

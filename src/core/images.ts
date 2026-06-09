@@ -27,6 +27,7 @@ export const ImageVectors = {
   FOREST_STUMPS: vec(':Images/foreststumps.png'),
   GRASSLAND: vec(':Images/grassland.png'),
   MIKONTALO: vec(':Images/mikontalo.png'),
+  STRANGE_DEVICE: vec(':Images/strange_device.png'),
   ABUNDANT_FOREST: vec(
     ':Images/abundant_forest_1.png',
     ':Images/abundant_forest_2.png',
