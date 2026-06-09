@@ -343,7 +343,11 @@ export class GameScene extends Phaser.Scene implements IGameScene {
           .setDisplaySize(this.gridSize, this.gridSize)
           .setAngle(DIR_ANGLE[dir] ?? 0)
           .setAlpha(0.6)
-          .setDepth(0.5);
+          // Above buildings (1) and the full-bleed Strange-Device art (marker 2) so
+          // the territory outline is never hidden by tile art, but below units (3)
+          // and the device countdown (4). At 0.5 the opaque device sprite painted
+          // over the border, so a conquered region showed no edge around the Device.
+          .setDepth(2.5);
         this.borderImages.push(img);
       }
     }

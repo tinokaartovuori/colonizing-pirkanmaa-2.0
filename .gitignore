@@ -22,3 +22,7 @@ server/data/
 # Cloudflare Worker local state (wrangler login token cache, dev DB, deps)
 worker/.wrangler/
 worker/node_modules/
+
+# Claude Code local runtime state (session locks etc.) — never commit
+.claude/scheduled_tasks.lock
+.claude/*.lock
