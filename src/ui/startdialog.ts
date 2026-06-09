@@ -174,13 +174,17 @@ export function showStartDialog(onStart: (s: StartSettings) => void): void {
     for (let i = 0; i < playerNum; i++) {
       const name = $<HTMLInputElement>(`cp-p${i + 1}`).value;
       const difficulty = $<HTMLSelectElement>(`cp-t${i}`).value as Difficulty;
-      if (!checkCharacters(name)) {
-        err.textContent = 'Names may only contain letters a-z.';
-        return;
-      }
-      if (name.length === 0) {
-        err.textContent = 'Enter a name for every player.';
-        return;
+      // AI seats carry a system-generated, locked name (e.g. "Jorma1") — exempt them
+      // from the human-name validation; only validate what a human actually typed.
+      if (!rosterCharacterFor(difficulty)) {
+        if (!checkCharacters(name)) {
+          err.textContent = 'Names may only contain letters a-z.';
+          return;
+        }
+        if (name.length === 0) {
+          err.textContent = 'Enter a name for every player.';
+          return;
+        }
       }
       config.push({ name, difficulty });
     }
