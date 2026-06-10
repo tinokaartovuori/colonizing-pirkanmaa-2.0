@@ -31,8 +31,12 @@ const SERVER_URL =
 /** Per-player seat colour, indexed by 0-based seat (mirrors menu.ts COLOR_BAR / banner.ts). */
 const COLOR_BALL = ['red', 'blue', 'purple', 'yellow'];
 
-/** Autoplay cadence (ms per turn). Each step re-renders the board on a fresh scene. */
-const AUTOPLAY_MS = 450;
+/** Autoplay cadence (ms per turn). Each step re-renders the board on a fresh scene;
+ * a touch of headroom over the per-frame fade keeps autoplay from looking choppy. */
+const AUTOPLAY_MS = 600;
+/** Per-frame fade-in (ms). Each rendered turn rebuilds the board on a fresh scene,
+ * which blanks the canvas; fading the new frame in masks that hard swap. */
+const FADE_MS = 180;
 
 interface SeatMetrics {
   seat: number;
@@ -183,6 +187,11 @@ export function showReplayDashboard(deps: ReplayDeps): void {
     const token = {};
     renderToken = token;
 
+    // Hide the board instantly (no transition) so the upcoming scene rebuild —
+    // which blanks the canvas — happens behind a black frame instead of flashing.
+    stage.style.transition = 'none';
+    stage.style.opacity = '0';
+
     game.scale.resize(mapW, mapH);
     game.scene.start('GameScene', {
       objectManager: om,
@@ -197,7 +206,12 @@ export function showReplayDashboard(deps: ReplayDeps): void {
           objectManager: om, eventHandler: eh, gameSettings: gsm, scene,
         });
         eh.restoreSnapshot(snap);
-        requestAnimationFrame(() => fitBoard(mapW, mapH));
+        requestAnimationFrame(() => {
+          fitBoard(mapW, mapH);
+          // New frame is laid out — fade it in to smooth over the hard scene swap.
+          stage.style.transition = `opacity ${FADE_MS}ms ease`;
+          stage.style.opacity = '1';
+        });
       },
     });
   };
@@ -326,8 +340,10 @@ export function showReplayDashboard(deps: ReplayDeps): void {
     window.removeEventListener('resize', onResize);
     if (replayMenu) { replayMenu.destroy(); replayMenu = null; }
     game.scene.stop('GameScene');
-    // Return the board to its normal home.
+    // Return the board to its normal home (drop the replay-only fade styling).
     stage.style.transform = '';
+    stage.style.transition = '';
+    stage.style.opacity = '';
     parent.appendChild(stage);
     overlay.remove();
     deps.onExit();

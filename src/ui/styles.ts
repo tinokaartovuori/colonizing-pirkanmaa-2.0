@@ -210,20 +210,25 @@ export function injectStyles(): void {
   .cp-rp-card-date { font-size: 7px; color: #777; margin-top: 3px; }
   .cp-rp-empty { font-size: 8px; color: #9a9a9a; line-height: 1.8; padding: 6px; text-align: center; }
 
-  /* Per-seat metrics row. */
-  .cp-replay-metrics-inner { display: flex; flex-wrap: wrap; gap: 10px; }
+  /* Per-seat metrics. Each seat gets its own full-width row (a steady scoreboard
+     layout) and its stat chips never wrap — so the box height stays constant as
+     the numbers change turn-to-turn, instead of reflowing and jumping. */
+  .cp-replay-metrics-inner { display: flex; flex-direction: column; gap: 8px; }
   .cp-rp-seat {
-    flex: 1 1 200px; background: #141414; padding: 8px 10px;
+    background: #141414; padding: 8px 10px;
     box-shadow: inset 2px 2px 0 #050505, inset -2px -2px 0 #2a2a2a;
   }
   .cp-rp-seat-head { display: flex; align-items: center; gap: 7px; font-size: 9px; color: #eee; margin-bottom: 7px; }
   .cp-rp-dot { width: 12px; height: 12px; image-rendering: pixelated; }
-  .cp-rp-seat-name { flex: 1; word-break: break-word; }
-  .cp-rp-device { font-size: 7px; color: #ff9a5a; }
-  .cp-rp-seat-stats { display: flex; flex-wrap: wrap; gap: 6px 10px; font-size: 8px; color: #d0d0d0; font-variant-numeric: tabular-nums; }
-  .cp-rp-res { display: inline-flex; align-items: center; gap: 4px; }
+  .cp-rp-seat-name { word-break: break-word; }
+  .cp-rp-device { margin-left: auto; font-size: 7px; color: #ff9a5a; }
+  .cp-rp-seat-stats {
+    display: flex; flex-wrap: nowrap; gap: 6px 10px; font-size: 8px; color: #d0d0d0;
+    font-variant-numeric: tabular-nums; overflow-x: auto;
+  }
+  .cp-rp-res { display: inline-flex; align-items: center; gap: 4px; flex: none; }
   .cp-rp-res img { width: 12px; height: 12px; }
-  .cp-rp-stat { color: #9a9a9a; }
+  .cp-rp-stat { color: #9a9a9a; flex: none; }
   `;
   const style = document.createElement('style');
   style.textContent = css;
