@@ -21,7 +21,7 @@ import { PlayerManager } from '../managers/playermanager';
 import { GameEventHandler } from '../managers/gameeventhandler';
 import { WorldGenerator } from '../world/worldgenerator';
 import { MenuController } from './menu';
-import { GameScene } from '../scenes/GameScene';
+import { GameScene, GameSceneInit } from '../scenes/GameScene';
 import { PlayerConfig } from '../model/player';
 
 /** Backend base URL; override with VITE_CP_SERVER at build time (mirrors gamerecorder.ts). */
@@ -31,12 +31,9 @@ const SERVER_URL =
 /** Per-player seat colour, indexed by 0-based seat (mirrors menu.ts COLOR_BAR / banner.ts). */
 const COLOR_BALL = ['red', 'blue', 'purple', 'yellow'];
 
-/** Autoplay cadence (ms per turn). Each step re-renders the board on a fresh scene;
- * a touch of headroom over the per-frame fade keeps autoplay from looking choppy. */
-const AUTOPLAY_MS = 600;
-/** Per-frame fade-in (ms). Each rendered turn rebuilds the board on a fresh scene,
- * which blanks the canvas; fading the new frame in masks that hard swap. */
-const FADE_MS = 180;
+/** Autoplay cadence (ms per turn). Each step swaps the board state in place on a
+ * single persistent scene, so turns advance without the canvas ever blanking. */
+const AUTOPLAY_MS = 500;
 
 interface SeatMetrics {
   seat: number;
@@ -138,6 +135,10 @@ export function showReplayDashboard(deps: ReplayDeps): void {
   let current: FullGame | null = null;
   let index = 0;
   let replayMenu: MenuController | null = null;
+  // The single GameScene kept alive across turns. Once booted, every turn re-feeds
+  // its state in place via scene.rebind(...) instead of restarting the scene, so the
+  // canvas never blanks between frames.
+  let liveScene: GameScene | null = null;
   // Latest-render-wins token: a late GameScene onReady from a superseded render
   // must not restore onto the wrong board.
   let renderToken: object = {};
@@ -187,33 +188,32 @@ export function showReplayDashboard(deps: ReplayDeps): void {
     const token = {};
     renderToken = token;
 
-    // Hide the board instantly (no transition) so the upcoming scene rebuild —
-    // which blanks the canvas — happens behind a black frame instead of flashing.
-    stage.style.transition = 'none';
-    stage.style.opacity = '0';
+    // Paint this turn into the scene. For rebind this runs synchronously (one tick:
+    // clear → regenerate → restore), so the board swaps in place with no blank.
+    const paint = (scene: GameScene) => {
+      if (renderToken !== token) return; // superseded by a newer render
+      liveScene = scene;
+      eh.setGameScene(scene);
+      om.setGameScene(scene);
+      new WorldGenerator().generateMap(s.width, s.height, s.seed, {
+        objectManager: om, eventHandler: eh, gameSettings: gsm, scene,
+      });
+      eh.restoreSnapshot(snap);
+      requestAnimationFrame(() => fitBoard(mapW, mapH));
+    };
+
+    const init: GameSceneInit = {
+      objectManager: om, settings: gsm,
+      onTileClick: () => {}, onUnitClick: () => false,
+      onReady: paint,
+    };
 
     game.scale.resize(mapW, mapH);
-    game.scene.start('GameScene', {
-      objectManager: om,
-      settings: gsm,
-      onTileClick: () => {},
-      onUnitClick: () => false,
-      onReady: (scene: GameScene) => {
-        if (renderToken !== token) return; // superseded by a newer render
-        eh.setGameScene(scene);
-        om.setGameScene(scene);
-        new WorldGenerator().generateMap(s.width, s.height, s.seed, {
-          objectManager: om, eventHandler: eh, gameSettings: gsm, scene,
-        });
-        eh.restoreSnapshot(snap);
-        requestAnimationFrame(() => {
-          fitBoard(mapW, mapH);
-          // New frame is laid out — fade it in to smooth over the hard scene swap.
-          stage.style.transition = `opacity ${FADE_MS}ms ease`;
-          stage.style.opacity = '1';
-        });
-      },
-    });
+    if (liveScene) {
+      liveScene.rebind(init); // persistent scene — swap state in place, no reboot
+    } else {
+      game.scene.start('GameScene', init); // first render boots the scene once
+    }
   };
 
   /** Cheap (Phaser-free) update of the title + slider + per-seat metrics for turn `i`. */
@@ -340,10 +340,9 @@ export function showReplayDashboard(deps: ReplayDeps): void {
     window.removeEventListener('resize', onResize);
     if (replayMenu) { replayMenu.destroy(); replayMenu = null; }
     game.scene.stop('GameScene');
-    // Return the board to its normal home (drop the replay-only fade styling).
+    liveScene = null; // next open re-boots the scene
+    // Return the board to its normal home.
     stage.style.transform = '';
-    stage.style.transition = '';
-    stage.style.opacity = '';
     parent.appendChild(stage);
     overlay.remove();
     deps.onExit();

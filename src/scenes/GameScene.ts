@@ -256,6 +256,32 @@ export class GameScene extends Phaser.Scene implements IGameScene {
     this.removeMouseFollowItem();
   }
 
+  /**
+   * Swap in a fresh set of managers/callbacks and wipe the board WITHOUT a Phaser
+   * scene restart, then invoke onReady. Used by the replay dashboard to step turns:
+   * because the clear + redraw happen synchronously in one tick, the canvas never
+   * blanks (no boot/shutdown), so frames swap without the black flash that
+   * `scene.start` causes. The pointer handlers registered in create() persist and
+   * read these fields, so reassigning them is enough.
+   */
+  rebind(data: GameSceneInit): void {
+    this.objectManager = data.objectManager;
+    this.settings = data.settings;
+    this.onTileClick = data.onTileClick;
+    this.onUnitClick = data.onUnitClick;
+    this.onReadyCb = data.onReady;
+
+    this.deleteObjects(); // clears items / borders / device markers / mouse sprite
+    this.bordersDirty = true;
+    this.mousePicture = [];
+    this.animAccum = 0;
+
+    this.gridSize = this.settings.getMapGridSize();
+    this.hoverBorder = this.objectManager.getBorderTile();
+
+    this.onReadyCb(this);
+  }
+
   // --- internals ------------------------------------------------------------
 
   private register(obj: BaseObject, sprite: Phaser.GameObjects.Image): void {
