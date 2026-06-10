@@ -57,6 +57,10 @@ export class GameScene extends Phaser.Scene implements IGameScene {
   private mouseDragSprite: Phaser.GameObjects.Image | null = null;
   private hoverBorder: MouseHoverBorder | null = null;
   private animAccum = 0;
+  /** Set only during a rebind() redraw: carries each animated tile/building's current
+   *  frame (keyed by position+texture) across the teardown so the replay's terrain
+   *  animation continues smoothly instead of restarting from frame 1 every turn. */
+  private animCarry: Map<string, { frame: number; dir: number }> | null = null;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -271,30 +275,61 @@ export class GameScene extends Phaser.Scene implements IGameScene {
     this.onUnitClick = data.onUnitClick;
     this.onReadyCb = data.onReady;
 
+    // Capture animation frames BEFORE the teardown, then have register() restore
+    // them as the fresh terrain is drawn. NOTE: animAccum is intentionally NOT
+    // reset — keeping the global 450ms clock running lets the carried frames keep
+    // advancing instead of snapping back, so autoplay no longer stutters.
+    this.animCarry = this.captureAnimState();
     this.deleteObjects(); // clears items / borders / device markers / mouse sprite
     this.bordersDirty = true;
     this.mousePicture = [];
-    this.animAccum = 0;
 
     this.gridSize = this.settings.getMapGridSize();
     this.hoverBorder = this.objectManager.getBorderTile();
 
-    this.onReadyCb(this);
+    this.onReadyCb(this); // generateMap + restoreSnapshot redraw through register()
+    this.animCarry = null;
+  }
+
+  /** Snapshot the current frame of every animated item, keyed by position+texture,
+   *  so register() can resume it after a rebind teardown (replay animation continuity). */
+  private captureAnimState(): Map<string, { frame: number; dir: number }> {
+    const m = new Map<string, { frame: number; dir: number }>();
+    for (const item of this.items.values()) {
+      if (!item.anim.animated) continue;
+      const key = this.animKey(item.obj);
+      if (key) m.set(key, { frame: item.frame, dir: item.dir });
+    }
+    return m;
+  }
+
+  /** Stable cross-rebind identity for an animated item: its tile/building position
+   *  plus base texture. Units are positional/transient, so they get no carry. */
+  private animKey(obj: BaseObject): string | null {
+    if (obj instanceof UnitBase) return null;
+    const c = obj.getCoordinatePtr();
+    if (!c) return null;
+    return `${c.x()},${c.y()}|${obj.getImageFiles()[0] ?? ''}`;
   }
 
   // --- internals ------------------------------------------------------------
 
   private register(obj: BaseObject, sprite: Phaser.GameObjects.Image): void {
     const anim = obj.getAnimationOption();
-    this.items.set(obj.ID, {
-      obj,
-      sprite,
-      frames: obj.getImageFiles(),
-      anim,
-      frame: 1,
-      dir: 1,
-      randomizePending: anim.randomFrame,
-    });
+    let frame = 1;
+    let dir = 1;
+    let randomizePending = anim.randomFrame;
+    // During a replay rebind, resume this item's pre-teardown animation frame so the
+    // terrain doesn't visibly restart (and randomFrame tiles keep their variant).
+    const carry = this.animCarry && anim.animated ? this.animCarry.get(this.animKey(obj) ?? '') : undefined;
+    if (carry) {
+      frame = carry.frame;
+      dir = carry.dir;
+      randomizePending = false;
+    }
+    const item: RenderItem = { obj, sprite, frames: obj.getImageFiles(), anim, frame, dir, randomizePending };
+    this.items.set(obj.ID, item);
+    if (frame !== 1) this.applyTexture(item); // show the carried frame at once, no flash
   }
 
   private firstTexture(obj: BaseObject): string {
